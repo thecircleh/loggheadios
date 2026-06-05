@@ -1,0 +1,103 @@
+<!-- client/public/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+  
+  <meta name="robots" content="noindex, nofollow" />
+ <meta charset="utf-8" />
+<!-- Termly Consent Manager -->
+<script
+  type="text/javascript"
+  src="https://app.termly.io/resource-blocker/b0bdfedd-5154-4444-8088-40724aed1c6a"
+  data-name="termly"
+  data-domain-script="b0bdfedd-5154-4444-8088-40724aed1c6a"
+></script>
+	
+    <title>Loggerhead: See-Say-Log Volleyball Stats</title>
+	
+
+
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<!-- For PNG favicons -->
+<link rel="icon" type="image/png" sizes="32x32" href="%PUBLIC_URL%/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="%PUBLIC_URL%/favicon.png">
+
+<!-- For ICO format -->
+<link rel="shortcut icon" href="%PUBLIC_URL%/favicon.ico">
+
+<!-- For Apple devices -->
+<link rel="apple-touch-icon" sizes="180x180" href="%PUBLIC_URL%/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#1a1a1a" />
+
+<!-- iOS specific -->
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<!-- viewport specific -->
+
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-KCDQGPZ42Q"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-KCDQGPZ42Q');
+</script>
+
+  </head>
+
+  
+  
+  <body>
+
+    <!-- React will render into this element -->
+    <div id="root"></div>
+<div id="modal-root"></div>
+	
+
+
+<footer style="text-align: center; font-size: 13px; margin-top: 40px;">
+  <a href="/login">Login</a> |
+  <a href="/register">Register</a> |
+  <a id="faq-link" href="#">FAQs</a> |  
+  <a id="howto-link" href="#">Getting Started</a> |
+  <a href="/about">About</a> |
+  <a href="/contact">Contact</a> |
+  <a id="privacy-link" href="#">Privacy</a> |
+  <a id="terms-link" href="#">Terms</a> |
+  <a id="blog-link" href="#">Volleyball Blog</a> |
+  <a href="#" class="termly-display-preferences">Consent Preferences</a>
+</footer>
+
+<script>
+  (function () {
+    const host = window.location.hostname;
+
+    const isDev =
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host.endsWith(".local") ||
+      /^10\./.test(host) ||
+      /^192\.168\./.test(host);
+
+    const publicSite = isDev
+      ? "http://localhost:3001"
+      : "https://www.loggerhead.app"; 
+
+    const faq = document.getElementById("faq-link");
+    const howto = document.getElementById("howto-link");
+    const blog = document.getElementById("blog-link");
+    const privacy = document.getElementById("privacy-link");
+    const terms = document.getElementById("terms-link");
+
+    if (privacy) privacy.href = publicSite + "/privacy_policy.html";
+    if (terms) terms.href = publicSite + "/terms.html";
+    if (faq) faq.href = publicSite + "/faq";
+    if (howto) howto.href = publicSite + "/how-to";
+    if (blog) blog.href = publicSite + "/blog";
+  })();
+</script>
+
+  </body>
+</html>

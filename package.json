@@ -1,0 +1,62 @@
+{
+  "name": "volleyball-logger-client",
+  "version": "1.0.0",
+  "private": true,
+  "proxy": "http://localhost:3000",
+  "dependencies": {
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
+    "@capacitor/ios": "^8.4.0",
+    "@capacitor/splash-screen": "^8.0.1",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^5.15.0",
+    "@mui/material": "^5.15.0",
+    "@tensorflow-models/coco-ssd": "^2.2.3",
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tiptap/extension-code-block": "^3.19.0",
+    "@tiptap/extension-image": "^3.19.0",
+    "@tiptap/extension-link": "^3.19.0",
+    "@tiptap/extension-underline": "^3.19.0",
+    "@tiptap/extension-youtube": "^3.19.0",
+    "@tiptap/react": "^3.19.0",
+    "@tiptap/starter-kit": "^3.19.0",
+    "axios": "^1.6.0",
+    "country-state-city": "^3.1.0",
+    "dayjs": "^1.11.19",
+    "framer-motion": "^11.0.0",
+    "js-cookie": "^3.0.5",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.7",
+    "react": "^18.2.0",
+    "react-device-detect": "^2.2.3",
+    "react-dnd": "^16.0.1",
+    "react-dnd-html5-backend": "^16.0.1",
+    "react-dnd-touch-backend": "^16.0.1",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.22.0",
+    "react-scripts": "5.0.1",
+    "react-simple-maps": "^3.0.0",
+    "recharts": "^3.7.0",
+    "socket.io-client": "^4.8.3",
+    "tesseract.js": "^7.0.0"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
