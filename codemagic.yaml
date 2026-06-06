@@ -12,7 +12,7 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.loggerheadstat.app
       vars:
-        XCODE_WORKSPACE: "App.xcworkspace"
+        XCODE_PROJECT: "App.xcodeproj"
         XCODE_SCHEME: "App"
         BUNDLE_ID: "com.loggerheadstat.app"
         REACT_APP_API_URL: "https://api.loggerhead.app"
@@ -44,7 +44,7 @@ workflows:
         script: |
           cd $CM_BUILD_DIR/ios/App
           xcode-project build-ipa \
-            --workspace "$XCODE_WORKSPACE" \
+            --project "$XCODE_PROJECT" \
             --scheme "$XCODE_SCHEME"
 
     artifacts:
