@@ -8,9 +8,6 @@ workflows:
       app_store_connect: Loggerhead ASC Key
 
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.loggerheadstat.app
       vars:
         XCODE_WORKSPACE: "App.xcworkspace"
         XCODE_SCHEME: "App"
@@ -39,6 +36,29 @@ workflows:
         script: |
           cd $CM_BUILD_DIR
           npx cap copy ios
+
+      - name: Initialize keychain
+        script: |
+          keychain initialize
+
+      - name: Create certificate and profile
+        script: |
+          app-store-connect certificates create \
+            --type IOS_DISTRIBUTION \
+            --save
+          app-store-connect profiles create \
+            --bundle-id $BUNDLE_ID \
+            --type IOS_APP_STORE \
+            --certificate-type IOS_DISTRIBUTION \
+            --save
+
+      - name: Add certificates to keychain
+        script: |
+          keychain add-certificates
+
+      - name: Use profiles
+        script: |
+          xcode-project use-profiles
 
       - name: Build and archive iOS app
         script: |
