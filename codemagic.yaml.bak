@@ -3,10 +3,10 @@ workflows:
     name: Loggerhead iOS - TestFlight
     max_build_duration: 60
     instance_type: mac_mini_m1
- 
+
     integrations:
       app_store_connect: Loggerhead ASC Key
- 
+
     environment:
       ios_signing:
         distribution_type: app_store
@@ -17,39 +17,57 @@ workflows:
         BUNDLE_ID: "com.loggerheadstat.app"
         REACT_APP_API_URL: "https://api.loggerhead.app"
       node: v18.20.0
- 
+
     scripts:
       - name: Install npm dependencies
         script: |
           cd $CM_BUILD_DIR
           npm install
- 
+
       - name: Build React app
         script: |
           cd $CM_BUILD_DIR
           REACT_APP_API_URL=$REACT_APP_API_URL npm run build
- 
+
       - name: Capacitor sync
         script: |
           cd $CM_BUILD_DIR
           npx cap sync ios
- 
+
       - name: Install CocoaPods
         script: |
           cd $CM_BUILD_DIR/ios/App
           pod install
- 
+
+      - name: Set up keychain
+        script: |
+          keychain initialize
+
+      - name: Fetch signing files
+        script: |
+          app-store-connect fetch-signing-files $BUNDLE_ID \
+            --type IOS_APP_STORE \
+            --create
+
+      - name: Add certs to keychain
+        script: |
+          keychain add-certificates
+
+      - name: Set up code signing settings
+        script: |
+          xcode-project use-profiles
+
       - name: Build and archive iOS app
         script: |
           cd $CM_BUILD_DIR/ios/App
           xcode-project build-ipa \
             --workspace "$XCODE_WORKSPACE" \
             --scheme "$XCODE_SCHEME"
- 
+
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
- 
+
     publishing:
       app_store_connect:
         auth: integration
