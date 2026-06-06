@@ -7,14 +7,13 @@ workflows:
     integrations:
       app_store_connect: Loggerhead ASC Key
 
-
-environment:
-  vars:
-    XCODE_WORKSPACE: "App.xcworkspace"
-    XCODE_SCHEME: "App"
-    BUNDLE_ID: "com.loggerheadstat.app"
-    REACT_APP_API_URL: "https://api.loggerhead.app"
-  node: v18.20.0
+    environment:
+      vars:
+        XCODE_WORKSPACE: "App.xcworkspace"
+        XCODE_SCHEME: "App"
+        BUNDLE_ID: "com.loggerheadstat.app"
+        REACT_APP_API_URL: "https://api.loggerhead.app"
+      node: v18.20.0
 
     scripts:
       - name: Install npm dependencies
