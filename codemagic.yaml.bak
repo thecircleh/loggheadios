@@ -51,6 +51,7 @@ workflows:
 
       - name: Create export options plist
         script: |
+          PROFILE_UUID=$(xcode-project use-profiles --profile-uuid-variable PROFILE_UUID 2>/dev/null || echo "")
           cat > /Users/builder/export_options.plist << PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -66,6 +67,11 @@ workflows:
             <true/>
             <key>signingStyle</key>
             <string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.loggerheadstat.app</key>
+              <string>Loggerhead App Store</string>
+            </dict>
           </dict>
           </plist>
           PLIST
@@ -73,13 +79,23 @@ workflows:
       - name: Build and archive iOS app
         script: |
           cd $CM_BUILD_DIR/ios/App
-          xcode-project build-ipa \
-            --project "$XCODE_PROJECT" \
-            --scheme "$XCODE_SCHEME" \
-            --export-options-plist /Users/builder/export_options.plist
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -archivePath build/App.xcarchive \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM=46W6UT654D \
+            PROVISIONING_PROFILE_SPECIFIER="Loggerhead App Store" \
+            archive
+          xcodebuild \
+            -exportArchive \
+            -archivePath build/App.xcarchive \
+            -exportOptionsPlist /Users/builder/export_options.plist \
+            -exportPath build/ios/ipa
 
     artifacts:
-      - build/ios/ipa/*.ipa
+      - $CM_BUILD_DIR/ios/App/build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
 
     publishing:

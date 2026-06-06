@@ -51,7 +51,6 @@ workflows:
 
       - name: Create export options plist
         script: |
-          PROFILE_UUID=$(xcode-project use-profiles --profile-uuid-variable PROFILE_UUID 2>/dev/null || echo "")
           cat > /Users/builder/export_options.plist << PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -85,7 +84,9 @@ workflows:
             -configuration Release \
             -archivePath build/App.xcarchive \
             CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
             DEVELOPMENT_TEAM=46W6UT654D \
+            PRODUCT_BUNDLE_IDENTIFIER=com.loggerheadstat.app \
             PROVISIONING_PROFILE_SPECIFIER="Loggerhead App Store" \
             archive
           xcodebuild \
