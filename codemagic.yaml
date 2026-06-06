@@ -13,27 +13,27 @@ workflows:
         XCODE_SCHEME: "App"
         BUNDLE_ID: "com.loggerheadstat.app"
         REACT_APP_API_URL: "https://api.loggerhead.app"
-      node: v18.20.0
+      node: v22.0.0
 
     scripts:
       - name: Install npm dependencies
         script: |
-          cd $CM_BUILD_DIR/client
+          cd $CM_BUILD_DIR
           npm install
 
       - name: Build React app
         script: |
-          cd $CM_BUILD_DIR/client
+          cd $CM_BUILD_DIR
           REACT_APP_API_URL=$REACT_APP_API_URL npm run build
 
       - name: Capacitor sync
         script: |
-          cd $CM_BUILD_DIR/client
+          cd $CM_BUILD_DIR
           npx cap sync ios
 
       - name: Install CocoaPods
         script: |
-          cd $CM_BUILD_DIR/client/ios/App
+          cd $CM_BUILD_DIR/ios/App
           pod install
 
       - name: Set up keychain
@@ -56,13 +56,13 @@ workflows:
 
       - name: Build and archive iOS app
         script: |
-          cd $CM_BUILD_DIR/client/ios/App
+          cd $CM_BUILD_DIR/ios/App
           xcode-project build-ipa \
             --workspace "$XCODE_WORKSPACE" \
             --scheme "$XCODE_SCHEME"
 
     artifacts:
-      - $CM_BUILD_DIR/client/build/ios/ipa/*.ipa
+      - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
 
     publishing:

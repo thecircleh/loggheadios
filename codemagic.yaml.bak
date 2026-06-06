@@ -18,22 +18,22 @@ workflows:
     scripts:
       - name: Install npm dependencies
         script: |
-          cd $CM_BUILD_DIR
+          cd $CM_BUILD_DIR/client
           npm install
 
       - name: Build React app
         script: |
-          cd $CM_BUILD_DIR
+          cd $CM_BUILD_DIR/client
           REACT_APP_API_URL=$REACT_APP_API_URL npm run build
 
       - name: Capacitor sync
         script: |
-          cd $CM_BUILD_DIR
+          cd $CM_BUILD_DIR/client
           npx cap sync ios
 
       - name: Install CocoaPods
         script: |
-          cd $CM_BUILD_DIR/ios/App
+          cd $CM_BUILD_DIR/client/ios/App
           pod install
 
       - name: Set up keychain
@@ -56,13 +56,13 @@ workflows:
 
       - name: Build and archive iOS app
         script: |
-          cd $CM_BUILD_DIR/ios/App
+          cd $CM_BUILD_DIR/client/ios/App
           xcode-project build-ipa \
             --workspace "$XCODE_WORKSPACE" \
             --scheme "$XCODE_SCHEME"
 
     artifacts:
-      - build/ios/ipa/*.ipa
+      - $CM_BUILD_DIR/client/build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
 
     publishing:
