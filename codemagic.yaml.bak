@@ -4,18 +4,18 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m1
 
+    integrations:
+      app_store_connect: Loggerhead ASC Key
+
     environment:
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: com.loggerhead.app
+        bundle_identifier: com.loggerheadstat.app
       vars:
         XCODE_PROJECT: "App.xcodeproj"
         XCODE_WORKSPACE: "App.xcworkspace"
         XCODE_SCHEME: "App"
-        BUNDLE_ID: "com.loggerhead.app"
-        APP_STORE_CONNECT_ISSUER_ID: Encrypted(...) # add in Codemagic dashboard
-        APP_STORE_CONNECT_KEY_IDENTIFIER: Encrypted(...) # add in Codemagic dashboard
-        APP_STORE_CONNECT_PRIVATE_KEY: Encrypted(...) # add in Codemagic dashboard
+        BUNDLE_ID: "com.loggerheadstat.app"
       node: v18.20.0
 
     scripts:
