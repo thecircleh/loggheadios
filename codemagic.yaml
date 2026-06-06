@@ -40,6 +40,15 @@ workflows:
           cd $CM_BUILD_DIR
           npx cap copy ios
 
+      - name: Set up keychain and signing
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files $BUNDLE_ID \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+
       - name: Create export options plist
         script: |
           cat > /Users/builder/export_options.plist << PLIST
@@ -56,7 +65,7 @@ workflows:
             <key>uploadSymbols</key>
             <true/>
             <key>signingStyle</key>
-            <string>automatic</string>
+            <string>manual</string>
           </dict>
           </plist>
           PLIST
