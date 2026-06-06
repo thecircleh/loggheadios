@@ -1,0 +1,67 @@
+workflows:
+  loggerhead-ios:
+    name: Loggerhead iOS - TestFlight
+    max_build_duration: 60
+    instance_type: mac_mini_m1
+
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.loggerhead.app
+      vars:
+        XCODE_PROJECT: "App.xcodeproj"
+        XCODE_WORKSPACE: "App.xcworkspace"
+        XCODE_SCHEME: "App"
+        BUNDLE_ID: "com.loggerhead.app"
+        APP_STORE_CONNECT_ISSUER_ID: Encrypted(...) # add in Codemagic dashboard
+        APP_STORE_CONNECT_KEY_IDENTIFIER: Encrypted(...) # add in Codemagic dashboard
+        APP_STORE_CONNECT_PRIVATE_KEY: Encrypted(...) # add in Codemagic dashboard
+      node: v18.20.0
+
+    scripts:
+      - name: Install npm dependencies
+        script: |
+          cd $CM_BUILD_DIR
+          npm install
+
+      - name: Build React app
+        script: |
+          cd $CM_BUILD_DIR
+          npm run build
+
+      - name: Install Capacitor CLI
+        script: |
+          cd $CM_BUILD_DIR
+          npm install @capacitor/cli
+
+      - name: Capacitor sync
+        script: |
+          cd $CM_BUILD_DIR
+          npx cap sync ios
+
+      - name: Install CocoaPods
+        script: |
+          cd $CM_BUILD_DIR/ios/App
+          pod install
+
+      - name: Set up code signing
+        script: |
+          xcode-project use-profiles
+
+      - name: Build and archive iOS app
+        script: |
+          cd $CM_BUILD_DIR/ios/App
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - "Internal Testers"
