@@ -36,6 +36,15 @@ workflows:
           cd $CM_BUILD_DIR
           npx cap copy ios
 
+      - name: Debug iOS folder structure
+        script: |
+          echo "=== CM_BUILD_DIR contents ==="
+          ls $CM_BUILD_DIR
+          echo "=== ios/ contents ==="
+          ls $CM_BUILD_DIR/ios
+          echo "=== ios/App/ contents ==="
+          ls $CM_BUILD_DIR/ios/App
+
       - name: Install CocoaPods
         script: |
           cd $CM_BUILD_DIR/ios/App
