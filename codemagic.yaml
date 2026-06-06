@@ -29,26 +29,13 @@ workflows:
       - name: Add iOS platform
         script: |
           cd $CM_BUILD_DIR
+          rm -rf ios
           npx cap add ios
 
       - name: Copy web assets to iOS
         script: |
           cd $CM_BUILD_DIR
           npx cap copy ios
-
-      - name: Debug iOS folder structure
-        script: |
-          echo "=== CM_BUILD_DIR contents ==="
-          ls $CM_BUILD_DIR
-          echo "=== ios/ contents ==="
-          ls $CM_BUILD_DIR/ios
-          echo "=== ios/App/ contents ==="
-          ls $CM_BUILD_DIR/ios/App
-
-      - name: Install CocoaPods
-        script: |
-          cd $CM_BUILD_DIR/ios/App
-          pod install
 
       - name: Set up keychain
         script: |
