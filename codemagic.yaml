@@ -26,10 +26,10 @@ workflows:
           cd $CM_BUILD_DIR
           REACT_APP_API_URL=$REACT_APP_API_URL npm run build
 
-      - name: Capacitor sync
+      - name: Copy web assets to iOS
         script: |
           cd $CM_BUILD_DIR
-          npx cap sync ios --no-deps
+          npx cap copy ios
 
       - name: Install CocoaPods
         script: |

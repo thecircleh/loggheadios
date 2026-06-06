@@ -29,7 +29,7 @@ workflows:
       - name: Capacitor sync
         script: |
           cd $CM_BUILD_DIR
-          npx cap sync ios
+          npx cap sync ios --no-deps
 
       - name: Install CocoaPods
         script: |
