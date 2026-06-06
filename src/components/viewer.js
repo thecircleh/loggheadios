@@ -1,0 +1,32 @@
+import React, { useState } from "react";
+import YouTubeMatchViewer from "../components/YouTubeViewer";
+
+export default function MatchWithVideo() {
+  const [matchUrl, setMatchUrl] = useState("");
+
+  return (
+    <div style={{ padding: "16px" }}>
+      <input
+        type="text"
+        placeholder="Paste YouTube match URL"
+        value={matchUrl}
+        onChange={(e) => setMatchUrl(e.target.value)}
+        style={{
+          width: "50%",
+          padding: "12px",
+          fontSize: "16px",
+          borderRadius: "12px",
+          border: "1px solid #d1d5db",
+          marginBottom: "16px",
+        }}
+      />
+
+      <YouTubeMatchViewer
+        url={matchUrl}
+        title="Live Match View"
+        height={220}
+		width="100%"
+      />
+    </div>
+  );
+}

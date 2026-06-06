@@ -1,0 +1,84 @@
+import React from 'react';
+import PropTypes from 'prop-types';
+import { STYLES } from '../../constants/statDefinitions';
+import { formatAiInsightsAsNarrative } from '../../utils/helpers';
+
+/**
+ * Component for displaying AI-generated match insights
+ */
+const AIInsights = ({ insights }) => {
+  // Format the insights into narrative format
+  const formattedInsights = formatAiInsightsAsNarrative(insights);
+  
+  // Paragraph style for consistent text formatting
+  const paragraphStyle = {
+    marginBottom: "1em",
+    lineHeight: 1.6,
+    fontSize: "16px"
+  };
+
+  // If insights couldn't be parsed as JSON, display raw text
+  if (formattedInsights.rawText) {
+    return (
+      <div style={STYLES.insightsContainer}>
+        <h3 style={{ 
+          fontSize: "20px", 
+          fontWeight: "700", 
+          color: "#1C1C1E", 
+          marginBottom: "12px" 
+        }}>
+          Match Report
+        </h3>
+        <pre style={{ whiteSpace: "pre-wrap" }}>
+          {formattedInsights.rawText}
+        </pre>
+      </div>
+    );
+  }
+
+  const { playerContributions = [], insights: highlightInsights = [] } = formattedInsights;
+
+  return (
+    <div style={STYLES.insightsContainer}>
+      <h3 style={{ 
+        fontSize: "20px", 
+        fontWeight: "700", 
+        color: "#1C1C1E", 
+        marginBottom: "12px" 
+      }}>
+        Match Report
+      </h3>
+
+      {/* Player contributions */}
+      {playerContributions.map((contribution, i) => (
+        <p key={i} style={paragraphStyle}>{contribution}</p>
+      ))}
+
+      {/* Key highlights section */}
+      {highlightInsights.length > 0 && (
+        <>
+          <h4 style={{ 
+            fontSize: "18px", 
+            fontWeight: "600", 
+            marginTop: "24px", 
+            color: "#444" 
+          }}>
+            Key Highlights
+          </h4>
+          {highlightInsights.map((highlight, i) => (
+            <p key={i + "-i"} style={paragraphStyle}>{highlight}</p>
+          ))}
+        </>
+      )}
+    </div>
+  );
+};
+
+AIInsights.propTypes = {
+  insights: PropTypes.oneOfType([
+    PropTypes.string,
+    PropTypes.object
+  ]).isRequired
+};
+
+export default AIInsights;

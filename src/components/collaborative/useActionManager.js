@@ -1,0 +1,119 @@
+import { useRef, useCallback, useState } from 'react';
+
+export const useActionManager = () => {
+  const [processingActions, setProcessingActions] = useState(new Map());
+  const actionQueueRef = useRef([]);
+  const processingQueueRef = useRef(false);
+  const lastActionTimeRef = useRef({});
+  
+  // Minimum time between actions (milliseconds)
+  const ACTION_COOLDOWN = 200;
+  const PER_PLAYER_COOLDOWN = 300;
+  
+  // Generate unique action key
+  const getActionKey = (playerId, actionType) => `${playerId}-${actionType}`;
+  
+  // Check if action is currently processing
+  const isActionProcessing = useCallback((playerId, actionType) => {
+    const key = getActionKey(playerId, actionType);
+    return processingActions.has(key);
+  }, [processingActions]);
+  
+  // Check if action is in cooldown
+  const isActionInCooldown = useCallback((playerId, actionType) => {
+    const key = getActionKey(playerId, actionType);
+    const lastTime = lastActionTimeRef.current[key];
+    
+    if (!lastTime) return false;
+    
+    const timeSinceLastAction = Date.now() - lastTime;
+    return timeSinceLastAction < PER_PLAYER_COOLDOWN;
+  }, []);
+  
+  // Mark action as processing
+  const startAction = useCallback((playerId, actionType) => {
+    const key = getActionKey(playerId, actionType);
+    
+    setProcessingActions(prev => {
+      const newMap = new Map(prev);
+      newMap.set(key, {
+        playerId,
+        actionType,
+        startTime: Date.now()
+      });
+      return newMap;
+    });
+    
+    lastActionTimeRef.current[key] = Date.now();
+  }, []);
+  
+  // Mark action as complete
+  const completeAction = useCallback((playerId, actionType) => {
+    const key = getActionKey(playerId, actionType);
+    
+    setProcessingActions(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(key);
+      return newMap;
+    });
+  }, []);
+  
+  // Queue an action
+  const queueAction = useCallback((action) => {
+    actionQueueRef.current.push({
+      ...action,
+      queuedAt: Date.now()
+    });
+    
+    processQueue();
+  }, []);
+  
+  // Process action queue
+  const processQueue = useCallback(async () => {
+    if (processingQueueRef.current || actionQueueRef.current.length === 0) {
+      return;
+    }
+    
+    processingQueueRef.current = true;
+    
+    while (actionQueueRef.current.length > 0) {
+      const action = actionQueueRef.current.shift();
+      
+      // Check if action is too old (discard after 5 seconds)
+      const age = Date.now() - action.queuedAt;
+      if (age > 5000) {
+        console.warn('Discarding stale queued action:', action);
+        continue;
+      }
+      
+      try {
+        await action.execute();
+        
+        // Small delay between queued actions
+        await new Promise(resolve => setTimeout(resolve, ACTION_COOLDOWN));
+      } catch (error) {
+        console.error('Queued action failed:', error);
+      }
+    }
+    
+    processingQueueRef.current = false;
+  }, []);
+  
+  // Clear all processing states (for cleanup)
+  const clearAllActions = useCallback(() => {
+    setProcessingActions(new Map());
+    actionQueueRef.current = [];
+    processingQueueRef.current = false;
+    lastActionTimeRef.current = {};
+  }, []);
+  
+  return {
+    isActionProcessing,
+    isActionInCooldown,
+    startAction,
+    completeAction,
+    queueAction,
+    clearAllActions,
+    processingActions
+  };
+};

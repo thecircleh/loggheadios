@@ -1,0 +1,552 @@
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from './AuthContext';
+
+const HomePage = ({ matchSettings }) => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [expandedCard, setExpandedCard] = useState(null);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const loggingModes = [
+    {
+      title: 'Classic Mode',
+      icon: '🏐',
+      description: 'Traditional court visualization with drag-and-drop player management, rotation tracking, and live scoring.',
+      route: '/classic',
+      tag: 'Logging Mode'
+    },
+    {
+      title: 'Stat Book Logger',
+      icon: '📊',
+      description: 'Express stat logging with on/off court management, pass grading, set distribution tracking, and attack type analysis.',
+      route: '/stat-book',
+      tag: 'Logging Mode'
+    },
+    {
+      title: 'Match Tracking',
+      icon: '📈',
+      description: 'Advanced analytics with substitution timeline, rotation plus/minus, and comprehensive match statistics for coaches.',
+      route: '/match-tracking',
+      tag: 'Logging Mode'
+    }
+  ];
+
+  const statsOptions = [
+    {
+      title: 'Stat Book / Classic Stats',
+      icon: '📊',
+      description: 'Player performance, team statistics, and detailed match reports.',
+      route: '/stats'
+    },
+    {
+      title: 'Match Tracking Stats',
+      icon: '📈',
+      description: 'Advanced coach analytics with substitution timelines and rotation plus/minus.',
+      route: '/coaches-corner/stats'
+    }
+  ];
+
+  const otherFeatures = [
+    {
+      title: 'Rosters & Matches',
+      icon: '⚙️',
+      description: 'Manage teams, rosters, player positions, and match configurations.',
+      route: '/settings',
+      tag: 'Management'
+    },
+    {
+      title: "Coaches' Corner",
+      icon: '🎯',
+      description: 'AI-powered drill generation, practice planning, and coaching resources.',
+      route: '/coaches-corner',
+      tag: 'Premium'
+    },
+    {
+      title: 'FAQ & How-To',
+      icon: '❓',
+      description: 'Learn how to use Loggerhead with step-by-step guides and frequently asked questions.',
+      route: 'https://www.loggerhead.app/how-to',
+      tag: 'Help'
+    }
+  ];
+
+  const styles = {
+    container: {
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      padding: isMobile ? '16px' : '20px',
+      paddingBottom: isMobile ? '100px' : '60px'
+    },
+    header: {
+      textAlign: 'center',
+      color: 'white',
+      marginBottom: isMobile ? '20px' : '30px',
+      padding: isMobile ? '16px 0' : '20px 0'
+    },
+    logo: {
+      fontSize: isMobile ? '40px' : '48px',
+      marginBottom: isMobile ? '8px' : '10px'
+    },
+    title: {
+      fontSize: isMobile ? '28px' : '32px',
+      fontWeight: 'bold',
+      marginBottom: isMobile ? '8px' : '10px',
+      textShadow: '0 2px 4px rgba(0,0,0,0.2)'
+    },
+    subtitle: {
+      fontSize: isMobile ? '14px' : '16px',
+      opacity: 0.9,
+      fontWeight: '400',
+      lineHeight: '1.4'
+    },
+    welcomeCard: {
+      background: 'rgba(255, 255, 255, 0.95)',
+      borderRadius: isMobile ? '12px' : '16px',
+      padding: isMobile ? '16px' : '20px',
+      marginBottom: isMobile ? '16px' : '20px',
+      boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+    },
+    welcomeText: {
+      fontSize: isMobile ? '13px' : '14px',
+      color: '#333',
+      lineHeight: '1.6',
+      marginBottom: '0'
+    },
+    pricingBanner: {
+      background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+      borderRadius: isMobile ? '12px' : '16px',
+      padding: isMobile ? '16px' : '20px',
+      marginBottom: isMobile ? '16px' : '20px',
+      color: 'white',
+      textAlign: 'center',
+      boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+    },
+    pricingTitle: {
+      fontSize: isMobile ? '18px' : '20px',
+      fontWeight: 'bold',
+      marginBottom: isMobile ? '10px' : '12px'
+    },
+    pricingText: {
+      fontSize: isMobile ? '13px' : '14px',
+      lineHeight: '1.6',
+      marginBottom: isMobile ? '10px' : '12px'
+    },
+    pricingHighlight: {
+      background: 'rgba(255,255,255,0.2)',
+      padding: isMobile ? '10px' : '12px',
+      borderRadius: isMobile ? '6px' : '8px',
+      fontSize: isMobile ? '12px' : '13px',
+      fontWeight: '600',
+      marginTop: isMobile ? '10px' : '12px',
+      lineHeight: '1.4'
+    },
+    featuresGrid: {
+      display: 'grid',
+      gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))',
+      gap: isMobile ? '12px' : '16px',
+      maxWidth: '1200px',
+      margin: '0 auto'
+    },
+    featureCard: {
+      background: 'white',
+      borderRadius: isMobile ? '10px' : '12px',
+      padding: isMobile ? '16px' : '20px',
+      cursor: 'pointer',
+      transition: 'all 0.3s ease',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+      position: 'relative',
+      overflow: 'hidden'
+    },
+    featureCardHover: {
+      transform: isMobile ? 'scale(0.98)' : 'translateY(-4px)',
+      boxShadow: '0 8px 16px rgba(0,0,0,0.15)'
+    },
+    featureIcon: {
+      fontSize: isMobile ? '40px' : '48px',
+      marginBottom: isMobile ? '10px' : '12px'
+    },
+    featureTitle: {
+      fontSize: isMobile ? '16px' : '18px',
+      fontWeight: 'bold',
+      color: '#333',
+      marginBottom: isMobile ? '6px' : '8px'
+    },
+    featureDescription: {
+      fontSize: isMobile ? '12px' : '13px',
+      color: '#666',
+      lineHeight: '1.5',
+      marginBottom: isMobile ? '10px' : '12px'
+    },
+    featureTag: {
+      display: 'inline-block',
+      fontSize: isMobile ? '10px' : '11px',
+      fontWeight: '600',
+      padding: isMobile ? '3px 8px' : '4px 10px',
+      borderRadius: '12px',
+      textTransform: 'uppercase',
+      letterSpacing: '0.5px'
+    },
+    loggingModeTag: {
+      background: '#e8f5e9',
+      color: '#2e7d32'
+    },
+    analyticsTag: {
+      background: '#e3f2fd',
+      color: '#1565c0'
+    },
+    managementTag: {
+      background: '#fff3e0',
+      color: '#e65100'
+    },
+    premiumTag: {
+      background: '#fce4ec',
+      color: '#c2185b'
+    },
+    helpTag: {
+      background: '#f3e5f5',
+      color: '#7b1fa2'
+    },
+    footer: {
+      textAlign: 'center',
+      color: 'white',
+      marginTop: isMobile ? '30px' : '40px',
+      padding: isMobile ? '16px' : '20px',
+      fontSize: isMobile ? '12px' : '13px',
+      opacity: 0.8
+    },
+    ctaButton: {
+      display: 'inline-block',
+      background: 'white',
+      color: '#667eea',
+      padding: isMobile ? '10px 20px' : '12px 24px',
+      borderRadius: isMobile ? '6px' : '8px',
+      fontWeight: 'bold',
+      fontSize: isMobile ? '13px' : '14px',
+      textDecoration: 'none',
+      marginTop: isMobile ? '12px' : '16px',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+      transition: 'all 0.2s ease'
+    },
+    footerLinks: {
+      marginTop: isMobile ? '6px' : '8px',
+      display: 'flex',
+      justifyContent: 'center',
+      gap: isMobile ? '12px' : '16px',
+      flexWrap: 'wrap'
+    },
+    footerLink: {
+      color: 'white',
+      textDecoration: 'none',
+      fontSize: isMobile ? '12px' : '13px'
+    },
+    expandableCard: {
+      background: 'white',
+      borderRadius: isMobile ? '10px' : '12px',
+      padding: isMobile ? '16px' : '20px',
+      cursor: 'pointer',
+      transition: 'all 0.3s ease',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+      position: 'relative',
+      overflow: 'hidden',
+      border: '2px solid transparent'
+    },
+    expandableCardActive: {
+      borderColor: '#667eea',
+      boxShadow: '0 4px 12px rgba(102, 126, 234, 0.2)'
+    },
+    statsHeader: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between'
+    },
+    statsHeaderLeft: {
+      display: 'flex',
+      alignItems: 'flex-start',
+      flexDirection: 'column',
+      flex: 1
+    },
+    expandIcon: {
+      fontSize: isMobile ? '20px' : '24px',
+      transition: 'transform 0.3s ease',
+      color: '#667eea',
+      fontWeight: 'bold'
+    },
+    expandIconRotated: {
+      transform: 'rotate(180deg)'
+    },
+    subOptionsContainer: {
+      marginTop: '16px',
+      paddingTop: '16px',
+      borderTop: '1px solid #e0e0e0',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '10px'
+    },
+    subOption: {
+      padding: isMobile ? '12px' : '14px',
+      background: '#f8f9fa',
+      borderRadius: isMobile ? '8px' : '10px',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+      border: '1px solid #e0e0e0'
+    },
+    subOptionHover: {
+      background: '#e8eaf6',
+      borderColor: '#667eea',
+      transform: 'translateX(4px)'
+    },
+    subOptionIcon: {
+      fontSize: isMobile ? '20px' : '24px',
+      marginRight: '10px'
+    },
+    subOptionTitle: {
+      fontSize: isMobile ? '14px' : '15px',
+      fontWeight: '600',
+      color: '#333',
+      marginBottom: '4px'
+    },
+    subOptionDescription: {
+      fontSize: isMobile ? '11px' : '12px',
+      color: '#666',
+      lineHeight: '1.4'
+    }
+  };
+
+  const getTagStyle = (tag) => {
+    switch (tag) {
+      case 'Logging Mode':
+        return { ...styles.featureTag, ...styles.loggingModeTag };
+      case 'Analytics':
+        return { ...styles.featureTag, ...styles.analyticsTag };
+      case 'Management':
+        return { ...styles.featureTag, ...styles.managementTag };
+      case 'Premium':
+        return { ...styles.featureTag, ...styles.premiumTag };
+      case 'Help':
+        return { ...styles.featureTag, ...styles.helpTag };
+      default:
+        return styles.featureTag;
+    }
+  };
+
+  const handleCardClick = (route) => {
+    if (route.startsWith('http')) {
+      window.location.href = route;
+      return;
+    }
+    navigate(route);
+  };
+
+  return (
+    <div style={styles.container}>
+      <div style={styles.header}>
+        <h1 style={styles.title}>Loggerhead</h1>
+        <p style={styles.subtitle}>Complete Volleyball Analytics Platform</p>
+      </div>
+
+      {user && (
+        <div style={styles.welcomeCard}>
+          <p style={styles.welcomeText}>
+            👋 Welcome back, <strong>{user.displayName}</strong>! Choose a feature below to get started.
+          </p>
+        </div>
+      )}
+
+      <div style={styles.pricingBanner}>
+        <div style={styles.pricingTitle}>🎉 Free Matches Every Day!</div>
+        <p style={styles.pricingText}>
+          Get <strong>1 free match</strong> in each special logging mode every 24 hours. And unlimited Classic Matches as well!
+        </p>
+        <div style={styles.pricingHighlight}>
+          Need more? Subscribe for unlimited matches or pay just $1.29 per match
+        </div>
+        <Link to="/profile?section=subscription" style={styles.ctaButton}>
+          View Pricing Plans
+        </Link>
+      </div>
+
+      <div style={styles.featuresGrid}>
+        {loggingModes.map((feature, index) => (
+          <div
+            key={`logging-${index}`}
+            style={styles.featureCard}
+            onClick={() => handleCardClick(feature.route)}
+            onMouseEnter={(e) => {
+              if (!isMobile && e.currentTarget) {
+                Object.assign(e.currentTarget.style, styles.featureCardHover);
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isMobile && e.currentTarget) {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+              }
+            }}
+            onTouchStart={(e) => {
+              if (isMobile && e.currentTarget) {
+                Object.assign(e.currentTarget.style, styles.featureCardHover);
+              }
+            }}
+            onTouchEnd={(e) => {
+              if (isMobile) {
+                const el = e.currentTarget;
+                setTimeout(() => {
+                  if (!el) return;
+                  el.style.transform = 'scale(1)';
+                  el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+                }, 150);
+              }
+            }}
+          >
+            <div style={styles.featureIcon}>{feature.icon}</div>
+            <h3 style={styles.featureTitle}>{feature.title}</h3>
+            <p style={styles.featureDescription}>{feature.description}</p>
+            <span style={getTagStyle(feature.tag)}>{feature.tag}</span>
+          </div>
+        ))}
+
+        <div
+          style={{
+            ...styles.expandableCard,
+            ...(expandedCard === 'stats' ? styles.expandableCardActive : {})
+          }}
+          onClick={(e) => {
+            if (e.target.closest('.sub-option')) return;
+            setExpandedCard(expandedCard === 'stats' ? null : 'stats');
+          }}
+        >
+          <div style={styles.statsHeader}>
+            <div style={styles.statsHeaderLeft}>
+              <div style={styles.featureIcon}>📉</div>
+              <h3 style={styles.featureTitle}>Stats & Analytics</h3>
+              <p style={styles.featureDescription}>
+                View player performance, team statistics, and match analytics.
+              </p>
+              <span style={getTagStyle('Analytics')}>Analytics</span>
+            </div>
+            <div
+              style={{
+                ...styles.expandIcon,
+                ...(expandedCard === 'stats' ? styles.expandIconRotated : {})
+              }}
+            >
+              ▼
+            </div>
+          </div>
+
+          {expandedCard === 'stats' && (
+            <div style={styles.subOptionsContainer}>
+              {statsOptions.map((option, index) => (
+                <div
+                  key={`stats-${index}`}
+                  className="sub-option"
+                  style={styles.subOption}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCardClick(option.route);
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isMobile && e.currentTarget) {
+                      Object.assign(e.currentTarget.style, styles.subOptionHover);
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isMobile && e.currentTarget) {
+                      e.currentTarget.style.background = '#f8f9fa';
+                      e.currentTarget.style.borderColor = '#e0e0e0';
+                      e.currentTarget.style.transform = 'translateX(0)';
+                    }
+                  }}
+                  onTouchStart={(e) => {
+                    if (isMobile && e.currentTarget) {
+                      Object.assign(e.currentTarget.style, styles.subOptionHover);
+                    }
+                  }}
+                  onTouchEnd={(e) => {
+                    if (isMobile) {
+                      const el = e.currentTarget;
+                      setTimeout(() => {
+                        if (!el) return;
+                        el.style.background = '#f8f9fa';
+                        el.style.borderColor = '#e0e0e0';
+                        el.style.transform = 'translateX(0)';
+                      }, 150);
+                    }
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+                    <span style={styles.subOptionIcon}>{option.icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={styles.subOptionTitle}>{option.title}</div>
+                      <div style={styles.subOptionDescription}>{option.description}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {otherFeatures.map((feature, index) => (
+          <div
+            key={`other-${index}`}
+            style={styles.featureCard}
+            onClick={() => handleCardClick(feature.route)}
+            onMouseEnter={(e) => {
+              if (!isMobile && e.currentTarget) {
+                Object.assign(e.currentTarget.style, styles.featureCardHover);
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isMobile && e.currentTarget) {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+              }
+            }}
+            onTouchStart={(e) => {
+              if (isMobile && e.currentTarget) {
+                Object.assign(e.currentTarget.style, styles.featureCardHover);
+              }
+            }}
+            onTouchEnd={(e) => {
+              if (isMobile) {
+                const el = e.currentTarget;
+                setTimeout(() => {
+                  if (!el) return;
+                  el.style.transform = 'scale(1)';
+                  el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+                }, 150);
+              }
+            }}
+          >
+            <div style={styles.featureIcon}>{feature.icon}</div>
+            <h3 style={styles.featureTitle}>{feature.title}</h3>
+            <p style={styles.featureDescription}>{feature.description}</p>
+            <span style={getTagStyle(feature.tag)}>{feature.tag}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={styles.footer}>
+        <p>Loggerhead v3.0 - Your complete volleyball analytics solution</p>
+        <div style={styles.footerLinks}>
+          <Link to="/about" style={styles.footerLink}>About</Link>
+          <Link to="/privacy" style={styles.footerLink}>Privacy</Link>
+          <Link to="/terms" style={styles.footerLink}>Terms</Link>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default HomePage;

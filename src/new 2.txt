@@ -1,0 +1,283 @@
+📋 Tracking status for Kevin: {isAssigned: true, isMe: true, trackedBy: 'You', trackedByUserId: '67e2fd710c1a7178579528b8', assignedAt: '2025-10-10T13:55:09.060Z'}
+ExpressStatLogger.js:2309 ✅ Kevin already assigned to me - continuing
+ExpressStatLogger.js:2415 🟢 ASSIST clicked - logging assist stat immediately
+ExpressStatLogger.js:882 🔍 DEBUG: About to log stat collaboratively: {playerId: '67e43fe6d9126f5da5c15e64', playerName: 'Kevin', label: 'Assist', statKeys: Array(2), currentMatchId: '68e90ff6762b6d1d11a94423', …}
+ExpressStatLogger.js:897 🎯 logStat wrapper called: {player: 'Kevin', label: 'Assist', statKeys: Array(2), collaborativeMode: true}
+ExpressStatLogger.js:918 📤 Attempting collaborative stat logging...
+CollaborativeProvider.js:1187 🎯 logStat called: {playerId: '67e43fe6d9126f5da5c15e64', statType: 'Assist', value: 1, collaborativeMode: true}
+CollaborativeProvider.js:1215 📋 Player assignment status: {playerId: '67e43fe6d9126f5da5c15e64', assignedTo: 'Harvey Scholl', isMyAssignment: true, loggingAsUser: 'Harvey Scholl'}
+CollaborativeProvider.js:1251 📤 Emitting log_stat via socket: {matchId: '68e90ff6762b6d1d11a94423', playerId: '67e43fe6d9126f5da5c15e64', statType: 'Assist', value: 1, timestamp: '2025-10-10T15:28:59.330Z', …}
+App.js:2725 🧹 Cleaning up set ending socket handlers
+App.js:1988 SET ENDING EFFECT FIRED: {ourScore: 4, opponentScore: 0, hasMatchId: true, hasSettings: true, isRestoring: false, …}
+App.js:2049 DELAYING: {delayMs: 1000, inCollaborative: true, owner: true}
+App.js:2639 🔍 Set ending handler useEffect check: {hasSocket: true, collaborativeMode: true, isConnected: true, currentMatchId: '68e90ff6762b6d1d11a94423', hasMatchSettings: true, …}
+App.js:2660 ✅ Socket and collaborative mode ready, registering set ending handlers
+App.js:2720 📝 Registering socket event handlers for set ending
+CollaborativeProvider.js:1276 ✅ Stat logged via socket successfully
+ExpressStatLogger.js:928 ✅ Collaborative logging succeeded
+hook.js:608 Warning: Encountered two children with the same key, `toast-1760110139442`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version. Error Component Stack
+    at div (<anonymous>)
+    at ActionToasts (<anonymous>)
+    at div (<anonymous>)
+    at ExpressStatLogger (ExpressStatLogger.js:23:1)
+    at DndProvider (DndProvider.tsx:28:1)
+    at div (<anonymous>)
+    at ExpressStatPage (ExpressStatPage.js:9:1)
+    at SubscriptionRoute (App.js:115:1)
+    at RenderedRoute (hooks.tsx:665:1)
+    at Routes (components.tsx:512:1)
+    at DndProvider (DndProvider.tsx:28:1)
+    at AppContent (App.js:333:1)
+    at CollaborativeProvider (CollaborativeProvider.js:23:1)
+    at AppWrapper (App.js:321:1)
+    at Router (components.tsx:421:1)
+    at BrowserRouter (index.tsx:789:1)
+    at AuthProvider (AuthContext.js:16:1)
+    at App (<anonymous>)
+overrideMethod @ hook.js:608
+printWarning @ react-dom.development.js:86
+error @ react-dom.development.js:60
+warnOnInvalidKey @ react-dom.development.js:13529
+reconcileChildrenArray @ react-dom.development.js:13566
+reconcileChildFibers @ react-dom.development.js:14057
+reconcileChildren @ react-dom.development.js:19186
+updateHostComponent @ react-dom.development.js:19953
+beginWork @ react-dom.development.js:21657
+beginWork$1 @ react-dom.development.js:27465
+performUnitOfWork @ react-dom.development.js:26596
+workLoopSync @ react-dom.development.js:26505
+renderRootSync @ react-dom.development.js:26473
+performConcurrentWorkOnRoot @ react-dom.development.js:25777
+workLoop @ scheduler.development.js:266
+flushWork @ scheduler.development.js:239
+performWorkUntilDeadline @ scheduler.development.js:533Understand this error
+CollaborativeProvider.js:856 ⏳ CollaborativeProvider: Assist waiting started: {assistPlayer: 'Kevin', initiatedBy: 'Harvey Scholl'}
+ExpressStatLogger.js:443 🔵 Setting assist state from OTHER user
+3hook.js:608 Warning: Encountered two children with the same key, `toast-1760110139442`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version. Error Component Stack
+    at div (<anonymous>)
+    at ActionToasts (<anonymous>)
+    at div (<anonymous>)
+    at ExpressStatLogger (ExpressStatLogger.js:23:1)
+    at DndProvider (DndProvider.tsx:28:1)
+    at div (<anonymous>)
+    at ExpressStatPage (ExpressStatPage.js:9:1)
+    at SubscriptionRoute (App.js:115:1)
+    at RenderedRoute (hooks.tsx:665:1)
+    at Routes (components.tsx:512:1)
+    at DndProvider (DndProvider.tsx:28:1)
+    at AppContent (App.js:333:1)
+    at CollaborativeProvider (CollaborativeProvider.js:23:1)
+    at AppWrapper (App.js:321:1)
+    at Router (components.tsx:421:1)
+    at BrowserRouter (index.tsx:789:1)
+    at AuthProvider (AuthContext.js:16:1)
+    at App (<anonymous>)
+overrideMethod @ hook.js:608
+printWarning @ react-dom.development.js:86
+error @ react-dom.development.js:60
+warnOnInvalidKey @ react-dom.development.js:13529
+reconcileChildrenArray @ react-dom.development.js:13566
+reconcileChildFibers @ react-dom.development.js:14057
+reconcileChildren @ react-dom.development.js:19186
+updateHostComponent @ react-dom.development.js:19953
+beginWork @ react-dom.development.js:21657
+beginWork$1 @ react-dom.development.js:27465
+performUnitOfWork @ react-dom.development.js:26596
+workLoopSync @ react-dom.development.js:26505
+renderRootSync @ react-dom.development.js:26473
+performConcurrentWorkOnRoot @ react-dom.development.js:25777
+workLoop @ scheduler.development.js:266
+flushWork @ scheduler.development.js:239
+performWorkUntilDeadline @ scheduler.development.js:533Understand this error
+App.js:471 Express: Using expressPosition data for position order conversion
+App.js:2052 CHECKING SET COMPLETION after delay: {currentSet: 1, ourScore: 4, opponentScore: 0, ourSetsWon: 0, opponentSetsWon: 0, …}
+App.js:2075 SET NOT COMPLETE
+hook.js:608 Warning: Encountered two children with the same key, `toast-1760110139442`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version. Error Component Stack
+    at div (<anonymous>)
+    at ActionToasts (<anonymous>)
+    at div (<anonymous>)
+    at ExpressStatLogger (ExpressStatLogger.js:23:1)
+    at DndProvider (DndProvider.tsx:28:1)
+    at div (<anonymous>)
+    at ExpressStatPage (ExpressStatPage.js:9:1)
+    at SubscriptionRoute (App.js:115:1)
+    at RenderedRoute (hooks.tsx:665:1)
+    at Routes (components.tsx:512:1)
+    at DndProvider (DndProvider.tsx:28:1)
+    at AppContent (App.js:333:1)
+    at CollaborativeProvider (CollaborativeProvider.js:23:1)
+    at AppWrapper (App.js:321:1)
+    at Router (components.tsx:421:1)
+    at BrowserRouter (index.tsx:789:1)
+    at AuthProvider (AuthContext.js:16:1)
+    at App (<anonymous>)
+overrideMethod @ hook.js:608
+printWarning @ react-dom.development.js:86
+error @ react-dom.development.js:60
+warnOnInvalidKey @ react-dom.development.js:13529
+reconcileChildrenArray @ react-dom.development.js:13566
+reconcileChildFibers @ react-dom.development.js:14057
+reconcileChildren @ react-dom.development.js:19186
+updateHostComponent @ react-dom.development.js:19953
+beginWork @ react-dom.development.js:21657
+beginWork$1 @ react-dom.development.js:27465
+performUnitOfWork @ react-dom.development.js:26596
+workLoopSync @ react-dom.development.js:26505
+renderRootSync @ react-dom.development.js:26473
+performConcurrentWorkOnRoot @ react-dom.development.js:25777
+workLoop @ scheduler.development.js:266
+flushWork @ scheduler.development.js:239
+performWorkUntilDeadline @ scheduler.development.js:533Understand this error
+App.js:581 Match updated successfully with position-ordered courtPlayers.
+App.js:442 currentMatchId synced to user profile
+App.js:1857 Express: Auto-saved court/position changes
+App.js:471 Express: Using expressPosition data for position order conversion
+App.js:581 Match updated successfully with position-ordered courtPlayers.
+App.js:442 currentMatchId synced to user profile
+ExpressStatLogger.js:2305 📋 Tracking status for Pam: {isAssigned: true, isMe: true, trackedBy: 'You', trackedByUserId: '67e2fd710c1a7178579528b8', assignedAt: '2025-10-10T13:55:09.018Z'}
+ExpressStatLogger.js:2309 ✅ Pam already assigned to me - continuing
+ExpressStatLogger.js:2544 🎯 KILL button clicked! {collaborativeMode: true, collaborativeAssistWaiting: true, assistWaitingPlayer: 'Kevin', flagSet: false}
+ExpressStatLogger.js:2552 🔵 Processing collaborative kill (assist already logged)
+ExpressStatLogger.js:2574 📊 Logging kill stat for: Pam
+ExpressStatLogger.js:882 🔍 DEBUG: About to log stat collaboratively: {playerId: '67e43ca8d9126f5da5c15e3d', playerName: 'Pam', label: 'Kill', statKeys: Array(3), currentMatchId: '68e90ff6762b6d1d11a94423', …}
+ExpressStatLogger.js:897 🎯 logStat wrapper called: {player: 'Pam', label: 'Kill', statKeys: Array(3), collaborativeMode: true}
+ExpressStatLogger.js:918 📤 Attempting collaborative stat logging...
+CollaborativeProvider.js:1187 🎯 logStat called: {playerId: '67e43ca8d9126f5da5c15e3d', statType: 'Kill', value: 1, collaborativeMode: true}
+CollaborativeProvider.js:1215 📋 Player assignment status: {playerId: '67e43ca8d9126f5da5c15e3d', assignedTo: 'Harvey Scholl', isMyAssignment: true, loggingAsUser: 'Harvey Scholl'}
+CollaborativeProvider.js:1251 📤 Emitting log_stat via socket: {matchId: '68e90ff6762b6d1d11a94423', playerId: '67e43ca8d9126f5da5c15e3d', statType: 'Kill', value: 1, timestamp: '2025-10-10T15:29:03.334Z', …}
+App.js:2725 🧹 Cleaning up set ending socket handlers
+App.js:1988 SET ENDING EFFECT FIRED: {ourScore: 4, opponentScore: 0, hasMatchId: true, hasSettings: true, isRestoring: false, …}
+App.js:2049 DELAYING: {delayMs: 1000, inCollaborative: true, owner: true}
+App.js:2639 🔍 Set ending handler useEffect check: {hasSocket: true, collaborativeMode: true, isConnected: true, currentMatchId: '68e90ff6762b6d1d11a94423', hasMatchSettings: true, …}
+App.js:2660 ✅ Socket and collaborative mode ready, registering set ending handlers
+App.js:2720 📝 Registering socket event handlers for set ending
+CollaborativeProvider.js:1276 ✅ Stat logged via socket successfully
+ExpressStatLogger.js:928 ✅ Collaborative logging succeeded
+App.js:1389 🎯 onOurPoint called
+overrideMethod @ hook.js:608
+(anonymous) @ App.js:1389
+(anonymous) @ ExpressStatLogger.js:2581
+await in (anonymous)
+(anonymous) @ ExpressStatLogger.js:2800
+onClick @ ExpressStatLogger.js:5258
+callCallback @ react-dom.development.js:4164
+invokeGuardedCallbackDev @ react-dom.development.js:4213
+invokeGuardedCallback @ react-dom.development.js:4277
+invokeGuardedCallbackAndCatchFirstError @ react-dom.development.js:4291
+executeDispatch @ react-dom.development.js:9041
+processDispatchQueueItemsInOrder @ react-dom.development.js:9073
+processDispatchQueue @ react-dom.development.js:9086
+dispatchEventsForPlugins @ react-dom.development.js:9097
+(anonymous) @ react-dom.development.js:9288
+batchedUpdates$1 @ react-dom.development.js:26179
+batchedUpdates @ react-dom.development.js:3991
+dispatchEventForPluginEventSystem @ react-dom.development.js:9287
+dispatchEventWithEnableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay @ react-dom.development.js:6465
+dispatchEvent @ react-dom.development.js:6457
+dispatchDiscreteEvent @ react-dom.development.js:6430
+App.js:1390 onOurPoint params: {oldScore: 4, skipCollaborative: true, reason: 'manual'}
+App.js:1396 onOurPoint called: {oldScore: 4, newScore: 5, skipCollaborative: true, reason: 'manual'}
+CollaborativeProvider.js:1492 🚀 updateCollaborativeScore called with: {team: 'our', scoreChange: 1, reason: 'earned', collaborativeMode: true, isConnected: true, …}
+CollaborativeProvider.js:1540 ✅ Score update sent successfully
+CollaborativeProvider.js:1573 Sending ball state change: {ballState: 'serve', matchId: '68e90ff6762b6d1d11a94423', userId: '67e2fd710c1a7178579528b8', version: 1}
+hook.js:608 Warning: Encountered two children with the same key, `toast-1760110143443`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version. Error Component Stack
+    at div (<anonymous>)
+    at ActionToasts (<anonymous>)
+    at div (<anonymous>)
+    at ExpressStatLogger (ExpressStatLogger.js:23:1)
+    at DndProvider (DndProvider.tsx:28:1)
+    at div (<anonymous>)
+    at ExpressStatPage (ExpressStatPage.js:9:1)
+    at SubscriptionRoute (App.js:115:1)
+    at RenderedRoute (hooks.tsx:665:1)
+    at Routes (components.tsx:512:1)
+    at DndProvider (DndProvider.tsx:28:1)
+    at AppContent (App.js:333:1)
+    at CollaborativeProvider (CollaborativeProvider.js:23:1)
+    at AppWrapper (App.js:321:1)
+    at Router (components.tsx:421:1)
+    at BrowserRouter (index.tsx:789:1)
+    at AuthProvider (AuthContext.js:16:1)
+    at App (<anonymous>)
+overrideMethod @ hook.js:608
+printWarning @ react-dom.development.js:86
+error @ react-dom.development.js:60
+warnOnInvalidKey @ react-dom.development.js:13529
+reconcileChildrenArray @ react-dom.development.js:13566
+reconcileChildFibers @ react-dom.development.js:14057
+reconcileChildren @ react-dom.development.js:19186
+updateHostComponent @ react-dom.development.js:19953
+beginWork @ react-dom.development.js:21657
+beginWork$1 @ react-dom.development.js:27465
+performUnitOfWork @ react-dom.development.js:26596
+workLoopSync @ react-dom.development.js:26505
+renderRootSync @ react-dom.development.js:26473
+performConcurrentWorkOnRoot @ react-dom.development.js:25777
+workLoop @ scheduler.development.js:266
+flushWork @ scheduler.development.js:239
+performWorkUntilDeadline @ scheduler.development.js:533Understand this error
+CollaborativeProvider.js:868 ✅ CollaborativeProvider: Assist-kill completed: {assistPlayer: 'Kevin', killPlayer: 'Pam', completedBy: 'Harvey Scholl'}
+ExpressStatLogger.js:459 🔴 CLEARING assist state from ANOTHER user via assist_kill_completed event
+App.js:2725 🧹 Cleaning up set ending socket handlers
+App.js:1988 SET ENDING EFFECT FIRED: {ourScore: 5, opponentScore: 0, hasMatchId: true, hasSettings: true, isRestoring: false, …}
+App.js:2049 DELAYING: {delayMs: 1000, inCollaborative: true, owner: true}
+App.js:2639 🔍 Set ending handler useEffect check: {hasSocket: true, collaborativeMode: true, isConnected: true, currentMatchId: '68e90ff6762b6d1d11a94423', hasMatchSettings: true, …}
+App.js:2660 ✅ Socket and collaborative mode ready, registering set ending handlers
+App.js:2720 📝 Registering socket event handlers for set ending
+3hook.js:608 Warning: Encountered two children with the same key, `toast-1760110143443`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version. Error Component Stack
+    at div (<anonymous>)
+    at ActionToasts (<anonymous>)
+    at div (<anonymous>)
+    at ExpressStatLogger (ExpressStatLogger.js:23:1)
+    at DndProvider (DndProvider.tsx:28:1)
+    at div (<anonymous>)
+    at ExpressStatPage (ExpressStatPage.js:9:1)
+    at SubscriptionRoute (App.js:115:1)
+    at RenderedRoute (hooks.tsx:665:1)
+    at Routes (components.tsx:512:1)
+    at DndProvider (DndProvider.tsx:28:1)
+    at AppContent (App.js:333:1)
+    at CollaborativeProvider (CollaborativeProvider.js:23:1)
+    at AppWrapper (App.js:321:1)
+    at Router (components.tsx:421:1)
+    at BrowserRouter (index.tsx:789:1)
+    at AuthProvider (AuthContext.js:16:1)
+    at App (<anonymous>)
+overrideMethod @ hook.js:608
+printWarning @ react-dom.development.js:86
+error @ react-dom.development.js:60
+warnOnInvalidKey @ react-dom.development.js:13529
+reconcileChildrenArray @ react-dom.development.js:13566
+reconcileChildFibers @ react-dom.development.js:14057
+reconcileChildren @ react-dom.development.js:19186
+updateHostComponent @ react-dom.development.js:19953
+beginWork @ react-dom.development.js:21657
+beginWork$1 @ react-dom.development.js:27465
+performUnitOfWork @ react-dom.development.js:26596
+workLoopSync @ react-dom.development.js:26505
+renderRootSync @ react-dom.development.js:26473
+performConcurrentWorkOnRoot @ react-dom.development.js:25777
+workLoop @ scheduler.development.js:266
+flushWork @ scheduler.development.js:239
+performWorkUntilDeadline @ scheduler.development.js:533Understand this error
+App.js:471 Express: Using expressPosition data for position order conversion
+App.js:2052 CHECKING SET COMPLETION after delay: {currentSet: 1, ourScore: 5, opponentScore: 0, ourSetsWon: 0, opponentSetsWon: 0, …}
+App.js:2075 SET NOT COMPLETE
+App.js:581 Match updated successfully with position-ordered courtPlayers.
+App.js:442 currentMatchId synced to user profile
+App.js:1857 Express: Auto-saved court/position changes
+App.js:471 Express: Using expressPosition data for position order conversion
+App.js:581 Match updated successfully with position-ordered courtPlayers.
+App.js:442 currentMatchId synced to user profile
+CollaborativeProvider.js:1845 📊 Polling for assignment updates...
+CollaborativeProvider.js:142 🔄 Loading assignments from backend for match: 68e90ff6762b6d1d11a94423
+CollaborativeProvider.js:152 ✅ Loaded 12 assignments from backend: (12) [{…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}]
+CollaborativeProvider.js:1845 📊 Polling for assignment updates...
+CollaborativeProvider.js:142 🔄 Loading assignments from backend for match: 68e90ff6762b6d1d11a94423
+CollaborativeProvider.js:152 ✅ Loaded 12 assignments from backend: (12) [{…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}]
+CollaborativeProvider.js:1845 📊 Polling for assignment updates...
+CollaborativeProvider.js:142 🔄 Loading assignments from backend for match: 68e90ff6762b6d1d11a94423
+CollaborativeProvider.js:152 ✅ Loaded 12 assignments from backend: (12) [{…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}]
+CollaborativeProvider.js:1845 📊 Polling for assignment updates...
+CollaborativeProvider.js:142 🔄 Loading assignments from backend for match: 68e90ff6762b6d1d11a94423
+CollaborativeProvider.js:152 ✅ Loaded 12 assignments from backend: (12) [{…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}]

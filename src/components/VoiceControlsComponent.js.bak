@@ -1,0 +1,320 @@
+import React, { useState, useCallback } from 'react';
+import useEnhancedVoiceCommands from '../hooks/useEnhancedVoiceCommands';
+
+const VoiceControlsComponent = ({ 
+  handleCommand, 
+  courtPlayers, 
+  gameState,
+  user, // User object with subscription info
+  onUpgrade // Function to handle subscription upgrade
+}) => {
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [transcriptionTier, setTranscriptionTier] = useState(
+    user?.subscription?.tier === 'premium' ? 'PREMIUM' : 'FREE'
+  );
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  // AWS configuration (only if user has premium access)
+  const awsConfig = user?.subscription?.tier === 'premium' ? {
+    region: process.env.REACT_APP_AWS_REGION || 'us-east-1',
+    credentials: {
+      accessKeyId: user.awsCredentials?.accessKeyId,
+      secretAccessKey: user.awsCredentials?.secretAccessKey,
+      sessionToken: user.awsCredentials?.sessionToken
+    }
+  } : null;
+
+  // Usage tracking callback
+  const handleUsageUpdate = useCallback((minutes) => {
+    console.log(`📊 Premium transcription used: ${minutes.toFixed(2)} minutes`);
+    
+    // Send usage to your backend for billing
+    if (user?.subscription?.tier === 'premium') {
+      fetch('/api/track-usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          minutes: minutes,
+          timestamp: new Date().toISOString()
+        })
+      });
+    }
+  }, [user]);
+
+  const {
+    isListening,
+    lastCommand,
+    connectionStatus,
+    usageMinutes,
+    tier,
+    manualRestart,
+    switchTier,
+    isPremium,
+    canUpgrade,
+    accuracyLevel
+  } = useEnhancedVoiceCommands(
+    handleCommand,
+    courtPlayers,
+    voiceEnabled,
+    gameState,
+    transcriptionTier,
+    awsConfig,
+    handleUsageUpdate
+  );
+
+  // Handle tier switching with validation
+  const handleTierSwitch = async (newTier) => {
+    if (newTier === 'PREMIUM') {
+      // Check if user has premium access
+      if (user?.subscription?.tier !== 'premium') {
+        setShowUpgradeModal(true);
+        return;
+      }
+      
+      // Check if AWS credentials are available
+      if (!awsConfig || !awsConfig.credentials?.accessKeyId) {
+        alert('Premium features are not available. Please contact support.');
+        return;
+      }
+    }
+
+    setTranscriptionTier(newTier);
+    await switchTier(newTier);
+  };
+
+  // Connection status styling
+  const getStatusColor = () => {
+    switch (connectionStatus) {
+      case 'connected': return 'text-green-500';
+      case 'connecting': return 'text-yellow-500';
+      case 'failed': return 'text-red-500';
+      case 'mic_denied': return 'text-red-600';
+      case 'disabled': return 'text-gray-400';
+      default: return 'text-gray-500';
+    }
+  };
+
+  const getStatusText = () => {
+    switch (connectionStatus) {
+      case 'connected': return `${isPremium ? 'Premium' : 'Standard'} Voice Active`;
+      case 'connecting': return 'Connecting...';
+      case 'failed': return 'Connection Failed';
+      case 'mic_denied': return 'Microphone Access Denied';
+      case 'disabled': return 'Voice Commands Disabled';
+      case 'not_supported': return 'Voice Recognition Not Supported';
+      default: return 'Disconnected';
+    }
+  };
+
+  return (
+    <div className="voice-controls p-4 bg-gray-50 rounded-lg">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold">Voice Commands</h3>
+        <div className="flex items-center gap-2">
+          <span className={`text-sm ${getStatusColor()}`}>
+            ● {getStatusText()}
+          </span>
+          {connectionStatus === 'failed' && (
+            <button
+              onClick={manualRestart}
+              className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Tier Selection */}
+      <div className="mb-4">
+        <div className="flex items-center gap-4 mb-2">
+          <label className="text-sm font-medium">Recognition Quality:</label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleTierSwitch('FREE')}
+              className={`px-3 py-1 text-sm rounded ${
+                tier === 'FREE'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              Standard (Free)
+            </button>
+            <button
+              onClick={() => handleTierSwitch('PREMIUM')}
+              className={`px-3 py-1 text-sm rounded ${
+                tier === 'PREMIUM'
+                  ? 'bg-purple-500 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+              disabled={!canUpgrade && tier !== 'PREMIUM'}
+            >
+              Premium {!canUpgrade && tier !== 'PREMIUM' ? '(Upgrade Required)' : ''}
+            </button>
+          </div>
+        </div>
+        
+        <div className="text-xs text-gray-600">
+          Current: {accuracyLevel} accuracy
+          {isPremium && (
+            <span className="ml-2">
+              • Usage this session: {usageMinutes.toFixed(1)} minutes
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Voice Control Toggle */}
+      <div className="flex items-center gap-3 mb-4">
+        <button
+          onClick={() => setVoiceEnabled(!voiceEnabled)}
+          className={`px-4 py-2 rounded font-medium ${
+            voiceEnabled
+              ? 'bg-red-500 text-white hover:bg-red-600'
+              : 'bg-green-500 text-white hover:bg-green-600'
+          }`}
+        >
+          {voiceEnabled ? 'Disable Voice' : 'Enable Voice'}
+        </button>
+        
+        {voiceEnabled && isListening && (
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+            <span className="text-sm text-gray-600">Listening...</span>
+          </div>
+        )}
+      </div>
+
+      {/* Last Command Display */}
+      {lastCommand && (
+        <div className="mb-4 p-3 bg-blue-50 rounded border-l-4 border-blue-400">
+          <div className="text-sm font-medium text-blue-800">Last heard:</div>
+          <div className="text-blue-600">"{lastCommand}"</div>
+        </div>
+      )}
+
+      {/* Feature Comparison */}
+      {tier === 'FREE' && canUpgrade && (
+        <div className="mt-4 p-3 bg-yellow-50 rounded border border-yellow-200">
+          <div className="text-sm">
+            <div className="font-medium text-yellow-800 mb-2">
+              🌟 Upgrade to Premium for:
+            </div>
+            <ul className="text-yellow-700 text-xs space-y-1">
+              <li>• 95%+ accuracy (vs 80% standard)</li>
+              <li>• Better noise filtering</li>
+              <li>• Support for accents and dialects</li>
+              <li>• Custom vocabulary</li>
+              <li>• Real-time processing</li>
+            </ul>
+            <button
+              onClick={() => setShowUpgradeModal(true)}
+              className="mt-2 px-3 py-1 bg-yellow-600 text-white text-xs rounded hover:bg-yellow-700"
+            >
+              Upgrade Now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Premium Usage Info */}
+      {isPremium && (
+        <div className="mt-4 p-3 bg-purple-50 rounded border border-purple-200">
+          <div className="text-sm">
+            <div className="font-medium text-purple-800 mb-1">
+              Premium Voice Recognition Active
+            </div>
+            <div className="text-purple-600 text-xs">
+              Session usage: {usageMinutes.toFixed(2)} minutes
+              {user?.subscription?.monthlyMinutes && (
+                <span className="ml-2">
+                  • Plan: {user.subscription.monthlyMinutes} min/month
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error States */}
+      {connectionStatus === 'mic_denied' && (
+        <div className="mt-4 p-3 bg-red-50 rounded border border-red-200">
+          <div className="text-sm text-red-800">
+            <div className="font-medium mb-1">Microphone Access Required</div>
+            <div className="text-xs">
+              Please allow microphone access and refresh the page to use voice commands.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {connectionStatus === 'not_supported' && (
+        <div className="mt-4 p-3 bg-gray-50 rounded border border-gray-200">
+          <div className="text-sm text-gray-700">
+            <div className="font-medium mb-1">Voice Recognition Not Available</div>
+            <div className="text-xs">
+              Your browser doesn't support voice recognition. Try using Chrome, Edge, or Safari.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upgrade Modal */}
+      {showUpgradeModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Upgrade to Premium Voice</h3>
+            
+            <div className="space-y-3 mb-6">
+              <div className="flex justify-between text-sm">
+                <span>Accuracy</span>
+                <span className="font-medium">80% → 95%+</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Noise filtering</span>
+                <span className="font-medium">Basic → Advanced</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Custom vocabulary</span>
+                <span className="font-medium">❌ → ✅</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Real-time processing</span>
+                <span className="font-medium">❌ → ✅</span>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 p-3 rounded mb-4">
+              <div className="text-sm text-blue-800">
+                <div className="font-medium">Starting at $9.99/month</div>
+                <div className="text-xs text-blue-600">200 minutes included • $0.05/additional minute</div>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowUpgradeModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
+              >
+                Maybe Later
+              </button>
+              <button
+                onClick={() => {
+                  setShowUpgradeModal(false);
+                  onUpgrade && onUpgrade();
+                }}
+                className="flex-1 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Upgrade Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default VoiceControlsComponent;

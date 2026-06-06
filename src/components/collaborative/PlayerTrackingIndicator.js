@@ -1,0 +1,30 @@
+// components/collaborative/PlayerTrackingIndicator.js
+import { useCollaborative } from './CollaborativeProvider';
+
+const PlayerTrackingIndicator = ({ playerId, playerName }) => {
+  const { getTrackingStatus } = useCollaborative();
+  
+  const status = getTrackingStatus(playerId);
+  
+  if (!status?.isAssigned) return null;
+
+  return (
+    <div style={{
+      position: 'absolute',
+      top: '2px',
+      right: '2px',
+      padding: '2px 6px',
+      borderRadius: '10px',
+      fontSize: '9px',
+      fontWeight: '600',
+      backgroundColor: status.isMe ? '#28a745' : '#007AFF',
+      color: '#fff',
+      opacity: 0.9,
+      zIndex: 10
+    }}>
+      {status.isMe ? 'YOU' : status.trackedBy.toUpperCase()}
+    </div>
+  );
+};
+
+export {PlayerTrackingIndicator};

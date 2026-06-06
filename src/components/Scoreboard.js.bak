@@ -1,0 +1,118 @@
+// Scoreboard.js
+import React from "react";
+
+const formatScore = (score) => score.toString().padStart(2, "0");
+const noSelect = {
+  userSelect: "none",
+  WebkitUserSelect: "none",
+  msUserSelect: "none",
+  MozUserSelect: "none",
+};
+
+
+const Scoreboard = ({
+  match,
+  ourScore,
+  opponentScore,
+  onAddPoint,
+  onRemovePoint,
+  ourSets = 0,
+  opponentSets = 0,
+  totalSets,
+}) => {
+  const containerStyle = {
+    width: "20%",
+   height: "150px",
+    backgroundColor: "#1C1C1E", // iOS dark background
+    borderRadius: "18px",
+	padding: "6px",
+    fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
+    boxSizing: "border-box",
+    color: "#fff",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: "space-between",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+	...noSelect,
+  };
+
+  const headerStyle = {
+    textAlign: "center",
+    fontWeight: "600",
+    fontSize: "1.5rem",
+    color: "#FF453A", // Apple red
+    letterSpacing: "0.5px",
+  };
+
+  const rowStyle = {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    fontSize: "0.85em",
+  };
+
+  const teamLabelStyle = {
+    fontSize: "0.85em",
+    fontWeight: "300",
+  };
+
+  const controlsStyle = {
+    display: "flex",
+    alignItems: "center",
+    gap: "2px",
+    fontSize: "1rem",
+    fontWeight: "600",
+    color: "#FFD60A", // Yellow
+  };
+
+  const buttonStyle = {
+    fontSize: "0.75rem",
+    padding: "2px 4px",
+    borderRadius: "6px",
+    border: "none",
+    backgroundColor: "#2C2C2E",
+    color: "#fff",
+    cursor: "pointer",
+    fontWeight: "600",
+    width: "22px",
+    height: "22px",
+    lineHeight: "18px",
+  };
+
+  const footerStyle = {
+    textAlign: "center",
+    fontSize: "0.65em",
+    fontWeight: "500",
+    color: "#D1D1D6",
+  };
+
+  return (
+    <div style={containerStyle}>
+      <div style={headerStyle}>Scoreboard</div>
+
+      <div style={rowStyle}>
+        <div style={teamLabelStyle}>{match?.teamName || "Our Team"}</div>
+        <div style={controlsStyle}>
+          <button style={buttonStyle} onClick={() => onAddPoint("our", 1)}>▲</button>
+          <button style={buttonStyle} onClick={() => onRemovePoint("our", 1)}>▼</button>
+          <span>{formatScore(ourScore)}</span>
+        </div>
+      </div>
+
+      <div style={rowStyle}>
+        <div style={teamLabelStyle}>{match?.opponentName || "Opponent"}</div>
+        <div style={controlsStyle}>
+          <button style={buttonStyle} onClick={() => onAddPoint("opponent", 1)}>▲</button>
+          <button style={buttonStyle} onClick={() => onRemovePoint("opponent", 1)}>▼</button>
+          <span>{formatScore(opponentScore)}</span>
+        </div>
+      </div>
+
+      <div style={footerStyle}>
+        Set {match?.currentSet || 1} of {match?.totalSets || 3} | {formatScore(ourSets)}–{formatScore(opponentSets)}
+      </div>
+    </div>
+  );
+};
+
+export default Scoreboard;

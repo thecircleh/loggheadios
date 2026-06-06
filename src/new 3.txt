@@ -1,0 +1,4 @@
+[Termly] Region 'us' has consent_mode set to 'opt_in'
+profile:1  GET https://ui.loggerhead.app/static/js/main.c2b20bdd.js 404 (Not Found)Understand this error
+web-client-content-script.js:2 Uncaught TypeError: Failed to execute 'observe' on 'MutationObserver': parameter 1 is not of type 'Node'.
+    at HTMLIFrameElement.<anonymous> (web-client-content-script.js:2:541792)

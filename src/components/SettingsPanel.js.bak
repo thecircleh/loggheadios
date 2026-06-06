@@ -1,0 +1,3079 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import axios from 'axios';
+import { useAuth } from './AuthContext';
+import PlayerIcon from "./PlayerIcon";
+import { useNavigate, useLocation } from 'react-router-dom';
+import TeamCopyManager from './TeamCopyManager';
+import TeamNameBuilder from './TeamNameBuilder';
+
+const getApiUrl = () => {
+  if (window.location.hostname.startsWith("10.")) {
+    return `http://${window.location.hostname}:3000`;
+  }
+  return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
+};
+
+const API_URL = getApiUrl(); 
+
+// Modern SVG Icon Components
+const StatsIcon = ({ size = 16, color = "#FFFFFF" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M3 13L7 9L11 13L21 3" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M21 9V3H15" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <rect x="3" y="15" width="4" height="6" fill={color} opacity="0.8"/>
+    <rect x="10" y="12" width="4" height="9" fill={color} opacity="0.8"/>
+    <rect x="17" y="8" width="4" height="13" fill={color} opacity="0.8"/>
+  </svg>
+);
+
+const PlayIcon = ({ size = 16, color = "#FFFFFF" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M8 5V19L19 12L8 5Z" fill={color} stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+const CollaborateIcon = ({ size = 16, color = "#FFFFFF" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M17 21V19C17 17.9391 16.5786 16.9217 15.8284 16.1716C15.0783 15.4214 14.0609 15 13 15H5C3.93913 15 2.92172 15.4214 2.17157 16.1716C1.42143 16.9217 1 17.9391 1 19V21" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <circle cx="9" cy="7" r="4" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M23 21V19C22.9993 18.1137 22.7044 17.2528 22.1614 16.5523C21.6184 15.8519 20.8581 15.3516 20 15.13" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M16 3.13C16.8604 3.35031 17.623 3.85071 18.1676 4.55232C18.7122 5.25392 19.0078 6.11683 19.0078 7.005C19.0078 7.89318 18.7122 8.75608 18.1676 9.45769C17.623 10.1593 16.8604 10.6597 16 10.88" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+const EditIcon = ({ size = 16, color = "#FFFFFF" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M11 4H4C3.46957 4 2.96086 4.21071 2.58579 4.58579C2.21071 4.96086 2 5.46957 2 6V20C2 20.5304 2.21071 21.0391 2.58579 21.4142C2.96086 21.7893 3.46957 22 4 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V13" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M18.5 2.50001C18.8978 2.10219 19.4374 1.87869 20 1.87869C20.5626 1.87869 21.1022 2.10219 21.5 2.50001C21.8978 2.89784 22.1213 3.43741 22.1213 4.00001C22.1213 4.56262 21.8978 5.10219 21.5 5.50001L12 15L8 16L9 12L18.5 2.50001Z" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+const DeleteIcon = ({ size = 16, color = "#FFFFFF" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M3 6H5H21" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M19 6V20C19 20.5304 18.7893 21.0391 18.4142 21.4142C18.0391 21.7893 17.5304 22 17 22H7C6.46957 22 5.96086 21.7893 5.58579 21.4142C5.21071 21.0391 5 20.5304 5 20V6M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M10 11V17" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M14 11V17" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+const InProcessIcon = ({ size = 16, color = "#FFFFFF" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="12" cy="12" r="10" fill={color} fillOpacity="0.2" stroke={color} strokeWidth="2"/>
+    <path d="M12 6V12L16 14" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+const CheckmarkIcon = ({ size = 16, color = "#FFFFFF" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="12" cy="12" r="10" fill={color} fillOpacity="0.2" stroke={color} strokeWidth="2"/>
+    <path d="M9 12L11 14L15 10" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+const TrophyIcon = ({ size = 16, color = "#FFFFFF" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M6 9H4.5C3.83696 9 3.20107 8.73661 2.73223 8.26777C2.26339 7.79893 2 7.16304 2 6.5C2 5.83696 2.26339 5.20107 2.73223 4.73223C3.20107 4.26339 3.83696 4 4.5 4H6" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M18 9H19.5C20.163 9 20.7989 8.73661 21.2678 8.26777C21.7366 7.79893 22 7.16304 22 6.5C22 5.83696 21.7366 5.20107 21.2678 4.73223C20.7989 4.26339 20.163 4 19.5 4H18" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M18 4V12C18 13.5913 17.3679 15.1174 16.2426 16.2426C15.1174 17.3679 13.5913 18 12 18C10.4087 18 8.88258 17.3679 7.75736 16.2426C6.63214 15.1174 6 13.5913 6 12V4" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M12 18V22" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M8 22H16" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+const LockIcon = ({ size = 16, color = "#FFFFFF" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="5" y="11" width="14" height="11" rx="2" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M7 11V7C7 5.67392 7.52678 4.40215 8.46447 3.46447C9.40215 2.52678 10.6739 2 12 2C13.3261 2 14.5979 2.52678 15.5355 3.46447C16.4732 4.40215 17 5.67392 17 7V11" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <circle cx="12" cy="16" r="1.5" fill={color}/>
+  </svg>
+);
+
+const SigmaIcon = ({ size = 16, color = "#FFFFFF" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M18 7L8 17L18 17V7Z" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M8 7H18" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+const LightningIcon = ({ size = 16, color = "#FFFFFF" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" fill={color} stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+const LinkIcon = ({ size = 16, color = "#FFFFFF" }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M10 13C10.4295 13.5741 10.9774 14.0492 11.6066 14.3929C12.2357 14.7367 12.9315 14.9411 13.6467 14.9923C14.3618 15.0435 15.0796 14.9404 15.7513 14.6898C16.4231 14.4392 17.0331 14.0471 17.54 13.54L20.54 10.54C21.4508 9.59698 21.9548 8.33397 21.9434 7.02299C21.932 5.71201 21.4061 4.45794 20.4791 3.53091C19.5521 2.60389 18.298 2.07802 16.987 2.06663C15.676 2.05523 14.413 2.55921 13.47 3.47L11.75 5.18" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M14 11C13.5705 10.4259 13.0226 9.95083 12.3934 9.60707C11.7643 9.26331 11.0685 9.05889 10.3533 9.00768C9.63819 8.95646 8.92037 9.0596 8.24861 9.31018C7.57685 9.56077 6.96689 9.9529 6.46 10.46L3.46 13.46C2.54921 14.403 2.04523 15.666 2.05662 16.977C2.06802 18.288 2.59389 19.5421 3.52091 20.4691C4.44794 21.3961 5.70201 21.922 7.01299 21.9334C8.32397 21.9448 9.58698 21.4408 10.53 20.53L12.24 18.82" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+
+const SettingsPanel = ({
+  matchSettings,
+  setMatchSettings,
+  setCurrentMatchId,
+  currentMatchId,
+  refreshBenchPlayers,
+  refreshCourtPlayers,
+  benchPlayers,
+  setBenchPlayers,
+  isMobile,
+  isPortrait,
+  isTouch,
+  onCreatePlayer,
+  onDeletePlayer,
+  onResetBench,
+  refreshBench,
+  onRecallBench,
+  handleNewMatch,
+  resetMatchStateOnly, 
+  saveMatchData,
+  setSubstitutionLog,
+  setActionLog,
+  setAllowedLiberoSubTarget,
+  setSlot5TargetId,
+  ourSetsWon,
+  opponentSetsWon,
+  setOurSetsWon,
+  setOpponentSetsWon,
+  ourScore,
+  opponentScore,
+  handleDeletePlayer,
+  setOurScore,
+  setOpponentScore,
+  courtPlayers,
+  setCourtPlayers,
+  substitutionLog,
+  actionLog,
+  playerStats,
+  allowedLiberoSubTarget,
+  slot5TargetId,
+  saveCurrentMatchToDB,
+  opponentName,
+  setOpponentName
+}) => {
+  const { user, token, isSubscriber, hasCoachesCorner, hasPremium } = useAuth();
+  const [userTeams, setUserTeams] = useState([]);
+  const [loadingTeams, setLoadingTeams] = useState(true);
+  const [archivedTeams, setArchivedTeams] = useState([]);
+  const [showArchivedTeams, setShowArchivedTeams] = useState(false);
+  const navigate = useNavigate();
+  const routerLocation = useLocation(); // Renamed to avoid conflict with match location
+  
+  const [eventName, setEventName] = useState(() => matchSettings?.eventName ?? '');
+  const [location, setLocation] = useState(() => matchSettings?.location ?? '');
+  const [maxSets, setMaxSets] = useState(() => matchSettings?.totalSets ?? 3);
+  const [playAllSets, setPlayAllSets] = useState(() => matchSettings?.playAllSets ?? false);
+  const [pointsNonDeciding, setPointsNonDeciding] = useState(() => matchSettings?.pointsNonDeciding ??  25);
+  const [pointsDeciding, setPointsDeciding] = useState(() => matchSettings?.pointsDeciding ?? 15);
+  const [newPlayerName, setNewPlayerName] = useState('');
+  const [newPlayerNumber, setNewPlayerNumber] = useState('');
+  const [savedMatches, setSavedMatches] = useState([]);
+  const [scheduledMatches, setScheduledMatches] = useState([]);
+  const [scheduleDate, setScheduleDate] = useState('');
+  const [scheduleTime, setScheduleTime] = useState('');
+  const [newPlayerPosition, setNewPlayerPosition] = useState('');
+  const [selectedTeam, setSelectedTeam] = useState(() => matchSettings?.teamName || '');
+  const [toastVisible, setToastVisible] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [eventSuggestions, setEventSuggestions] = useState([]);
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const previousUserIdRef = useRef(null);
+  const [matchAssignments, setMatchAssignments] = useState({});
+  const [editingMatch, setEditingMatch] = useState(null);
+  const [searchPlayerName, setSearchPlayerName] = useState('');
+  const [showExternalSearch, setShowExternalSearch] = useState(false);
+  const [showTeamNameBuilder, setShowTeamNameBuilder] = useState(false);
+  
+  // NEW: State for editing players
+  const [editingPlayer, setEditingPlayer] = useState(null);
+  const [playerEditFormData, setPlayerEditFormData] = useState({
+    name: '',
+    number: '',
+    position: '',
+    isLibero: false
+  });
+
+  const [editFormData, setEditFormData] = useState({
+    opponentName: '',
+    eventName: '',
+    location: '',
+    totalSets: 3,
+    playAllSets: false,
+    pointsNonDeciding: 25,
+    pointsDeciding: 15
+  });
+
+  
+  useEffect(() => {
+    if (matchSettings?.teamName && selectedTeam !== matchSettings.teamName) {
+      setSelectedTeam(matchSettings.teamName);
+    }
+  }, [matchSettings?.teamName]);
+  
+  useEffect(() => {
+  if (!matchSettings) return;
+
+  // Keep the SettingsPanel controls aligned with the authoritative matchSettings
+  if (typeof matchSettings.totalSets === "number") setMaxSets(matchSettings.totalSets);
+
+  if (typeof matchSettings.playAllSets === "boolean") setPlayAllSets(matchSettings.playAllSets);
+
+  if (matchSettings.eventName !== undefined) setEventName(matchSettings.eventName ?? "");
+  if (matchSettings.location !== undefined) setLocation(matchSettings.location ?? "");
+
+ if (matchSettings.opponentName !== undefined) setOpponentName(matchSettings.opponentName ?? "");
+
+  if (typeof matchSettings.pointsNonDeciding === "number") setPointsNonDeciding(matchSettings.pointsNonDeciding);
+  if (typeof matchSettings.pointsDeciding === "number") setPointsDeciding(matchSettings.pointsDeciding);
+}, [
+  matchSettings?.totalSets,
+  matchSettings?.playAllSets,
+  matchSettings?.eventName,
+  matchSettings?.location,
+  matchSettings?.opponentName,
+  matchSettings?.pointsNonDeciding,
+  matchSettings?.pointsDeciding,
+]);
+
+  useEffect(() => {
+    const currentUserId = user?.id;
+    const previousUserId = previousUserIdRef.current;
+
+    if (previousUserId && currentUserId !== previousUserId) {
+      console.log("User actually changed, clearing state for new user:", currentUserId);
+      
+      setBenchPlayers([]);
+      setSavedMatches([]);
+      setEventSuggestions([]);
+      setLocationSuggestions([]);
+      setSelectedTeam('');
+      setMatchAssignments({});
+      
+      setEventName('');
+      setLocation('');
+      setOpponentName('');
+      setMaxSets(3);
+      setPlayAllSets(false);
+      setPointsNonDeciding(25);
+      setPointsDeciding(15);
+      
+      setMatchSettings(prev => ({
+        ...prev,
+        teamName: '',
+        opponentName: '',
+        eventName: '',
+        location: '',
+        currentSet: 1,
+        totalSets: 3,
+        pointsNonDeciding: 25,
+        pointsDeciding: 15,
+      }));
+    } else if (previousUserId && !currentUserId) {
+      console.log("User logged out, clearing state");
+      setBenchPlayers([]);
+      setSavedMatches([]);
+      setEventSuggestions([]);
+      setLocationSuggestions([]);
+      setSelectedTeam('');
+      setMatchAssignments({});
+      setEventName('');
+      setLocation('');
+      setOpponentName('');
+      setMaxSets(3);
+      setPlayAllSets(false);
+      setPointsNonDeciding(25);
+      setPointsDeciding(15);
+      setMatchSettings(null);
+    }
+
+    previousUserIdRef.current = currentUserId;
+  }, [user?.id, setBenchPlayers, setOpponentName, setMatchSettings]);
+
+  const handleRecallBench = useCallback(async (teamName) => {
+    const res = await axios.get(`${API_URL}/api/players/bench/recall`, { 
+  params: { team: teamName },
+  headers: { Authorization: `Bearer ${token}` }
+});
+    setBenchPlayers(res.data);
+  }, [setBenchPlayers]);
+  
+  const handleArchiveTeam = async (teamName) => {
+    if (!window.confirm(`Archive team "${teamName}"? You can unarchive it later.`)) {
+      return;
+    }
+
+    try {
+      const res = await axios.post(
+        `${API_URL}/api/users/${user.id}/teams/archive`,
+        { teamName },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      setUserTeams(res.data.teams);
+      setArchivedTeams(res.data.archivedTeams || []);
+      
+      if (selectedTeam === teamName) {
+        setSelectedTeam('');
+        setBenchPlayers([]);
+      }
+
+      alert('Team archived successfully!');
+    } catch (err) {
+      console.error('Failed to archive team:', err);
+      alert(err.response?.data?.message || 'Failed to archive team. Please try again.');
+    }
+  };
+
+  const handleUnarchiveTeam = async (teamName) => {
+    try {
+      const res = await axios.post(
+        `${API_URL}/api/users/${user.id}/teams/unarchive`,
+        { teamName },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      setUserTeams(res.data.teams);
+      setArchivedTeams(res.data.archivedTeams || []);
+      
+      alert('Team unarchived successfully!');
+    } catch (err) {
+      console.error('Failed to unarchive team:', err);
+      alert(err.response?.data?.message || 'Failed to unarchive team. Please try again.');
+    }
+  };  
+
+  useEffect(() => {
+    const fetchTeams = async () => {
+      setLoadingTeams(true);
+      
+      try {
+        if (!user || !user.id) {
+          setUserTeams([]);
+          setBenchPlayers([]);
+          setSelectedTeam('');
+          return;
+        }
+
+        setUserTeams([]);
+        setBenchPlayers([]);
+        
+        const res = await axios.get(`${API_URL}/api/users/${user.id}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (res.data && Array.isArray(res.data.teams)) {
+          setUserTeams(res.data.teams);
+          setArchivedTeams(res.data.archivedTeams || []);
+
+          if (!selectedTeam && res.data.teams.length > 0) {
+            const defaultTeam = res.data.teams[0];
+            setSelectedTeam(defaultTeam);
+            setMatchSettings(prev => ({
+              ...prev,
+              opponentName: prev?.opponentName || opponentName || null,
+              teamName: defaultTeam
+            }));
+            handleRecallBench(defaultTeam);
+          }
+        } else {
+          console.warn("No teams found in user profile.");
+          setUserTeams([]);
+          setArchivedTeams([]);
+          setBenchPlayers([]);
+          setSelectedTeam('');
+        }
+      } catch (err) {
+        console.error("Failed to fetch user teams:", err);
+        setArchivedTeams([]);
+        setUserTeams([]);
+        setBenchPlayers([]);
+        setSelectedTeam('');
+      } finally {
+        setLoadingTeams(false);
+      }
+    };
+    
+    fetchTeams();
+  }, [user?.id, token, selectedTeam, setMatchSettings, handleRecallBench, setBenchPlayers]); 
+
+  const handleEditMatch = (match) => {
+    setEditingMatch(match);
+    setEditFormData({
+      opponentName: match.opponentName || '',
+      eventName: match.eventName || '',
+      location: match.location || '',
+      totalSets: match.totalSets || 3,
+      playAllSets: match.playAllSets || false,
+      pointsNonDeciding: match.pointsNonDeciding || 25,
+      pointsDeciding: match.pointsDeciding || 15
+    });
+  };
+  
+  const handleSaveEditedMatch = async () => {
+    if (!editingMatch) return;
+    
+    try {
+      await axios.put(`${API_URL}/api/matches/${editingMatch._id}`, editFormData, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setSavedMatches(prev => 
+        prev.map(m => m._id === editingMatch._id ? { ...m, ...editFormData } : m)
+      );
+      
+      setEditingMatch(null);
+      alert('Match updated successfully!');
+    } catch (err) {
+      console.error('Failed to update match:', err);
+      alert(err.response?.data?.message || 'Failed to update match. Please try again.');
+    }
+  };
+
+  // NEW: Handler to open player edit modal
+  const handleEditPlayer = (player) => {
+    setEditingPlayer(player);
+    setPlayerEditFormData({
+      name: player.name || '',
+      number: player.number || '',
+      position: player.position || '',
+      isLibero: player.isLibero || false
+    });
+  };
+
+  // NEW: Handler to save edited player
+  const handleSaveEditedPlayer = async () => {
+    if (!editingPlayer) return;
+    
+    try {
+      // Validate number
+      const playerNumber = parseInt(playerEditFormData.number);
+      if (isNaN(playerNumber) || playerNumber < 0) {
+        alert('Please enter a valid player number (0 or greater)');
+        return;
+      }
+
+      // Validate name
+      if (!playerEditFormData.name.trim()) {
+        alert('Please enter a player name');
+        return;
+      }
+
+      // Check if number is already taken by another player
+      const existingPlayer = benchPlayers.find(
+        p => p._id !== editingPlayer._id && 
+        p.number === playerNumber
+      );
+
+      if (existingPlayer) {
+        alert(`Player #${playerNumber} already exists (${existingPlayer.name}). Please choose a different number.`);
+        return;
+      }
+
+      // Update player via API
+      await axios.put(
+  `${API_URL}/api/players/${editingPlayer._id}`,
+  {
+    name: playerEditFormData.name.trim(),
+    number: playerNumber,
+    position: playerEditFormData.position,
+    isLibero: playerEditFormData.isLibero
+  },
+  { headers: { Authorization: `Bearer ${token}` } }
+);
+      
+      // Refresh the bench to get updated data
+      await handleRecallBench(selectedTeam);
+      
+      // Close modal
+      setEditingPlayer(null);
+      alert('Player updated successfully!');
+      
+    } catch (err) {
+      console.error('Failed to update player:', err);
+      alert(err.response?.data?.error || 'Failed to update player. Please try again.');
+    }
+  };
+
+  const handleCreateTeam = () => {
+    setShowTeamNameBuilder(true);
+  };
+
+const handleTeamNameBuilderSubmit = async (teamName, logoUrl = null) => {
+  if (!teamName || teamName.trim() === "") return;
+  
+  try {
+    const payload = { teamName };
+    if (logoUrl) {
+      payload.logoUrl = logoUrl;
+    }
+    
+    await axios.post(
+      `${API_URL}/api/users/${user.id}/teams`,
+      payload,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    
+    const res = await axios.get(`${API_URL}/api/users/${user.id}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    
+    setUserTeams(res.data.teams);
+    setArchivedTeams(res.data.archivedTeams || []);
+    setSelectedTeam(teamName);
+    setMatchSettings((prev) => ({ ...prev, teamName: teamName }));
+    
+    setShowTeamNameBuilder(false);
+    alert(`Team "${teamName}" created!`);
+  } catch (err) {
+    console.error("Failed to create team:", err);
+    alert(err.response?.data?.message || "Failed to create team.");
+  }
+};
+
+  const handleDeleteTeam = async (teamName) => {
+    if (!window.confirm(`Delete team "${teamName}" permanently? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+    await axios.delete(
+      `${API_URL}/api/users/${user.id}/teams/${encodeURIComponent(teamName)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+      const res = await axios.get(`${API_URL}/api/users/${user.id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      setUserTeams(res.data.teams);
+      setArchivedTeams(res.data.archivedTeams || []);
+      
+      if (selectedTeam === teamName) {
+        setSelectedTeam('');
+        setBenchPlayers([]);
+      }
+
+      alert('Team deleted successfully!');
+    } catch (err) {
+      console.error('Failed to delete team:', err);
+      alert(err.response?.data?.message || 'Failed to delete team. Please try again.');
+    }
+  };
+
+const handleAddPlayer = async (e) => {
+	e.preventDefault();
+  if (!newPlayerName.trim() || !newPlayerNumber) {
+    alert("Name and Number are required.");
+    return;
+  }
+
+  const playerNumber = parseInt(newPlayerNumber);
+  if (isNaN(playerNumber) || playerNumber < 0) {
+    alert("Please enter a valid number (0 or greater).");
+    return;
+  }
+
+  try {
+    const res = await axios.post(
+      `${API_URL}/api/players`, 
+      {
+        name: newPlayerName.trim(),
+        number: playerNumber,
+        position: newPlayerPosition || "Unknown",
+        isLibero: false,
+        team: selectedTeam,
+      },
+      {
+        headers: { Authorization: `Bearer ${token}` }  // ← ADD THIS
+      }
+    );
+
+    setBenchPlayers((prev) => [...prev, res.data]);
+
+    setNewPlayerName("");
+    setNewPlayerNumber("");
+    setNewPlayerPosition("");
+  } catch (err) {
+    console.error("Error adding player:", err);
+    alert(err.response?.data?.error || "Failed to add player.");
+  }
+};
+
+  useEffect(() => {
+    if (selectedTeam && user?.id) {
+      handleRecallBench(selectedTeam);
+    }
+  }, [selectedTeam, user?.id, handleRecallBench]);
+
+useEffect(() => {
+  const fetchSavedMatches = async () => {
+    if (!user?.id || !selectedTeam) {
+      setSavedMatches([]);
+      setScheduledMatches([]);
+      setEventSuggestions([]);
+      setLocationSuggestions([]);
+      setMatchAssignments({});
+      return;
+    }
+
+    setSavedMatches([]);
+    setScheduledMatches([]);
+    setEventSuggestions([]);
+    setLocationSuggestions([]);
+    setMatchAssignments({});
+
+    try {
+      const res = await axios.get(
+        `${API_URL}/api/matches/recall?teamName=${encodeURIComponent(selectedTeam)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const matches = Array.isArray(res.data) ? res.data : [];
+
+      // Enhance matches with creator info - fix issue where former user displays for current user's matches
+      const enhancedMatches = matches.map((match) => {
+        // If this is the current user's match, ensure their info is populated
+        if (match.userId === user.id || match.userId === user._id) {
+          return {
+            ...match,
+            userDisplayName: match.userDisplayName || user?.displayName || user?.name || user?.email || 'You',
+            userEmail: match.userEmail || user?.email || ''
+          };
+        }
+        // Otherwise keep the original data (which may have been stored from when the match was created)
+        return match;
+      });
+
+      // split into saved vs scheduled
+      const scheduled = enhancedMatches.filter((m) => m.isScheduled);
+      const saved = enhancedMatches.filter((m) => !m.isScheduled);
+
+      setSavedMatches(saved);
+      setScheduledMatches(scheduled);
+
+      // suggestions can come from all matches (or just `saved`, your call)
+      const allEvents = new Set();
+      const allLocations = new Set();
+
+      enhancedMatches.forEach((match) => {
+        if (match.eventName) allEvents.add(match.eventName);
+        if (match.location) allLocations.add(match.location);
+      });
+
+      setEventSuggestions(Array.from(allEvents));
+      setLocationSuggestions(Array.from(allLocations));
+    } catch (err) {
+      console.error('Failed to fetch saved matches', err);
+      setSavedMatches([]);
+      setScheduledMatches([]);
+      setEventSuggestions([]);
+      setLocationSuggestions([]);
+      setMatchAssignments({});
+    }
+  };
+
+  fetchSavedMatches();
+}, [user?.id, user?.displayName, user?.name, user?.email, selectedTeam, token]);
+
+
+  const checkUserHasAssignment = useCallback(async (matchId) => {
+    if (!user?.id || !matchId) return false;
+    
+    try {
+      const response = await axios.get(`${API_URL}/api/matches/${matchId}/assignments`, {
+        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true
+      });
+      
+      const assignments = response.data.assignments || [];
+      const hasAssignment = assignments.some(
+        assignment => assignment.assignedTo?.userId === user.id && assignment.isActive !== false
+      );
+      
+      setMatchAssignments(prev => ({
+        ...prev,
+        [matchId]: { hasAssignment, checked: true }
+      }));
+      
+      return hasAssignment;
+    } catch (error) {
+      console.error('Failed to check assignments for match:', matchId, error);
+      return false;
+    }
+  }, [user?.id, token]);
+
+  useEffect(() => {
+    const checkAssignmentsForMatches = async () => {
+      if (!savedMatches.length || !user?.id) return;
+      
+      const collaborativeMatches = savedMatches.filter(
+        match => match.collaborativeMode?.enabled && match.userId !== user.id
+      );
+      
+      for (const match of collaborativeMatches) {
+        if (!matchAssignments[match._id]?.checked) {
+          await checkUserHasAssignment(match._id);
+        }
+      }
+    };
+    
+    checkAssignmentsForMatches();
+  }, [savedMatches, user?.id, matchAssignments, checkUserHasAssignment]);
+
+  const handleResumeButton = async (match) => {
+    setIsRestoring(true);
+
+    try {
+      // Use handleResumeMatch which properly restores the mode and navigates correctly
+      await handleResumeMatch(match);
+    } catch (error) {
+      console.error("Failed during match resume:", error);
+      alert("Error restoring match. Please try again.");
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
+  const renderMatchActions = (match) => {
+    const isOwner = match.userId === user?.id;
+    const hasCollaborativeMode = match.collaborativeMode?.enabled || false;
+    const isFinalMatch = match.status === 'Final';
+    const isCoachMode = (match.mode || "").toLowerCase() === "match";
+    
+    const cachedAssignment = matchAssignments[match._id];
+    const hasAssignment = cachedAssignment?.hasAssignment || false;
+ const canJoinAsNonPremium = !hasPremium && hasAssignment;
+const canJoin = isOwner || hasPremium || canJoinAsNonPremium;
+
+    return (
+<div
+  style={{
+    ...styles.matchActions,
+    ...(isMobile ? styles.matchActionsMobile : styles.matchActionsDesktop),
+  }}
+>
+  {isCoachMode ? (
+    <button
+      onClick={() => navigate(`/coaches-corner/stats?match=${match._id}`)}
+      style={{ ...styles.iosActionButton, ...styles.primaryActionButton }}
+    >
+      <div style={styles.iosActionInner}>
+        <StatsIcon size={16} />
+        <span>View Match Analysis</span>
+      </div>
+    </button>
+  ) : (
+    <button
+      onClick={() =>
+        navigate(`/stats?match=${match._id}&team=${encodeURIComponent(match.teamName)}`)
+      }
+      style={{ ...styles.iosActionButton, ...styles.primaryActionButton }}
+    >
+      <div style={styles.iosActionInner}>
+        <StatsIcon size={16} />
+        <span>View Stats</span>
+      </div>
+    </button>
+  )}
+
+  {!isFinalMatch && (
+    <>
+      {hasCollaborativeMode && (
+        <button
+          onClick={() => (canJoin ? handleCollaborativeJoin(match) : null)}
+          style={{
+            ...styles.iosActionButton,
+            ...(isOwner ? styles.resumeActionButton : styles.collabActionButton),
+            opacity: canJoin ? 1 : 0.5,
+            cursor: canJoin ? "pointer" : "not-allowed",
+          }}
+          disabled={!canJoin}
+          title={
+            !canJoin
+              ? "Subscription required to join collaborative matches"
+              : canJoinAsNonPremium
+              ? "You have player assignments in this match"
+              : ""
+          }
+        >
+          <div style={styles.iosActionInner}>
+            {isOwner ? <PlayIcon size={16} /> : <CollaborateIcon size={16} />}
+            <span>{isOwner ? "Resume" : "Join Match"}</span>
+            {!hasPremium && !isOwner && !hasAssignment && <LockIcon size={13} />}
+          </div>
+        </button>
+      )}
+
+      {!hasCollaborativeMode && isOwner && (
+        <button
+          onClick={() => handleResumeButton(match)}
+          style={{ ...styles.iosActionButton, ...styles.resumeActionButton }}
+        >
+          <div style={styles.iosActionInner}>
+            <PlayIcon size={16} />
+            <span>Resume</span>
+          </div>
+        </button>
+      )}
+
+      {isOwner && (
+        <button
+          onClick={() => handleEditMatch(match)}
+          style={{ ...styles.iosActionButton, ...styles.secondaryActionButton }}
+          title="Edit match settings"
+        >
+          <div style={styles.iosActionInner}>
+            <EditIcon size={16} color="#374151" />
+            <span>Edit</span>
+          </div>
+        </button>
+      )}
+    </>
+  )}
+
+  {isOwner && (
+    <button
+      onClick={() => handleDeleteMatch(match._id)}
+      style={{ ...styles.iosActionButton, ...styles.destructiveActionButton }}
+    >
+      <div style={styles.iosActionInner}>
+        <DeleteIcon size={16} color="#dc2626" />
+        <span>Delete</span>
+      </div>
+    </button>
+  )}
+</div>
+    );
+  };
+
+  const handleTeamSelect = async (teamName) => {
+    setSelectedTeam(teamName);
+    setMatchSettings((prev) => ({ ...prev, teamName: teamName }));
+    await handleRecallBench(teamName);
+  };
+
+  const handleLiberoToggle = async (playerId) => {
+    const player = benchPlayers.find((p) => p._id === playerId);
+    if (!player) return;
+
+    const newLiberoStatus = !player.isLibero;
+
+    setBenchPlayers((prevPlayers) =>
+      prevPlayers.map((player) =>
+        player._id === playerId ? { ...player, isLibero: newLiberoStatus } : player
+      )
+    );
+
+    try {
+ await axios.put(
+  `${API_URL}/api/players/${playerId}`, 
+  {
+    isLibero: newLiberoStatus,
+  },
+  { headers: { Authorization: `Bearer ${token}` } }
+);
+    } catch (err) {
+      console.error("Failed to update libero status:", err);
+      setBenchPlayers((prevPlayers) =>
+        prevPlayers.map((player) =>
+          player._id === playerId ? { ...player, isLibero: !player.isLibero } : player
+        )
+      );
+      alert("Failed to update libero status. Please try again.");
+    }
+  };
+
+  const handleFindPlayerOnTeams = (playerName) => {
+    setSearchPlayerName(playerName);
+    setShowExternalSearch(true);
+  };
+
+  const handleCloseExternalSearch = () => {
+    setShowExternalSearch(false);
+    setSearchPlayerName('');
+  };
+
+  // Helper function to validate roster before starting match
+  const validateRosteredTeam = () => {
+    if (!selectedTeam) {
+      alert("Please select a team before starting a match.");
+      return false;
+    }
+    
+    if (!benchPlayers || benchPlayers.length === 0) {
+      alert("Please add players to your roster before starting a match. A rostered team is required.");
+      return false;
+    }
+    
+    return true;
+  };
+
+  const handleSaveAndStartMatchTracking = async () => {
+    if (!validateRosteredTeam()) return;
+    
+    const updatedSettings = {
+      ...matchSettings,
+      opponentName,
+      totalSets: maxSets, 
+      playAllSets,
+      eventName,
+      location,
+      pointsNonDeciding,
+      pointsDeciding,
+      teamName: selectedTeam,
+	  mode: 'match',
+    };
+
+    setMatchSettings(updatedSettings);
+
+    setTimeout(async () => {
+      await handleNewMatch(updatedSettings);
+      
+      setToastVisible(true);
+
+      setTimeout(() => {
+        setToastVisible(false);
+        navigate("/match-tracking");
+      }, 1000);
+    }, 100); 
+  };
+
+  const handleSaveAndStartMatch = async () => {
+    if (!validateRosteredTeam()) return;
+    
+    const updatedSettings = {
+      ...matchSettings,
+      opponentName,
+      totalSets: maxSets, 
+      playAllSets,
+      eventName,
+      location,
+      pointsNonDeciding,
+      pointsDeciding,
+      teamName: selectedTeam,
+	  mode: 'classic',
+    };
+
+    setMatchSettings(updatedSettings);
+
+    setTimeout(async () => {
+      await handleNewMatch(updatedSettings);
+      
+      setToastVisible(true);
+
+      setTimeout(() => {
+        setToastVisible(false);
+        navigate("/classic");
+      }, 1000);
+    }, 100); 
+  };
+
+  const handleExpressMatch = async () => {
+    if (!validateRosteredTeam()) return;
+    
+    const updatedSettings = {
+      ...matchSettings,
+      opponentName,
+      totalSets: maxSets, 
+      playAllSets,
+      eventName,
+      location,
+      pointsNonDeciding,
+      pointsDeciding,
+      teamName: selectedTeam,
+	  mode: 'statbook',
+      collaborativeMode: { 
+        enabled: false,
+        allowedUsers: [], 
+        maxUsers: 1
+      }
+    };
+
+    setMatchSettings(updatedSettings);
+
+    setTimeout(async () => {
+      await handleNewMatch(updatedSettings);
+      
+      setToastVisible(true);
+
+      setTimeout(() => {
+        setToastVisible(false);
+        navigate("/stat-book");
+      }, 1000);
+    }, 100); 
+  };
+
+  const handleCollabMatch = async () => {
+    if (!validateRosteredTeam()) return;
+    
+    const updatedSettings = {
+      ...matchSettings,
+      opponentName,
+      totalSets: maxSets, 
+      playAllSets,
+      eventName,
+      location,
+      pointsNonDeciding,
+      pointsDeciding,
+      teamName: selectedTeam,
+	  mode: 'collab',
+      collaborativeMode: { 
+        enabled: true,
+        allowedUsers: [], 
+        maxUsers: 15
+      }
+    };
+
+    setMatchSettings(updatedSettings);
+
+    setTimeout(async () => {
+      await handleNewMatch(updatedSettings);
+      
+      setToastVisible(true);
+
+      setTimeout(() => {
+        setToastVisible(false);
+        navigate("/stat-book");
+      }, 1000);
+    }, 100); 
+  };
+
+  const handleResumeMatch = async (match) => {
+   try {
+    if (!match) {
+      alert("No match data provided.");
+      return;
+    }
+
+    const isOwner = String(match.userId) === String(user.id || user._id);
+    const hasTeamAccess = user.teams && user.teams.includes(match.teamName);
+    const canAccessMatch = isOwner || hasTeamAccess;
+
+    if (!canAccessMatch) {
+      console.error(`SECURITY: User ${user.id} cannot access match ${match._id}`);
+      alert("Access denied: You don't have permission to view this match.");
+      return;
+    }
+
+    setCurrentMatchId(match._id);
+    
+    try {
+      await axios.put(`${API_URL}/api/users/${user.id}/match-id`, {
+        currentMatchId: match._id
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+    } catch (err) {
+      console.error("Failed to update currentMatchId", err);
+    }
+    
+    // ✅ NEW: Navigate based on match mode
+    const mode = (match.mode || "Gameflow").toLowerCase();
+    console.log(`📍 RESUME MATCH - match.mode from DB:`, match.mode, "normalized to:", mode);
+    setTimeout(() => {
+      console.log(`📍 Navigating to correct mode: ${mode}`);
+      if (mode === "statbook") {
+        navigate("/stat-book", { replace: true });
+      } else if (mode === "collab") {
+        navigate("/stat-book?collab=true", { replace: true });
+      } else if (mode === "gameflow" || mode === "classic") {
+        navigate("/classic", { replace: true });
+      } else {
+        navigate("/match-tracking", { replace: true });
+      }
+    }, 100);
+    
+  } catch (err) {
+    console.error("Error during match resume:", err);
+    alert("Failed to resume the match. Please try again.");
+  }
+};
+
+const handleStartScheduledMatch = async (match, mode) => {
+  if (!validateRosteredTeam()) return;
+  
+  try {
+    const res = await axios.put(
+      `${API_URL}/api/matches/start/${match._id}`,
+      { mode },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    const updated = res.data;
+
+    // ✅ IMPORTANT: await resume so currentMatchId is set BEFORE leaving settings
+    await handleResumeMatch(updated);
+
+    // ✅ IMPORTANT: wipe in-memory UI state so Express starts clean
+    if (typeof resetMatchStateOnly === "function") {
+      resetMatchStateOnly();
+    }
+
+    // Now go to the right mode
+    if (mode === "classic") navigate("/classic", { replace: true });
+    if (mode === "statbook") navigate("/stat-book", { replace: true });
+    if (mode === "collab") navigate("/stat-book?collab=true", { replace: true });
+    if (mode === "match") navigate("/match-tracking", { replace: true });
+
+  } catch (err) {
+    console.error("Failed to start scheduled match", err);
+    alert("Could not start scheduled match.");
+  }
+};
+
+const handleScheduleMatch = async () => {
+  if (!selectedTeam) {
+    alert("Select a team before scheduling a match.");
+    return;
+  }
+
+  if (!scheduleDate) {
+    alert("Pick a match date.");
+    return;
+  }
+
+  // Build scheduled datetime (needs the "T")
+  const when = new Date(`${scheduleDate}T${scheduleTime || "09:00"}:00`);
+  
+  // --- prevent duplicate scheduled match: same team + opponent + date/time ---
+const normalizeOpponent = (s) => (s || "").trim().toLowerCase();
+const opponentKey = normalizeOpponent(opponentName || "Opponent");
+
+// use epoch minutes to avoid ms/seconds differences
+const whenKey = Math.floor(when.getTime() / 60000);
+
+const isDup = (scheduledMatches || []).some((m) => {
+  const mOpponentKey = normalizeOpponent(m.opponentName);
+  const mWhen = m.scheduledFor ? new Date(m.scheduledFor) : null;
+  const mWhenKey = mWhen ? Math.floor(mWhen.getTime() / 60000) : null;
+
+  return (
+    (m.teamName || "") === (selectedTeam || "") &&
+    mOpponentKey === opponentKey &&
+    mWhenKey === whenKey
+  );
+});
+
+if (isDup) {
+  alert("That match is already scheduled for the same opponent at that time.");
+  return;
+}
+
+
+  const payload = {
+    userId: user?.id || user?._id,
+    userEmail: user?.email || user?.userEmail || "",
+    userDisplayName:
+      user?.displayName ||
+      user?.name ||
+      user?.fullName ||
+      ((user?.firstName || user?.lastName)
+        ? `${user?.firstName || ""} ${user?.lastName || ""}`.trim()
+        : ""),
+
+    teamName: selectedTeam,
+    opponentName: opponentName || "Opponent",
+    eventName,
+    location,
+    currentSet: 1,
+    totalSets: maxSets,
+    playAllSets,
+    pointsNonDeciding,
+    pointsDeciding,
+    ourScore: 0,
+    opponentScore: 0,
+    courtPlayers: [],
+    benchPlayers: [],
+    substitutionLog: [],
+    actionLog: [],
+    liberoSubTargets: { allowedLiberoSubTarget: null, slot5TargetId: null },
+
+    status: "Scheduled",
+    isScheduled: true,
+    scheduledFor: when,
+  };
+
+  try {
+    const res = await axios.post(
+      `${API_URL}/api/matches/save`,
+      payload,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    const created = res.data;
+
+    const createdWithOwner = {
+      ...created,
+      userId: created.userId || payload.userId,
+      userDisplayName:
+        created.userDisplayName ||
+        payload.userDisplayName ||
+        user?.displayName ||
+        user?.name ||
+        "",
+      userEmail:
+        created.userEmail ||
+        payload.userEmail ||
+        user?.email ||
+        "",
+    };
+
+    setScheduledMatches((prev) => [createdWithOwner, ...prev]);
+
+    setScheduleDate("");
+    setScheduleTime("");
+
+    alert("Match scheduled!");
+  } catch (err) {
+    console.error("Failed to schedule match:", err);
+    alert("Could not schedule match. Please try again.");
+  }
+};
+
+
+  const handleCollaborativeJoin = async (match) => {
+    try {
+      setIsRestoring(true);
+      
+      const isOwner = match.userId === user?.id;
+      console.log(`${isOwner ? 'Resuming' : 'Joining'} collaborative match ${match._id}`);
+      
+      // CRITICAL: Update currentMatchId in database FIRST, before any navigation
+      try {
+        await axios.put(`${API_URL}/api/users/${user.id}/match-id`, {
+          currentMatchId: match._id
+        }, {
+          headers: { Authorization: `Bearer ${token}` },
+          withCredentials: true
+        });
+        console.log(`✅ Database updated: currentMatchId set to ${match._id}`);
+        
+        // Update local state
+        setCurrentMatchId(match._id);
+        console.log(`✅ Local state updated: currentMatchId set to ${match._id}`);
+        
+      } catch (err) {
+        console.error("Failed to set collaborative match as currentMatchId", err);
+        throw new Error("Failed to update match ID. Please try again.");
+      }
+      
+      // Now resume the match (this will load match data and set up state)
+      await handleResumeMatch(match);
+      
+      // Navigate to the appropriate mode based on match.mode
+      // handleResumeMatch already navigates, so we don't need to do it again
+      console.log(`✅ Successfully joined collaborative match ${match._id}`);
+      
+    } catch (error) {
+      const isOwner = match.userId === user?.id;
+      console.error(`Failed to ${isOwner ? 'resume' : 'join'} collaborative match:`, error);
+      alert(`Error ${isOwner ? 'resuming' : 'joining'} collaborative match. Please try again.`);
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
+  const renderEditModal = () => {
+    if (!editingMatch) return null;
+    
+    return (
+      <div style={styles.modalOverlay} onClick={() => setEditingMatch(null)}>
+        <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+          <h2 style={styles.modalTitle}>Edit Match Settings</h2>
+          
+          <div style={styles.editForm}>
+            <div style={styles.formField}>
+              <label style={styles.formLabel}>Opponent</label>
+              <input
+                type="text"
+                value={editFormData.opponentName}
+                onChange={(e) => setEditFormData(prev => ({ ...prev, opponentName: e.target.value }))}
+                style={styles.formInput}
+              />
+            </div>
+            
+            <div style={styles.formField}>
+              <label style={styles.formLabel}>Event</label>
+              <input
+                type="text"
+                value={editFormData.eventName}
+                onChange={(e) => setEditFormData(prev => ({ ...prev, eventName: e.target.value }))}
+                style={styles.formInput}
+              />
+            </div>
+            
+            <div style={styles.formField}>
+              <label style={styles.formLabel}>Location</label>
+              <input
+                type="text"
+                value={editFormData.location}
+                onChange={(e) => setEditFormData(prev => ({ ...prev, location: e.target.value }))}
+                style={styles.formInput}
+              />
+            </div>
+            
+            <div style={styles.formField}>
+              <label style={styles.formLabel}>Max Sets</label>
+              <input
+                type="number"
+                value={editFormData.totalSets}
+                onChange={(e) => setEditFormData(prev => ({ ...prev, totalSets: parseInt(e.target.value) || 0 }))}
+                style={styles.formInput}
+                min="1"
+                max="5"
+              />
+            </div>
+            
+            <div style={styles.formField}>
+              <label style={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={editFormData.playAllSets}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, playAllSets: e.target.checked }))}
+                  style={{ marginRight: '8px' }}
+                />
+                Play all sets regardless of outcome
+              </label>
+            </div>
+            
+            <div style={styles.formField}>
+              <label style={styles.formLabel}>Points per Set</label>
+              <input
+                type="number"
+                value={editFormData.pointsNonDeciding}
+                onChange={(e) => setEditFormData(prev => ({ ...prev, pointsNonDeciding: parseInt(e.target.value) || 0 }))}
+                style={styles.formInput}
+                min="1"
+              />
+            </div>
+            
+            <div style={styles.formField}>
+              <label style={styles.formLabel}>Deciding Set Points</label>
+              <input
+                type="number"
+                value={editFormData.pointsDeciding}
+                onChange={(e) => setEditFormData(prev => ({ ...prev, pointsDeciding: parseInt(e.target.value) || 0 }))}
+                style={styles.formInput}
+                min="1"
+              />
+            </div>
+          </div>
+          
+          <div style={styles.modalActions}>
+            <button onClick={() => setEditingMatch(null)} style={styles.cancelButton}>
+              Cancel
+            </button>
+            <button onClick={handleSaveEditedMatch} style={styles.saveButton}>
+              Save Changes
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // NEW: Render player edit modal
+  const renderPlayerEditModal = () => {
+    if (!editingPlayer) return null;
+    
+    return (
+      <div style={styles.modalOverlay} onClick={() => setEditingPlayer(null)}>
+        <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+          <h2 style={styles.modalTitle}>Edit Player</h2>
+          
+          <div style={styles.editForm}>
+            <div style={styles.formField}>
+              <label style={styles.formLabel}>Name</label>
+              <input
+                type="text"
+                value={playerEditFormData.name}
+                onChange={(e) => setPlayerEditFormData(prev => ({ ...prev, name: e.target.value }))}
+                style={styles.formInput}
+                placeholder="Player name"
+              />
+            </div>
+            
+            <div style={styles.formField}>
+              <label style={styles.formLabel}>Number</label>
+              <input
+                type="number"
+                value={playerEditFormData.number}
+                onChange={(e) => setPlayerEditFormData(prev => ({ ...prev, number: e.target.value }))}
+                style={styles.formInput}
+                min="0"
+                placeholder="Jersey number"
+              />
+            </div>
+            
+            <div style={styles.formField}>
+              <label style={styles.formLabel}>Position</label>
+              <select
+                value={playerEditFormData.position}
+                onChange={(e) => setPlayerEditFormData(prev => ({ ...prev, position: e.target.value }))}
+                style={styles.formInput}
+              >
+                <option value="">Select Position</option>
+                <option value="OH">OH (Outside Hitter)</option>
+                <option value="MB">MB (Middle Blocker)</option>
+                <option value="S">S (Setter)</option>
+                <option value="OPP">OPP (Opposite)</option>
+                <option value="DS">DS (Defensive Specialist)</option>
+              </select>
+            </div>
+            
+            <div style={styles.formField}>
+              <label style={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={playerEditFormData.isLibero}
+                  onChange={(e) => setPlayerEditFormData(prev => ({ ...prev, isLibero: e.target.checked }))}
+                  style={{ marginRight: '8px' }}
+                />
+                Libero
+              </label>
+            </div>
+          </div>
+          
+          <div style={styles.modalActions}>
+            <button onClick={() => setEditingPlayer(null)} style={styles.cancelButton}>
+              Cancel
+            </button>
+            <button onClick={handleSaveEditedPlayer} style={styles.saveButton}>
+              Save Changes
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const handleDeleteMatch = async (matchId) => {
+    if (!window.confirm("Delete this match permanently?")) return;
+    try {
+      await axios.delete(
+  `${API_URL}/api/matches/delete/${matchId}`,
+  { headers: { Authorization: `Bearer ${token}` } }
+);
+	  setSavedMatches((prev) => prev.filter((m) => m._id !== matchId));
+      setScheduledMatches((prev) => prev.filter((m) => m._id !== matchId));
+    } catch (err) {
+      console.error("Failed to delete match", err);
+    }
+  };
+
+const groupByEvent = (matches) =>
+  (matches || []).reduce((acc, match) => {
+    const key = match.eventName?.trim() || "No Event";
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(match);
+    return acc;
+  }, {});
+
+const inProcessMatches = (savedMatches || []).filter(
+  (m) => (m.status || "In Process") !== "Final"
+);
+
+const finalMatches = (savedMatches || []).filter(
+  (m) => m.status === "Final"
+);
+
+const groupedInProcessByEvent = groupByEvent(inProcessMatches);
+const groupedFinalByEvent = groupByEvent(finalMatches);
+
+
+  const gridContainerStyle = {
+    display: 'grid',
+    gridTemplateColumns: isMobile && isPortrait
+      ? 'repeat(2, 1fr)'
+      : isMobile
+      ? 'repeat(3, 1fr)'
+      : 'repeat(auto-fill, minmax(200px, 1fr))',
+    gap: isMobile && isPortrait ? '12px' : '16px',
+    padding: 0,
+    marginTop: '16px',
+  };
+
+  const formContainerStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: isMobile ? '12px' : '16px',
+    padding: isMobile ? '8px 0' : '10px 0',
+  };
+
+  const fieldStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+  };
+
+  const inputStyle = {
+    padding: isMobile ? '9px' : '10px',
+    fontSize: '16px', // Keep 16px to prevent iOS zoom
+    border: '1px solid #ccc',
+    borderRadius: isMobile ? '6px' : '6px',
+    marginTop: '4px',
+  };
+
+  const styles = {
+    // ============================================
+    // CONTAINER - Better mobile padding
+    // ============================================
+    container: {
+      padding: 0,
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      backgroundColor: '#F8F9FA',
+      minHeight: '100vh',
+      width: '100%',
+      paddingBottom: isMobile ? '24px' : '32px',
+    },
+    
+    // ============================================
+    // HEADERS - Cleaner hierarchy
+    // ============================================
+    header: {
+      fontSize: isMobile && isPortrait ? '24px' : '28px',
+      fontWeight: '700',
+      color: '#1C1C1E',
+      padding: isMobile && isPortrait ? '20px 16px 12px' : '28px 20px 16px',
+      margin: 0,
+      backgroundColor: 'white',
+      borderBottom: '1px solid #E9ECEF',
+      letterSpacing: '-0.5px',
+    },
+    
+    sectionTitle: {
+      fontSize: isMobile && isPortrait ? '18px' : '20px',
+      fontWeight: '600',
+      margin: isMobile && isPortrait ? '24px 0 12px' : '32px 0 16px',
+      color: '#1C1C1E',
+      padding: isMobile && isPortrait ? '0 16px' : '0 20px',
+    },
+    
+    // ============================================
+    // CARDS - More elegant
+    // ============================================
+    card: {
+      backgroundColor: 'white',
+      borderRadius: '16px',
+      padding: isMobile && isPortrait ? '20px 16px' : '24px',
+      boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+      marginBottom: isMobile ? '16px' : '20px',
+      marginLeft: isMobile && isPortrait ? '16px' : '20px',
+      marginRight: isMobile && isPortrait ? '16px' : '20px',
+      border: '1px solid #E9ECEF',
+    },
+    
+    cardTitle: {
+      fontSize: isMobile && isPortrait ? '18px' : '20px',
+      fontWeight: '600',
+      marginBottom: '16px',
+      color: '#1C1C1E',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+    },
+    
+    // ============================================
+    // ROSTER GRID - Better spacing
+    // ============================================
+    rosterContainer: {
+      padding: 0,
+      backgroundColor: 'transparent',
+      borderRadius: 0,
+      boxShadow: 'none',
+    },
+    
+    // ============================================
+    // PLAYER CARDS - Much cleaner
+    // ============================================
+    playerCard: {
+      backgroundColor: '#F8F9FA',
+      borderRadius: '14px',
+      padding: isMobile && isPortrait ? '16px 12px' : '18px 14px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '12px',
+      border: '1px solid #E9ECEF',
+      minHeight: 'auto',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+    },
+    
+    playerInfo: {
+      textAlign: 'center',
+      fontSize: '14px',
+      fontWeight: '500',
+      color: '#1C1C1E',
+      width: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '4px',
+      alignItems: 'center',
+    },
+    
+    playerName: {
+      fontSize: isMobile && isPortrait ? '16px' : '17px',
+      fontWeight: '600',
+      color: '#1C1C1E',
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      maxWidth: '100%',
+      textAlign: 'center',
+    },
+    
+    playerNumber: {
+      fontSize: isMobile && isPortrait ? '13px' : '14px',
+      fontWeight: '600',
+      color: '#6C757D',
+      backgroundColor: 'white',
+      padding: '4px 10px',
+      borderRadius: '8px',
+      border: '1px solid #DEE2E6',
+    },
+    
+    // ============================================
+    // FORMS - Better inputs
+    // ============================================
+    form: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: isMobile && isPortrait ? '12px' : '14px',
+      marginTop: '20px',
+    },
+    
+    select: {
+      width: '100%',
+      padding: '14px 16px',
+      fontSize: '16px',
+      borderRadius: '12px',
+      border: '2px solid #DEE2E6',
+      backgroundColor: 'white',
+      cursor: 'pointer',
+      fontWeight: '500',
+      color: '#1C1C1E',
+      transition: 'all 0.2s ease',
+    },
+    
+    input: {
+      width: '100%',
+      padding: '14px 16px',
+      fontSize: '16px',
+      borderRadius: '12px',
+      border: '2px solid #DEE2E6',
+      backgroundColor: 'white',
+      transition: 'border-color 0.2s ease',
+      fontWeight: '400',
+      boxSizing: 'border-box',
+    },
+    
+    // ============================================
+    // BUTTONS - Much better
+    // ============================================
+    primaryButton: {
+      width: '100%',
+      padding: isMobile && isPortrait ? '14px 16px' : '16px 24px',
+      fontSize: isMobile && isPortrait ? '15px' : '16px',
+      backgroundColor: '#007AFF',
+      color: 'white',
+      border: 'none',
+      borderRadius: '12px',
+      fontWeight: '600',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+      boxShadow: '0 2px 8px rgba(0, 122, 255, 0.25)',
+      textAlign: 'center',
+      boxSizing: 'border-box',
+      whiteSpace: isMobile && isPortrait ? 'normal' : 'nowrap',
+      lineHeight: '1.4',
+    },
+    
+    secondaryButton: {
+      padding: isMobile && isPortrait ? '12px 16px' : '14px 20px',
+      backgroundColor: '#F8F9FA',
+      border: '1px solid #DEE2E6',
+      borderRadius: '12px',
+      fontSize: '15px',
+      fontWeight: '600',
+      color: '#495057',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+      textAlign: 'center',
+      flex: isMobile && isPortrait ? '1 1 calc(50% - 4px)' : '0 1 auto',
+      minWidth: isMobile && isPortrait ? '0' : 'auto',
+    },
+    
+    buttonRow: {
+      display: 'flex',
+      flexDirection: isMobile && isPortrait ? 'column' : 'row',
+      gap: isMobile && isPortrait ? '10px' : '12px',
+      marginTop: '16px',
+      flexWrap: 'wrap',
+    },
+    
+    // ============================================
+    // TOGGLE SWITCHES - iOS style
+    // ============================================
+    toggleLabel: {
+      position: 'relative',
+      width: '52px',
+      height: '32px',
+      backgroundColor: '#DEE2E6',
+      borderRadius: '16px',
+      cursor: 'pointer',
+      transition: 'background-color 0.3s ease',
+      display: 'inline-block',
+      border: 'none',
+      padding: 0,
+    },
+    
+    toggleChecked: {
+      backgroundColor: '#34C759',
+    },
+    
+    toggleInput: {
+      opacity: 0,
+      width: 0,
+      height: 0,
+      position: 'absolute',
+    },
+    
+    toggleSlider: {
+      position: 'absolute',
+      top: '3px',
+      left: '3px',
+      width: '26px',
+      height: '26px',
+      backgroundColor: 'white',
+      borderRadius: '50%',
+      transition: 'transform 0.3s ease',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+    },
+    
+    toggleSliderChecked: {
+      left: '23px',
+    },
+    
+    // ============================================
+    // ACTION BUTTONS - Cleaner icons
+    // ============================================
+    editButton: {
+      background: '#f3f4f6',
+      color: '#374151',
+      border: '1.5px solid #e5e7eb',
+      borderRadius: '8px',
+      padding: '5px 8px',
+      width: '30px',
+      height: '30px',
+      fontSize: '13px',
+      fontWeight: '600',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+
+    linkButton: {
+      background: '#f3f4f6',
+      color: '#5856D6',
+      border: '1.5px solid #e5e7eb',
+      borderRadius: '8px',
+      padding: '5px 8px',
+      width: '30px',
+      height: '30px',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+
+    deleteButton: {
+      background: 'rgba(220,38,38,0.07)',
+      color: '#dc2626',
+      border: '1.5px solid rgba(220,38,38,0.2)',
+      borderRadius: '8px',
+      padding: '5px 8px',
+      width: '30px',
+      height: '30px',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    
+    // ============================================
+    // SAVED MATCHES - Better layout
+    // ============================================
+    savedMatchItem: {
+      display: 'flex',
+      flexDirection: 'column',
+      backgroundColor: 'white',
+      padding: isMobile && isPortrait ? '16px' : '18px',
+      borderRadius: '14px',
+      boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+      border: '1px solid #E9ECEF',
+      gap: '12px',
+    },
+    
+    savedMatchInfo: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '6px',
+      flex: 1,
+    },
+    
+    matchTitle: {
+      fontSize: isMobile && isPortrait ? '16px' : '17px',
+      fontWeight: '600',
+      color: '#1C1C1E',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+      flexWrap: 'wrap',
+    },
+    
+    matchDetails: {
+      fontSize: '14px',
+      color: '#6C757D',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+      flexWrap: 'wrap',
+    },
+    
+    matchOwnerInfo: {
+      fontSize: '12px',
+      color: '#ADB5BD',
+      fontStyle: 'italic',
+    },
+    
+    // ============================================
+    // MATCH ACTIONS - Grid layout
+    // ============================================
+    matchActions: {
+      width: '100%',
+      marginTop: '10px',
+    },
+
+    matchActionsDesktop: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '8px',
+      alignItems: 'center',
+    },
+
+    matchActionsMobile: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '8px',
+      alignItems: 'center',
+    },
+
+    iosActionButton: {
+      width: 'auto',
+      minWidth: 0,
+      minHeight: '36px',
+      borderRadius: '8px',
+      fontSize: '13px',
+      border: 'none',
+      cursor: 'pointer',
+      fontWeight: '600',
+      transition: 'opacity 0.15s',
+      padding: '7px 14px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      boxSizing: 'border-box',
+      flexShrink: 0,
+    },
+
+    iosActionInner: {
+      display: 'flex',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '5px',
+      fontSize: '13px',
+    },
+
+    primaryActionButton: {
+      background: '#16a34a',
+      color: '#fff',
+    },
+
+    resumeActionButton: {
+      background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+      color: '#fff',
+      boxShadow: '0 2px 8px rgba(37,99,235,0.25)',
+    },
+
+    collabActionButton: {
+      background: '#5856D6',
+      color: '#fff',
+    },
+
+    secondaryActionButton: {
+      background: '#fff',
+      color: '#374151',
+      border: '1.5px solid #d1d5db',
+    },
+
+    destructiveActionButton: {
+      background: 'rgba(220,38,38,0.07)',
+      color: '#dc2626',
+      border: '1.5px solid rgba(220,38,38,0.22)',
+    },
+    
+    statsButton: {
+      backgroundColor: '#5856D6',
+      color: 'white',
+      border: 'none',
+      borderRadius: '12px',
+      padding: '12px 16px',
+      fontSize: '14px',
+      fontWeight: '600',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '6px',
+    },
+    
+    resumeButton: {
+      backgroundColor: '#007AFF',
+      color: 'white',
+      border: 'none',
+      borderRadius: '12px',
+      padding: '12px 16px',
+      fontSize: '14px',
+      fontWeight: '600',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '6px',
+    },
+    
+    collaborateButton: {
+      backgroundColor: '#FF9500',
+      color: 'white',
+      border: 'none',
+      borderRadius: '12px',
+      padding: '12px 16px',
+      fontSize: '14px',
+      fontWeight: '600',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '6px',
+    },
+    
+    deleteMatchButton: {
+      backgroundColor: '#FFF1F0',
+      color: '#FF3B30',
+      border: '1px solid #FF3B30',
+      borderRadius: '12px',
+      padding: '12px 16px',
+      fontSize: '14px',
+      fontWeight: '600',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '6px',
+    },
+    
+    // ============================================
+    // MODALS - Much better
+    // ============================================
+    modalOverlay: {
+      position: 'fixed',
+      inset: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 10000,
+      padding: isMobile ? '16px' : '20px',
+      backdropFilter: 'blur(4px)',
+    },
+    
+    modalContent: {
+      width: '100%',
+      maxWidth: isMobile && isPortrait ? '100%' : '540px',
+      maxHeight: '90vh',
+      overflowY: 'auto',
+      backgroundColor: 'white',
+      borderRadius: '20px',
+      boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+      padding: isMobile && isPortrait ? '24px 20px' : '32px 28px',
+    },
+    
+    modalTitle: {
+      fontSize: isMobile && isPortrait ? '22px' : '24px',
+      fontWeight: '700',
+      marginBottom: '24px',
+      color: '#1C1C1E',
+      letterSpacing: '-0.5px',
+    },
+    
+    editForm: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '16px',
+    },
+    
+    formField: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px',
+    },
+    
+    formLabel: {
+      fontSize: '14px',
+      fontWeight: '600',
+      color: '#495057',
+    },
+    
+    formInput: {
+      padding: '14px 16px',
+      fontSize: '16px',
+      border: '2px solid #DEE2E6',
+      borderRadius: '12px',
+      backgroundColor: 'white',
+    },
+    
+    checkboxLabel: {
+      display: 'flex',
+      alignItems: 'center',
+      fontSize: '14px',
+      fontWeight: '500',
+      color: '#1C1C1E',
+      gap: '8px',
+    },
+    
+    modalActions: {
+      display: 'flex',
+      flexDirection: isMobile && isPortrait ? 'column-reverse' : 'row',
+      gap: '12px',
+      marginTop: '24px',
+      justifyContent: 'flex-end',
+    },
+    
+    cancelButton: {
+      padding: '14px 24px',
+      backgroundColor: '#F8F9FA',
+      border: '1px solid #DEE2E6',
+      borderRadius: '12px',
+      fontSize: '16px',
+      fontWeight: '600',
+      color: '#495057',
+      cursor: 'pointer',
+      flex: isMobile && isPortrait ? '1' : '0 0 auto',
+    },
+    
+    saveButton: {
+      padding: '14px 24px',
+      backgroundColor: '#007AFF',
+      color: 'white',
+      border: 'none',
+      borderRadius: '12px',
+      fontSize: '16px',
+      fontWeight: '600',
+      cursor: 'pointer',
+      flex: isMobile && isPortrait ? '1' : '0 0 auto',
+      boxShadow: '0 2px 8px rgba(0, 122, 255, 0.25)',
+    },
+    
+    // ============================================
+    // EMPTY STATES
+    // ============================================
+    noPlayersText: {
+      textAlign: 'center',
+      color: '#ADB5BD',
+      fontStyle: 'italic',
+      fontSize: '15px',
+      padding: isMobile && isPortrait ? '40px 20px' : '60px 40px',
+    },
+    
+    subscriptionMessage: {
+      textAlign: 'center',
+      color: '#FF3B30',
+      fontSize: '14px',
+      marginTop: '12px',
+      padding: '12px 16px',
+      backgroundColor: '#FFF3F3',
+      borderRadius: '12px',
+      border: '1px solid #FFE5E5',
+    },
+    
+    subscribeLink: {
+      color: '#007AFF',
+      textDecoration: 'none',
+      fontWeight: '600',
+      marginLeft: '4px',
+    },
+    
+    ownerIndicator: {
+      fontSize: '12px',
+      color: '#007AFF',
+      fontWeight: '500',
+    },
+    
+    collaborativeIndicator: {
+      fontSize: '12px',
+      color: '#FF9500',
+      fontWeight: '500',
+    },
+    
+    assignmentIndicator: {
+      fontSize: '12px',
+      color: '#34C759',
+      fontWeight: '500',
+    },
+    
+    playAllSetsIndicator: {
+      fontSize: '14px',
+      color: '#17a2b8',
+      fontWeight: 'bold',
+      marginLeft: '4px',
+    },
+  };
+
+  return (
+    <div style={styles.container}>
+      {/* ============================================ */}
+      {/* SECTION 1: TEAM & ROSTER */}
+      {/* ============================================ */}
+      <h2 style={styles.header}>1. Team & Roster</h2>
+
+      {/* Team Selection Card */}
+      <div style={styles.card}>
+        <h3 style={styles.cardTitle}>Select Team</h3>
+        {loadingTeams ? (
+          <p>Loading teams...</p>
+        ) : (
+          <>
+            <select
+              value={selectedTeam}
+              onChange={(e) => handleTeamSelect(e.target.value)}
+              style={styles.select}
+            >
+              <option value="">-- Select a Team --</option>
+              {userTeams.map((team) => (
+                <option key={team} value={team}>
+                  {team}
+                </option>
+              ))}
+            </select>
+
+            <div style={{ marginTop: 14, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* Create - always visible, filled green */}
+              <button
+                onClick={handleCreateTeam}
+                style={{
+                  padding: '9px 16px', fontSize: 14, fontWeight: 700,
+                  background: 'linear-gradient(135deg, #16a34a, #15803d)',
+                  color: '#fff', border: 'none', borderRadius: 10, cursor: 'pointer',
+                  boxShadow: '0 3px 10px rgba(22,163,74,0.25)',
+                }}
+              >
+                + New Team
+              </button>
+
+              {selectedTeam && (
+                <>
+                  {/* Archive - low-key outline blue */}
+                  <button
+                    onClick={() => handleArchiveTeam(selectedTeam)}
+                    style={{
+                      padding: '9px 16px', fontSize: 14, fontWeight: 600,
+                      background: '#fff', color: '#2563eb',
+                      border: '1.5px solid #2563eb', borderRadius: 10, cursor: 'pointer',
+                    }}
+                  >
+                    Archive
+                  </button>
+
+                  {/* Delete - ghost red, least prominent */}
+                  <button
+                    onClick={() => handleDeleteTeam(selectedTeam)}
+                    style={{
+                      padding: '9px 16px', fontSize: 14, fontWeight: 600,
+                      background: 'rgba(220,38,38,0.07)', color: '#dc2626',
+                      border: '1.5px solid rgba(220,38,38,0.25)', borderRadius: 10, cursor: 'pointer',
+                    }}
+                  >
+                    Delete
+                  </button>
+                </>
+              )}
+
+              {archivedTeams.length > 0 && (
+                <button
+                  onClick={() => setShowArchivedTeams(!showArchivedTeams)}
+                  style={{
+                    padding: '9px 16px', fontSize: 14, fontWeight: 600,
+                    background: '#f3f4f6', color: '#6b7280',
+                    border: '1.5px solid #e5e7eb', borderRadius: 10, cursor: 'pointer',
+                  }}
+                >
+                  {showArchivedTeams ? 'Hide' : 'Archived'} ({archivedTeams.length})
+                </button>
+              )}
+            </div>
+
+            {showArchivedTeams && archivedTeams.length > 0 && (
+              <div style={{
+                marginTop: '12px',
+                padding: '12px',
+                backgroundColor: '#F5F5F5',
+                borderRadius: '8px',
+                border: '1px solid #D1D1D6'
+              }}>
+                <h4 style={{ marginTop: 0 }}>Archived Teams</h4>
+                {archivedTeams.map((team) => (
+                  <div key={team} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '8px',
+                    marginBottom: '8px',
+                    backgroundColor: 'white',
+                    borderRadius: '6px'
+                  }}>
+                    <span>{team}</span>
+                    <button 
+                      onClick={() => handleUnarchiveTeam(team)}
+                      style={{
+                        ...styles.secondaryButton,
+                        padding: '6px 12px',
+                        fontSize: '14px'
+                      }}
+                    >
+                      Unarchive
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Team Roster Card */}
+      <div style={styles.card}>
+        <h3 style={styles.cardTitle}>Team Roster</h3>
+        <div style={styles.rosterContainer}>
+
+          {/* Always-open grid: existing players + add card */}
+          <div style={gridContainerStyle}>
+
+            {Array.isArray(benchPlayers) && benchPlayers.map((player) => (
+              <div key={player._id} style={styles.playerCard}>
+                <div style={styles.playerInfo}>
+                  <div><span style={styles.playerName}>{(player.name || "").slice(0, 20)}</span></div>
+                  <span style={styles.playerNumber}>#{player.number}</span>
+                  <small style={{ fontSize: '14px', color: '#888' }}>{player.position || '—'}</small>
+                  <div>
+                    <select
+                      value={player.position}
+                      onChange={async (e) => {
+                        const newPos = e.target.value;
+                        e.preventDefault();
+                        await axios.put(`${API_URL}/api/players/${player._id}`, { position: newPos });
+                        handleRecallBench(selectedTeam);
+                      }}
+                      style={{ fontSize: '10px', marginTop: '4px', width: '80%' }}
+                    >
+                      <option value="">—</option>
+                      <option value="OH">OH</option>
+                      <option value="MB">MB</option>
+                      <option value="S">S</option>
+                      <option value="OPP">OPP</option>
+                      <option value="DS">DS</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: '500', marginBottom: '4px' }}>Libero?</span>
+                  <label
+                    style={{
+                      ...styles.toggleLabel,
+                      backgroundColor: player.isLibero
+                        ? styles.toggleChecked.backgroundColor
+                        : styles.toggleLabel.backgroundColor,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={player.isLibero || false}
+                      onChange={() => handleLiberoToggle(player._id)}
+                      style={styles.toggleInput}
+                    />
+                    <span
+                      style={{
+                        ...styles.toggleSlider,
+                        left: player.isLibero
+                          ? styles.toggleSliderChecked.left
+                          : styles.toggleSlider.left,
+                      }}
+                    />
+                  </label>
+                </div>
+
+                <div style={{ display: 'flex', gap: '4px', marginTop: '8px', justifyContent: 'center' }}>
+                  <button onClick={() => handleEditPlayer(player)} style={styles.editButton} title="Edit player">
+                    <EditIcon size={15} color="#374151" />
+                  </button>
+                  <button onClick={() => handleFindPlayerOnTeams(player.name)} style={styles.linkButton} title="Find on other teams">
+                    <LinkIcon size={15} color="#5856D6" />
+                  </button>
+                  <button onClick={() => handleDeletePlayer(player._id)} style={styles.deleteButton}>
+                    <DeleteIcon size={15} color="#dc2626" />
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {/* Add player — last card in grid, appears once a team is selected */}
+            {selectedTeam && (
+              <div
+                style={{
+                  ...styles.playerCard,
+                  border: '1.5px dashed #d1d5db',
+                  background: '#fafafa',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 8,
+                  alignItems: 'stretch',
+                  justifyContent: 'flex-start',
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center', marginBottom: 2 }}>
+                  New Player
+                </div>
+                <input
+                  type="text"
+                  placeholder="Name"
+                  value={newPlayerName}
+                  onChange={(e) => setNewPlayerName(e.target.value)}
+                  style={{ padding: '8px 10px', fontSize: 14, border: '1.5px solid #e5e7eb', borderRadius: 8, width: '100%', boxSizing: 'border-box' }}
+                />
+                <input
+                  type="number"
+                  placeholder="#"
+                  value={newPlayerNumber}
+                  onChange={(e) => setNewPlayerNumber(e.target.value)}
+                  style={{ padding: '8px 10px', fontSize: 14, border: '1.5px solid #e5e7eb', borderRadius: 8, width: '100%', boxSizing: 'border-box' }}
+                />
+                <select
+                  value={newPlayerPosition}
+                  onChange={(e) => setNewPlayerPosition(e.target.value)}
+                  style={{ padding: '8px 10px', fontSize: 14, border: '1.5px solid #e5e7eb', borderRadius: 8, width: '100%', boxSizing: 'border-box', background: '#fff' }}
+                >
+                  <option value="">Position</option>
+                  <option value="OH">OH</option>
+                  <option value="MB">MB</option>
+                  <option value="S">S</option>
+                  <option value="OPP">OPP</option>
+                  <option value="DS">DS</option>
+                </select>
+                <button
+                  onClick={handleAddPlayer}
+                  style={{
+                    padding: '9px 12px',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    width: '100%',
+                  }}
+                >
+                  {newPlayerNumber ? `Add #${newPlayerNumber}` : 'Add'}
+                </button>
+              </div>
+
+            )}
+          </div>{/* end grid */}
+
+          {/* Copy Roster — only when roster is empty */}
+          {(!benchPlayers || benchPlayers.length === 0) && selectedTeam && (
+            <div style={{ textAlign: 'center', padding: '20px 0 8px' }}>
+              <p style={{ color: '#9ca3af', fontSize: 14, marginBottom: 12 }}>
+                No players yet — add one above or copy from another team.
+              </p>
+              <TeamCopyManager
+                userTeams={userTeams}
+                archivedTeams={archivedTeams}
+                selectedTeam={selectedTeam}
+                token={token}
+                onTeamCopied={(teamName) => {
+                  setSelectedTeam(teamName);
+                  setMatchSettings((prev) => ({ ...prev, teamName: teamName }));
+                  handleRecallBench(teamName);
+                }}
+                refreshBenchPlayers={() => handleRecallBench(selectedTeam)}
+                initialSearchName={searchPlayerName}
+                externalShowSearch={showExternalSearch}
+                onCloseExternalSearch={handleCloseExternalSearch}
+                inlineMode={true}
+              />
+            </div>
+          )}
+
+          {/* Recall / Reset — quiet text links, only when roster has players */}
+          {benchPlayers && benchPlayers.length > 0 && selectedTeam && (
+            <div style={{ display: 'flex', gap: 16, marginTop: 14, paddingTop: 14, borderTop: '1px solid #f3f4f6' }}>
+              <button
+                onClick={() => handleRecallBench(selectedTeam)}
+                style={{ background: 'none', border: 'none', fontSize: 13, fontWeight: 600, color: '#6b7280', cursor: 'pointer', padding: 0 }}
+              >
+                ↺ Recall Roster
+              </button>
+              <button
+                onClick={onResetBench}
+                style={{ background: 'none', border: 'none', fontSize: 13, fontWeight: 600, color: '#dc2626', cursor: 'pointer', padding: 0 }}
+              >
+                ✕ Reset Roster
+              </button>
+            </div>
+          )}
+
+        </div>
+      </div>
+
+
+
+      {/* ============================================ */}
+      {/* SECTION 2: MATCH SETTINGS */}
+      {/* ============================================ */}
+      <h2 style={styles.header}>2. Match Settings</h2>
+      
+      <div style={styles.card}>
+        <div style={formContainerStyle}>
+<div
+  style={{
+    display: 'flex',
+    flexDirection: isMobile && isPortrait ? 'column' : 'row',
+    gap: isMobile ? '10px' : '12px',
+  }}
+>
+        <div style={{ ...fieldStyle, flex: 1 }}>      
+          <label>Opponent</label>
+          <input
+  type="text"
+  placeholder="Enter opponent name"
+  value={opponentName}
+  onFocus={() => {
+    if (opponentName === 'Enter an Opponent') {
+      setOpponentName('');
+    }
+  }}
+  onChange={(e) => setOpponentName(e.target.value)}
+  style={inputStyle}
+          />
+        </div>
+
+        <div style={{ ...fieldStyle, flex: 1 }}>
+          <label>Event</label>
+          <input
+            type="text"
+            placeholder="Tournament Name or Other Descriptor"
+            value={eventName}
+            onChange={(e) => setEventName(e.target.value)}
+            list="event-options"
+            style={inputStyle}
+          />
+          <datalist id="event-options">
+            {eventSuggestions.map((ev, i) => (
+              <option key={i} value={ev} />
+            ))}
+          </datalist>
+        </div>
+
+        <div style={{ ...fieldStyle, flex: 1 }}>
+          <label>Location</label>
+          <input
+            type="text"
+            placeholder="City or Gym Name"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+            list="location-options"
+            style={inputStyle}
+          />
+          <datalist id="location-options">
+            {locationSuggestions.map((loc, i) => (
+              <option key={i} value={loc} />
+            ))}
+          </datalist>
+        </div>
+		</div>
+<div
+  style={{
+    display: 'flex',
+    flexDirection: isMobile && isPortrait ? 'column' : 'row',
+    gap: isMobile ? '10px' : '12px',
+  }}
+>
+        <div style={{ ...fieldStyle, flex: 1 }}>
+          <label>Max Sets</label>
+<input
+  type="number"
+  value={maxSets}
+  onChange={(e) => {
+    const value = e.target.value;
+    setMaxSets(value === "" ? "" : Number(value));
+  }}
+  style={inputStyle}
+/>
+          <div style={fieldStyle}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input
+                type="checkbox"
+                checked={playAllSets}
+                onChange={(e) => setPlayAllSets(e.target.checked)}
+              />
+			  
+              Play all sets regardless of outcome
+            </label>
+          </div>
+        </div>
+
+
+  <div style={{ ...fieldStyle, flex: 1 }}>
+    <label>Points Per Set (Non-Deciding)</label>
+    <input
+      type="number"
+      value={pointsNonDeciding}
+      onChange={(e) => {
+        const value = e.target.value;
+        setPointsNonDeciding(value === "" ? "" : Number(value));
+      }}
+      style={inputStyle}
+    />
+  </div>
+
+  <div style={{ ...fieldStyle, flex: 1 }}>
+    <label>Deciding Set (Set {maxSets}) Points</label>
+    <input
+      type="number"
+      value={pointsDeciding}
+      onChange={(e) => {
+        const value = e.target.value;
+        setPointsDeciding(value === "" ? "" : Number(value));
+      }}
+      style={inputStyle}
+    />
+  </div>
+</div>
+
+		
+		  <div
+      style={{
+        flex: '1 1 240px',
+        minWidth: 0,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 16,
+        padding: 16,
+        boxShadow: '0 4px 10px rgba(0,0,0,0.06)',
+      }}
+    >
+      <h4 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
+        Schedule this match
+      </h4>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+        <input
+          type="date"
+          value={scheduleDate}
+          onChange={(e) => setScheduleDate(e.target.value)}
+          style={{ ...styles.input, flex: 1 }}
+        />
+        <input
+          type="time"
+          value={scheduleTime}
+          onChange={(e) => setScheduleTime(e.target.value)}
+          style={{ ...styles.input, flex: 1 }}
+        />
+      </div>
+      <button
+        onClick={handleScheduleMatch}
+        style={{ ...styles.secondaryButton, width: '100%' }}
+      >
+        Schedule Match
+      </button>
+    </div>
+      </div>
+      </div>
+
+      {/* ============================================ */}
+      {/* SECTION 3: START MATCH */}
+      {/* ============================================ */}
+<div style={{ 
+  marginLeft: isMobile && isPortrait ? 16 : 20,
+  marginRight: isMobile && isPortrait ? 16 : 20,
+}}>
+  <h2 style={styles.header}>3. Start Match</h2>
+
+  <div
+    style={{
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: 12,
+      alignItems: 'flex-start',
+      width: '100%',
+      maxWidth: '100%',
+      boxSizing: 'border-box',
+    }}
+  >
+   
+
+    {/* Start buttons card */}
+    <div
+      style={{
+        flex: isMobile && isPortrait ? '1 1 100%' : '2 1 280px',
+        width: isMobile && isPortrait ? '100%' : 'auto',
+        maxWidth: '100%',
+        backgroundColor: '#FFFFFF',
+        borderRadius: 16,
+        padding: isMobile && isPortrait ? 16 : 16,
+        boxShadow: '0 4px 10px rgba(0,0,0,0.06)',
+        boxSizing: 'border-box',
+      }}
+    >
+      <p
+        style={{
+          fontSize: 24,
+          color: '#6B7280',
+          marginTop: 0,
+          marginBottom: 10,
+        }}
+      >
+        Choose how you want to log this match and start.
+      </p>
+
+      {(!selectedTeam || !benchPlayers || benchPlayers.length === 0) && (
+        <div
+          style={{
+            padding: '12px 16px',
+            backgroundColor: '#FFF3CD',
+            border: '1px solid #FFC107',
+            borderRadius: '8px',
+            marginBottom: '12px',
+            textAlign: 'center',
+            color: '#856404',
+            fontSize: '14px',
+            fontWeight: '500'
+          }}
+        >
+          ⚠️ {!selectedTeam 
+            ? 'Please select a team with a roster before starting a match' 
+            : 'Please add players to your roster before starting a match'}
+        </div>
+      )}
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: isMobile && isPortrait ? '1fr' : 'repeat(3, 1fr)',
+        gap: 12,
+        width: '100%',
+      }}>
+
+        {/* Match Tracking - primary filled */}
+        <button
+          onClick={handleSaveAndStartMatchTracking}
+          disabled={!selectedTeam || !benchPlayers || benchPlayers.length === 0}
+          style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 6, padding: '18px 16px', border: 'none', borderRadius: 14, cursor: 'pointer',
+            background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+            boxShadow: '0 4px 14px rgba(37,99,235,0.28)',
+            color: '#fff', fontWeight: 700, fontSize: 15, lineHeight: 1.25,
+            opacity: (!selectedTeam || !benchPlayers || benchPlayers.length === 0) ? 0.45 : 1,
+            transition: 'opacity 0.15s',
+          }}
+        >
+          <span style={{ fontSize: 22 }}>&#9889;</span>
+          <span>Match Tracking</span>
+          <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.85 }}>Score + rotations</span>
+        </button>
+
+        {/* Stat Book - outlined */}
+        <button
+          onClick={handleExpressMatch}
+          disabled={!selectedTeam || !benchPlayers || benchPlayers.length === 0}
+          style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 6, padding: '18px 16px', border: '2px solid #2563eb', borderRadius: 14, cursor: 'pointer',
+            background: '#fff',
+            color: '#2563eb', fontWeight: 700, fontSize: 15, lineHeight: 1.25,
+            opacity: (!selectedTeam || !benchPlayers || benchPlayers.length === 0) ? 0.45 : 1,
+            transition: 'opacity 0.15s',
+          }}
+        >
+          <span style={{ fontSize: 22 }}>&#128203;</span>
+          <span>Stat Book</span>
+          <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.7 }}>Full stat logging</span>
+        </button>
+
+        {/* Classic - ghost */}
+        <button
+          onClick={handleSaveAndStartMatch}
+          disabled={!selectedTeam || !benchPlayers || benchPlayers.length === 0}
+          style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 6, padding: '18px 16px', border: '1.5px solid #d1d5db', borderRadius: 14, cursor: 'pointer',
+            background: '#f9fafb',
+            color: '#374151', fontWeight: 600, fontSize: 15, lineHeight: 1.25,
+            opacity: (!selectedTeam || !benchPlayers || benchPlayers.length === 0) ? 0.45 : 1,
+            transition: 'opacity 0.15s',
+          }}
+        >
+          <span style={{ fontSize: 22 }}>&#127952;</span>
+          <span>Classic</span>
+          <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.6 }}>Gameflow mode</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  {toastVisible && (
+    <div
+      style={{
+        position: 'fixed',
+        top: '20px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        backgroundColor: '#4CAF50',
+        color: 'white',
+        padding: '10px 20px',
+        borderRadius: '8px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+        fontSize: '18px',
+        fontWeight: 'bold',
+        zIndex: 9999,
+      }}
+    >
+      ✅ Match Created!
+    </div>
+  )}
+
+  {isRestoring && (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 9999,
+        fontSize: '24px',
+        fontWeight: '600',
+        color: '#007AFF',
+      }}
+    >
+      Restoring Match...
+    </div>
+  )}
+</div>
+
+      {/* ============================================ */}
+      {/* SECTION 4: SAVED MATCHES */}
+      {/* ============================================ */}
+      <h2 style={styles.header}>4. Saved Matches</h2>
+
+{/* Scheduled Matches Card */}
+<div style={{ 
+  marginLeft: isMobile && isPortrait ? 16 : 20,
+  marginRight: isMobile && isPortrait ? 16 : 20,
+}}>
+  <div style={styles.card}>
+    <h3 style={styles.cardTitle}>📅 Scheduled Matches</h3>
+    
+    {(!selectedTeam || !benchPlayers || benchPlayers.length === 0) && scheduledMatches.length > 0 && (
+      <div
+        style={{
+          padding: '12px 16px',
+          backgroundColor: '#FFF3CD',
+          border: '1px solid #FFC107',
+          borderRadius: '8px',
+          marginBottom: '12px',
+          textAlign: 'center',
+          color: '#856404',
+          fontSize: '14px',
+          fontWeight: '500'
+        }}
+      >
+        ⚠️ {!selectedTeam 
+          ? 'Select a team with a roster to start scheduled matches' 
+          : 'Add players to your roster to start scheduled matches'}
+      </div>
+    )}
+    
+    {scheduledMatches.length === 0 ? (
+      <p style={{ fontStyle: 'italic', color: '#666' }}>
+        No scheduled matches.
+      </p>
+    ) : (
+      <ul style={{ listStyle: 'none', padding: 0 }}>
+        {scheduledMatches.map((match) => (
+          <li
+            key={match._id}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '10px',
+              borderRadius: '10px',
+              backgroundColor: '#f5f5f7',
+              marginBottom: '8px',
+            }}
+          >
+            <span style={{ fontSize: '14px' }}>
+              {match.teamName} vs {match.opponentName}{' '}
+              {match.scheduledFor
+                ? `(${new Date(match.scheduledFor).toLocaleString()})`
+                : ''}
+            </span>
+			  <span style={styles.matchOwnerInfo}>
+    Match Scheduled by: {match.userDisplayName || match.userEmail || 'A Former User'}
+  </span>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+              <button
+                onClick={() => handleStartScheduledMatch(match, 'match')}
+                disabled={(!selectedTeam || !benchPlayers || benchPlayers.length === 0)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '7px 12px', fontSize: 13, fontWeight: 700,
+                  border: 'none', borderRadius: 8, cursor: 'pointer',
+                  opacity: (!selectedTeam || !benchPlayers || benchPlayers.length === 0) ? 0.45 : 1,
+                  background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#fff',
+                }}
+              >
+                <LightningIcon size={13} color='#fff' />
+                <span>Match Tracking</span>
+              </button>
+
+              <button
+                onClick={() => handleStartScheduledMatch(match, 'statbook')}
+                disabled={(!selectedTeam || !benchPlayers || benchPlayers.length === 0)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '7px 12px', fontSize: 13, fontWeight: 700,
+                  border: 'none', borderRadius: 8, cursor: 'pointer',
+                  opacity: (!selectedTeam || !benchPlayers || benchPlayers.length === 0) ? 0.45 : 1,
+                  background: '#fff', color: '#2563eb', border: '1.5px solid #2563eb',
+                }}
+              >
+                <LightningIcon size={13} color='#2563eb' />
+                <span>Stat Book</span>
+              </button>
+
+              <button
+                onClick={() => handleStartScheduledMatch(match, 'classic')}
+                disabled={(!selectedTeam || !benchPlayers || benchPlayers.length === 0)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '7px 12px', fontSize: 13, fontWeight: 700,
+                  border: 'none', borderRadius: 8, cursor: 'pointer',
+                  opacity: (!selectedTeam || !benchPlayers || benchPlayers.length === 0) ? 0.45 : 1,
+                  background: '#f3f4f6', color: '#374151', border: '1.5px solid #e5e7eb',
+                }}
+              >
+                <PlayIcon size={13} color='#374151' />
+                <span>Classic</span>
+              </button>
+
+              <button
+                onClick={() => handleDeleteMatch(match._id)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  padding: '7px 10px', background: 'rgba(220,38,38,0.07)',
+                  color: '#dc2626', border: '1.5px solid rgba(220,38,38,0.2)',
+                  borderRadius: 8, cursor: 'pointer',
+                }}
+                title='Delete scheduled match'
+              >
+                <DeleteIcon size={14} color='#dc2626' />
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+</div>
+
+{/* In Process Matches Card */}
+<div style={{ 
+  marginLeft: isMobile && isPortrait ? 16 : 20,
+  marginRight: isMobile && isPortrait ? 16 : 20,
+}}>
+  <div style={styles.card}>
+    <h3 style={styles.cardTitle}>
+      <InProcessIcon size={20} />
+      In Process Matches
+    </h3>
+
+  {inProcessMatches.length === 0 ? (
+    <p style={{ fontStyle: 'italic', color: '#666' }}>
+      No in-process matches for {selectedTeam || 'selected team'}.
+    </p>
+  ) : (
+    Object.entries(groupedInProcessByEvent).map(([eventName, matches]) => (
+      <div key={`inprocess-${eventName}`}>
+        <h4 style={{ fontSize: '15px', fontWeight: 600, marginTop: '12px' }}>
+          {eventName}
+        </h4>
+        {matches.map((match) => {
+          const isCoachMode = (match.mode || "").toLowerCase() === "match";
+          const matchStyle = isCoachMode 
+            ? { 
+                ...styles.savedMatchItem, 
+                backgroundColor: '#E8F5E9',  // Light green background
+                border: '1px solid #A5D6A7',  // Subtle green border
+                marginBottom: 10 
+              }
+            : { ...styles.savedMatchItem, marginBottom: 10 };
+          
+          return (
+            <div key={match._id} style={matchStyle}>
+              <div style={styles.savedMatchInfo}>
+                <span style={styles.matchTitle}>
+                  {match.teamName} ({match.ourSetsWon}) vs {match.opponentName} ({match.opponentSetsWon})
+                </span>
+                <span style={styles.matchDetails}>
+                  Set {match.currentSet} — {match.ourScore} : {match.opponentScore}
+                  {match.playAllSets && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', marginLeft: 4 }}>
+                      <SigmaIcon size={14} />
+                    </span>
+                  )}
+                </span>
+			    <span style={styles.matchOwnerInfo}>
+    Match by: {match.userDisplayName || match.userEmail || 'A Former User'}
+  </span>
+            </div>
+            {renderMatchActions(match)}
+          </div>
+          );
+        })}
+      </div>
+    ))
+  )}
+  </div>
+</div>
+
+{/* Final Matches Card */}
+<div style={{ 
+  marginLeft: isMobile && isPortrait ? 16 : 20,
+  marginRight: isMobile && isPortrait ? 16 : 20,
+}}>
+  <div style={styles.card}>
+    <h3 style={styles.cardTitle}>
+      <CheckmarkIcon size={20} />
+      Final Matches
+    </h3>
+
+  {finalMatches.length === 0 ? (
+    <p style={{ fontStyle: 'italic', color: '#666' }}>
+      No final matches for {selectedTeam || 'selected team'}.
+    </p>
+  ) : (
+    Object.entries(groupedFinalByEvent).map(([eventName, matches]) => (
+      <div key={`final-${eventName}`}>
+        <h4 style={{ fontSize: '15px', fontWeight: 600, marginTop: '12px' }}>
+          {eventName}
+        </h4>
+        {matches.map((match) => {
+          const isCoachMode = (match.mode || "").toLowerCase() === "match";
+          const matchStyle = isCoachMode
+            ? {
+                ...styles.savedMatchItem,
+                marginBottom: 10,
+                backgroundColor: '#E8F5E9',  // Light green for Coach mode
+                border: '1px solid #81C784',  // Slightly darker green border for Coach
+              }
+            : {
+                ...styles.savedMatchItem,
+                marginBottom: 10,
+                backgroundColor: '#F6FFED',  // Default final match green
+                border: '1px solid #B7EB8F',
+              };
+          
+          return (
+            <div
+              key={match._id}
+              style={matchStyle}
+            >
+              <div style={styles.savedMatchInfo}>
+                <span style={styles.matchTitle}>
+                  {match.teamName} ({match.ourSetsWon})
+                  {match.ourSetsWon > match.opponentSetsWon && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', marginLeft: 4 }}>
+                      <TrophyIcon size={16} />
+                    </span>
+                  )}
+                  {" vs "}
+                  {match.opponentName} ({match.opponentSetsWon})
+                  {match.opponentSetsWon > match.ourSetsWon && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', marginLeft: 4 }}>
+                      <TrophyIcon size={16} />
+                    </span>
+                  )}
+                </span>
+			    <span style={styles.matchOwnerInfo}>
+    Match by: {match.userDisplayName || match.userEmail || 'A Former User'}
+  </span>
+            </div>
+            {renderMatchActions(match)}
+          </div>
+          );
+        })}
+      </div>
+    ))
+  )}
+  </div>
+</div>
+
+
+      {renderEditModal()}
+      {renderPlayerEditModal()}
+      
+{showTeamNameBuilder && (
+  <div
+    style={styles.modalOverlay}
+    onClick={(e) => {
+      if (e.target === e.currentTarget) setShowTeamNameBuilder(false);
+    }}
+  >
+    <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+      <TeamNameBuilder
+        apiUrl={API_URL}
+        token={token}
+        onAddTeam={handleTeamNameBuilderSubmit}
+        overlay
+        onClose={() => setShowTeamNameBuilder(false)}
+      />
+    </div>
+  </div>
+)}
+    </div>
+  );
+};
+
+export default SettingsPanel;

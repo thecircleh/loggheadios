@@ -1,0 +1,29 @@
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+
+const PrivacyPolicy = () => {
+  const [html, setHtml] = useState('');
+
+  useEffect(() => {
+    fetch('\privacy_policy.html')
+      .then(res => res.text())
+      .then(setHtml)
+      .catch(err => console.error('Failed to load privacy policy:', err));
+  }, []);
+
+  return (
+    <div style={{ padding: '20px' }}>
+      <div dangerouslySetInnerHTML={{ __html: html }} />
+
+      <div className="login-footer-links" style={{ marginTop: '40px', textAlign: 'center', fontSize: '13px' }}>
+        <Link to="/about">About</Link> |{" "}
+        <Link to="/contact">Contact</Link> |{" "}
+        <Link to="/login">Login</Link> |{" "}
+        <Link to="/terms">Terms</Link> |{" "}
+		<a href="#" className="termly-display-preferences">Consent Preferences</a>
+      </div>
+    </div>
+  );
+};
+
+export default PrivacyPolicy;

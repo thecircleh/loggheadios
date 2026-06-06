@@ -1,0 +1,6130 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import axios from 'axios';
+import logAndSyncStat from './logAndSyncStat';
+import { useDrag, useDrop } from "react-dnd";
+import { useCollaborative} from './collaborative/CollaborativeProvider';
+import {PlayerTrackingIndicator} from './collaborative/PlayerTrackingIndicator';
+import {PlayerAssignmentModal} from './collaborative/PlayerAssignmentModal';
+import {CollaborativeStatusBar} from './collaborative/CollaborativeStatusBar';
+import { useActionManager } from './collaborative/useActionManager';
+import { useAuth } from './AuthContext';
+ 
+
+const getApiUrl = () => {
+  if (window.location.hostname.startsWith("10.")) {
+    return `http://${window.location.hostname}:3000`;
+  }
+  return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
+};
+
+const API_URL = getApiUrl();
+
+// ============================================================================
+// NEW COMPONENT: PlayerSlotCard
+// Displays a single roster player with ON/OFF toggle
+// ============================================================================
+const PlayerSlotCard = ({
+  player,
+  isOn,
+  onToggle,
+  collaborativeMode,
+  trackingStatus
+}) => {
+  
+  return (
+    <div
+      style={{
+        padding: '14px',
+        borderRadius: '10px',
+        border  
+          : isOn 
+            ? '2px solid #4caf50' 
+            : '1px solid #ddd',
+        backgroundColor
+          : isOn
+            ? '#f5f5f5'
+            : '#fafafa',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        opacity: (collaborativeMode && trackingStatus?.isAssigned && !trackingStatus?.isMe) ? 0.6 : 1,
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px'
+      }}
+      onMouseOut={(e) => {
+        e.currentTarget.style.boxShadow = 'none';
+      }}
+    >
+      {collaborativeMode && player._id && (
+        <PlayerTrackingIndicator
+          playerId={player._id}
+          playerName={player.name}
+        />
+      )}
+
+      {collaborativeMode && trackingStatus?.isAssigned && !trackingStatus?.isMe && (
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          backgroundColor: 'rgba(0,122,255,0.9)',
+          color: '#fff',
+          padding: '6px 10px',
+          borderRadius: '4px',
+          fontSize: '11px',
+          fontWeight: '600',
+          zIndex: 10,
+          pointerEvents: 'none',
+          textAlign: 'center',
+          lineHeight: '1.2'
+        }}>
+          Tracked by {trackingStatus.trackedBy}
+        </div>
+      )}
+
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        gap: '8px'
+      }}>
+        <div style={{ flex: 1 }}>
+          <div style={{
+            fontSize: '15px',
+            fontWeight: '700',
+            color: '#333',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            #{player.number}
+            <span>{player.name}</span>
+          </div>
+          {player.isLibero && (
+            <div style={{
+              fontSize: '10px',
+              color: '#666',
+              marginTop: '2px',
+              fontWeight: '500'
+            }}>
+              (Libero)
+            </div>
+          )}
+        </div>
+      </div>
+
+
+      <button
+        onClick={onToggle}
+        style={{
+          padding: '8px 14px',
+          borderRadius: '6px',
+          border: 'none',
+          backgroundColor: isOn ? '#4caf50' : '#ccc',
+          color: '#fff',
+          fontSize: '13px',
+          fontWeight: '700',
+          cursor: 'pointer',
+          transition: 'all 0.15s ease',
+          width: '100%'
+        }}
+        onMouseOver={(e) => {
+          e.currentTarget.style.transform = 'scale(1.03)';
+          e.currentTarget.style.opacity = '0.9';
+        }}
+        onMouseOut={(e) => {
+          e.currentTarget.style.transform = 'scale(1)';
+          e.currentTarget.style.opacity = '1';
+        }}
+      >
+        {isOn ? '✓ PLAYING' : '○ BENCHED'}
+      </button>
+
+      <div style={{
+        fontSize: '11px',
+        fontWeight: '500',
+        color: isOn ? '#2e7d32' : '#999',
+        textAlign: 'center'
+      }}>
+        {isOn ? 'On Court' : 'On Bench'}
+      </div>
+    </div>
+  );
+};
+
+const ExpressStatLogger = ({
+  courtPlayers = [],
+  rotateCourtPositions,
+  updateCourtPositions,  
+  deactivatedPlayers = [],
+  setDeactivatedPlayers,
+  swapCourtPlayers,
+  setCourtPlayers,
+  positionMapping = {},
+  rotateCourtArray,  
+  currentMatchId,
+  match,
+  actionLog = [],
+  setActionLog,
+  collabActionLog = [], 
+  passGradingEnabled = false,
+  scoringEnabled = true,
+  processSetEnding,
+  setEndingInProgressRef,
+  ballState = "serve",
+  setBallState,
+  scoreCooldownActive,
+  scoreCooldownRemaining,
+  ballSide = "our", 
+  setBallSide,
+  currentServeSide = "our",
+  setCurrentServeSide,
+  teamStats,
+  setTeamStats,
+  saveMatchData,
+  isMobile,
+  maybeCreditGamesPlayed,
+  token,
+  allowedLiberoSubTarget,
+  setAllowedLiberoSubTarget,
+  slot5TargetId,
+  setSlot5TargetId,
+  benchPlayers = [],
+  setBenchPlayers,
+  substitutionLog = [],
+  setSubstitutionLog,
+  setMatchSettings,
+  autoJoinMatchIfPossible,
+  isMatchOwner,
+  ourScore,
+  opponentScore,
+  setOurScore,
+  setOpponentScore,
+}) => {
+  // ========================================================================
+  // NEW STATE: Roster-based player selection with ON/OFF toggles
+  // ========================================================================
+  const [allRosterPlayers, setAllRosterPlayers] = useState([]);
+  const [playerOnOffStatus, setPlayerOnOffStatus] = useState({});
+
+  // ========================================================================
+  // KEEP EXISTING STATE: All original state variables below
+  // ========================================================================
+  const [selectedSlot, setSelectedSlot] = useState(null); // Still needed by stat handlers
+  const [playerStats, setPlayerStats] = useState({});
+  const [activePlayerIds, setActivePlayerIds] = useState(new Set());
+  const [selectedBlockPlayers, setSelectedBlockPlayers] = useState(new Set());
+  const [positionLabels, setPositionLabels] = useState(['4', '3', '2', '5', '6', '1']);
+  const serveSideAtRallyStartRef = useRef(currentServeSide);
+  const [pendingPassGrade, setPendingPassGrade] = useState(null); 
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false);
+  const [lastScoreUpdate, setLastScoreUpdate] = useState(null);
+  const [assignmentDeclinedPlayers, setAssignmentDeclinedPlayers] = useState(new Set());
+  const [scoringInProgress, setScoringInProgress] = useState(false);
+const [lastScoreAttempt, setLastScoreAttempt] = useState(0);
+const scoringTimeoutRef = useRef(null);
+const [assignmentInProgress, setAssignmentInProgress] = useState(false);
+const [connecting, setConnecting] = useState(false);
+const globalActionLimiterRef = useRef({
+  lastActionTime: 0,
+  actionCount: 0,
+  windowStart: Date.now()
+});
+
+ const {
+    isConnected,
+    collaborativeMode,
+    isCollaborativeReady,
+    joinMatch,
+    leaveMatch,
+    logStat: logCollaborativeStat,
+    updateScore: updateCollaborativeScore,
+    updateBallState: updateCollaborativeBallState,
+    updateServeSide: updateCollaborativeServeSide,
+    isAssignedToPlayer,
+    getTrackingStatus,
+    activeSessions,
+    setCollaborativeModeState,
+    restoreCollaborativeModeFromMatch,
+    syncedGameState,
+    registerStateCallbacks,
+	loadAssignmentsFromBackend,
+	playerAssignments,
+	addNotification,
+	syncCourtPlayers,
+	socket
+  } = useCollaborative();
+  
+const actionManager = useActionManager();
+const hasAutoJoinedRef = useRef(false);
+const lastMatchIdRef = useRef(null);
+const [localStateOverride, setLocalStateOverride] = useState(null);
+const localStateTimeoutRef = useRef(null);
+  
+  // NEW: Assist mode states
+const [assistMode, setAssistMode] = useState(false);
+const [selectedAssistPlayer, setSelectedAssistPlayer] = useState(null);
+const assistPromptTimerRef = useRef(null);
+const assistKillSelectedRef = useRef(null);
+const DISPLAY_ORDER = ['4','3','2','5','6','1'];
+const EMPTY_PLAYER = { _id: null, name: '?', number: '', isLibero: false };
+
+const saveQueueRef = useRef([]);
+const saveTimeoutRef = useRef(null);
+const lastSaveTimeRef = useRef(0);
+const DEBOUNCE_SAVE_MS = 1500; // Wait 1.5s after last save trigger
+
+// Track what changed for smarter saving
+const [lastSaveState, setLastSaveState] = useState({
+  courtPlayers,
+  teamStats,
+  actionLog: actionLog?.slice(-5) // Just last 5 for comparison
+});
+  
+  // NEW Collabrative Block mode states
+const [collaborativeBlockWaiting, setCollaborativeBlockWaiting] = useState(false);
+const [blockWaitingPlayers, setBlockWaitingPlayers] = useState([]); // Array of selected players
+const [blockWaitingType, setBlockWaitingType] = useState(null); // 'assist' or 'error'
+const [blockWaitingInitiator, setBlockWaitingInitiator] = useState(null);
+const blockWaitingTimerRef = useRef(null);
+const [blockWaitingTimer, setBlockWaitingTimer] = useState(0);
+const [blockActionType, setBlockActionType] = useState(null); 
+const [blockMode, setBlockMode] = useState(null); // 'assist' or 'error'
+const [collaborativeBlockState, setCollaborativeBlockState] = useState({
+  active: false,
+  type: null,
+  players: [],
+  initiator: null,
+  timer: 5,
+  canParticipate: false
+});
+const [remoteAssistInProgress, setRemoteAssistInProgress] = useState(false);
+const [remoteAssistPlayer, setRemoteAssistPlayer] = useState(null);
+const [remoteAssistInitiator, setRemoteAssistInitiator] = useState(null);
+const closeAssistPrompt = useCallback(() => {
+  // Hide the prompt
+  setShowAssistHelp(false);      // whatever your modal boolean is called
+  setAwaitingKillForAssist(null);// if you store pending assist state
+
+  // Clear any countdown
+  if (assistPromptTimerRef.current) {
+    clearTimeout(assistPromptTimerRef.current);
+    assistPromptTimerRef.current = null;
+  }
+}, []);
+  
+  // NEW: Track credited players for games played
+  const creditedPlayersThisSetRef = useRef(new Set());
+  const inFlightCreditsRef = useRef(new Map()); // playerId -> Promise<Boolean>
+
+// Small helpers (place above the function or in your utils)
+const withTimeout = (p, ms, label = 'operation') =>
+  Promise.race([
+    p,
+    new Promise((_, rej) => setTimeout(() => rej(new Error(`${label} timed out after ${ms}ms`)), ms))
+  ]);
+
+const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+const jitter = (base) => base + Math.floor(Math.random() * Math.min(200, base));
+  const previousServeSideRef = useRef(currentServeSide);
+  
+  
+
+  // Get auth context
+ const { user } = useAuth();
+
+const getCurrentUserId = useCallback(() => {
+  return user?.id || user?._id || null;  
+}, [user]);
+
+const currentUserId 
+=getCurrentUserId();
+
+const getCurrentUsername = useCallback(() => {
+   return user?.displayName || user?.email?.split('@')[0] || 'A Former User';
+}, [user]);
+  
+const [actionFeedback, setActionFeedback] = useState(new Map()); // Track button feedback states
+const [recentActions, setRecentActions] = useState([]);
+const [collaborativeAssistWaiting, setCollaborativeAssistWaiting] = useState(false);
+const [assistWaitingPlayer, setAssistWaitingPlayer] = useState(null);
+const [assistWaitingTimer, setAssistWaitingTimer] = useState(5);
+const assistTimerRef = useRef(null);
+const processingAssistKillRef = useRef(false);
+const assistWaitingServeSideRef = useRef(null); // Track recent actions for toast display
+
+// Haptic feedback function
+const triggerHapticFeedback = useCallback((pattern = [50]) => {
+  try {
+    // Check if vibration is supported
+    if ('vibrate' in navigator) {
+      navigator.vibrate(pattern);
+    }
+  } catch (error) {
+    // Silently fail - haptic feedback is not critical
+    console.log('Haptic feedback not available');
+  }
+}, []);
+
+const triggerNonBlockingSave = useCallback((reason = 'action') => {
+  console.log(`💾 Save triggered: ${reason}`);
+  
+  // Add to queue
+  saveQueueRef.current.push({
+    reason,
+    timestamp: Date.now()
+  });
+  
+  // Clear existing timeout
+  if (saveTimeoutRef.current) {
+    clearTimeout(saveTimeoutRef.current);
+  }
+  
+  // Debounce the actual save
+  saveTimeoutRef.current = setTimeout(async () => {
+    const now = Date.now();
+    const timeSinceLastSave = now - lastSaveTimeRef.current;
+    
+    // Respect minimum interval between saves (2 seconds)
+    if (timeSinceLastSave < 2000) {
+      const waitMs = 2000 - timeSinceLastSave;
+      console.log(`⏱️ Throttling save - waiting ${waitMs}ms`);
+      saveTimeoutRef.current = setTimeout(() => performNonBlockingSave(), waitMs);
+      return;
+    }
+    
+    performNonBlockingSave();
+  }, DEBOUNCE_SAVE_MS);
+}, []);
+
+
+
+const performNonBlockingSave = useCallback(async () => {
+  if (!saveMatchData || saveQueueRef.current.length === 0) {
+    return;
+  }
+  
+  const reasons = saveQueueRef.current.map(r => r.reason).join(', ');
+  console.log(`🔄 Executing non-blocking save for: ${reasons}`);
+  
+  lastSaveTimeRef.current = Date.now();
+  saveQueueRef.current = [];
+  
+  // Fire and forget - don't await, don't block UI
+  Promise.resolve().then(() => {
+    try {
+      // Use false for "don't show spinner" and let it save quietly
+      saveMatchData(false);
+    } catch (error) {
+      console.error('Save error:', error);
+    }
+  });
+  
+}, [saveMatchData]);
+
+// Cleanup on unmount
+useEffect(() => {
+  return () => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+  };
+}, []);
+
+// Visual feedback function
+const triggerActionFeedback = useCallback((buttonId, actionType = 'success', duration = 800) => {
+  // Set feedback state for the button
+  setActionFeedback(prev => new Map(prev.set(buttonId, { type: actionType, timestamp: Date.now() })));
+  
+  // Clear feedback after duration
+  setTimeout(() => {
+    setActionFeedback(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(buttonId);
+      return newMap;
+    });
+  }, duration);
+  
+  // Trigger haptic feedback
+  if (actionType === 'success') {
+    triggerHapticFeedback([50, 30, 50]); // Success pattern: short-pause-short
+  } else if (actionType === 'error') {
+    triggerHapticFeedback([100]); // Error pattern: single long vibration
+  } else {
+    triggerHapticFeedback([30]); // Default: short vibration
+  }
+}, [triggerHapticFeedback]);  
+
+useEffect(() => {
+  // Auto-load assignments when collaborative mode becomes enabled for ANY user (not just owners)
+  if (collaborativeMode && currentMatchId && isConnected) {
+    console.log('Loading assignments for all collaborative users...');
+    loadAssignmentsFromBackend().catch(error => {
+      console.error('Failed to load assignments for non-owner:', error);
+    });
+  }
+}, [collaborativeMode, currentMatchId, isConnected, loadAssignmentsFromBackend]);
+
+/* const playersForUI = React.useMemo(() => {
+  const byPos = new Map();
+  (courtPlayers || []).forEach(p => {
+    if (p) byPos.set(String(p.expressPosition || ''), p);
+  });
+
+  // Produce rows strictly in 1..6 order for the UI
+  return DISPLAY_ORDER.map(pos => 
+    byPos.get(pos) || { id: `empty-${pos}`, name: '?', number: '?', expressPosition: pos }
+  );
+}, [courtPlayers]); */
+
+
+const showActionToast = useCallback((message, type = 'success') => {
+  const toastId = `toast-${Date.now()}`;
+  const toast = {
+    id: toastId,
+    message,
+    type,
+    timestamp: Date.now()
+  };
+  
+  setRecentActions(prev => [...prev.slice(-2), toast]); // Keep only last 3 toasts
+  
+  // Auto-remove toast after 1 second
+  setTimeout(() => {
+    setRecentActions(prev => prev.filter(t => t.id !== toastId));
+  }, 1000)
+}, []);
+
+
+
+
+  // Initialize active players based on courtPlayers
+useEffect(() => {
+  if (!Array.isArray(courtPlayers)) return;
+
+  setActivePlayerIds(prev => {
+    return new Set(
+      [...prev].filter(playerId =>
+        courtPlayers.some(p => p && p._id === playerId && p.name !== "?")
+      )
+    );
+  });
+}, [courtPlayers]);
+      
+  
+const addActionLogEntry = useCallback((action, options = {}) => {
+  const actionEntry = {
+    timestamp: Date.now(),
+    action,
+    userId: user?.id || user?._id,
+    username: user?.displayName || user?.email?.split('@')[0] || 'A Former User',
+    ...options
+  };
+
+  // 🔥 ONLY update local UI state - DON'T trigger saves
+  if (collaborativeMode) {
+    setActionLog(prev => [...prev, actionEntry]);
+  } else {
+    setActionLog(prev => [...prev, actionEntry]);
+  }
+  
+  // Don't call triggerNonBlockingSave here!
+  // Action log updates alone won't trigger saves anymore
+}, [collaborativeMode, setActionLog, user]);
+
+const setCurrentServeSideWithSync = useCallback((newServeSide) => {
+  if (collaborativeMode && isConnected) {
+    // Set local override first
+    setLocalStateOverride({
+      currentServeSide: newServeSide,
+      timestamp: Date.now()
+    });
+    
+    // Clear the override after a short delay
+    if (localStateTimeoutRef.current) {
+      clearTimeout(localStateTimeoutRef.current);
+    }
+    localStateTimeoutRef.current = setTimeout(() => {
+      setLocalStateOverride(null);
+    }, 1000);
+    
+    // COLLABORATIVE MODE: Send to server, but also update local immediately
+    setCurrentServeSide(newServeSide);
+    setBallSide(newServeSide);
+    
+    const syncSuccess = updateCollaborativeServeSide(newServeSide);
+    
+    if (!syncSuccess) {
+      console.warn('Failed to sync serve side change');
+      showActionToast('Failed to sync serve change', 'error');
+    }
+  } else {
+    // NON-COLLABORATIVE MODE: Update directly
+    setCurrentServeSide(newServeSide);
+    setBallSide(newServeSide);
+  }
+}, [
+  collaborativeMode, 
+  isConnected, 
+  updateCollaborativeServeSide,
+  setCurrentServeSide, 
+  setBallSide,
+  showActionToast
+]);
+
+const formatPlayerAction = useCallback((player, action) => {
+  return `${player.name} (#${player.number}) ${action}`;
+}, []);
+
+// FIXED: Enhanced socket error handling
+
+
+const setBallStateWithSync = useCallback((newBallState) => {
+  console.log('🎯 setBallStateWithSync called:', {
+    newBallState,
+    collaborativeMode,
+    isConnected
+  });
+  
+  // ALWAYS update local state immediately for responsive UX
+  setBallState(newBallState);
+  
+  // Set a brief local override to prevent incoming collaborative changes from overriding our immediate change
+  setLocalStateOverride({
+    ballState: newBallState,
+    timestamp: Date.now()
+  });
+  
+  // Clear the override after a short delay
+  if (localStateTimeoutRef.current) {
+    clearTimeout(localStateTimeoutRef.current);
+  }
+  localStateTimeoutRef.current = setTimeout(() => {
+    setLocalStateOverride(null);
+  }, 500); // ✅ Reduced from 1000ms to 500ms for faster sync
+  
+  // THEN send collaborative update to other users
+  if (collaborativeMode && isConnected) {
+    console.log('📤 Sending ball state update to other users');
+    const syncSuccess = updateCollaborativeBallState(newBallState, {
+      ballSide: ballSide,
+      currentServeSide: currentServeSide
+    });
+    
+    if (!syncSuccess) {
+      console.warn('Failed to send collaborative ball state update to other users');
+      showActionToast('Failed to sync state change', 'error');
+    } else {
+      console.log('✅ Ball state update sent successfully');
+    }
+  }
+}, [
+  setBallState,
+  collaborativeMode, 
+  isConnected, 
+  updateCollaborativeBallState,
+  ballSide, 
+  currentServeSide,
+  showActionToast
+]);
+
+
+
+
+const callbacksRegisteredRef = useRef(false);
+
+
+
+const setTeamStatsRef = useRef(setTeamStats);
+const setBallStateRef = useRef(setBallState);
+const setCurrentServeSideRef = useRef(setCurrentServeSide);
+const setBallSideRef = useRef(setBallSide);
+const setCourtPlayersRef = useRef(setCourtPlayers);
+
+
+
+// Keep refs updated with current values
+useEffect(() => {
+  setTeamStatsRef.current = setTeamStats;
+  setBallStateRef.current = setBallState;
+  setCurrentServeSideRef.current = setCurrentServeSide;
+  setBallSideRef.current = setBallSide;
+  setCourtPlayersRef.current = setCourtPlayers;
+});
+
+// Add this useEffect near the other useEffects in ExpressStatLogger.js
+// Place it after the refs are defined and updated
+
+useEffect(() => {
+  if (!collaborativeMode || !registerStateCallbacks) return;
+  
+  console.log('🔧 ExpressStatLogger: Registering collaborative state callbacks');
+  
+  registerStateCallbacks({
+    // Handle ball state changes from other users
+    onBallStateChange: (newBallState, data) => {
+      console.log('🎯 ExpressStatLogger: Received ball state change:', {
+        newBallState,
+        fromUser: data.username,
+        currentLocal: ballState
+      });
+      
+      // Skip if this is our own change (already applied locally)
+      if (data.userId === getCurrentUserId()) {
+        console.log('⏩ Skipping own ball state change');
+        return;
+      }
+      
+      // Check if we have a local override (user just made a change)
+      if (localStateOverride?.ballState && 
+          (Date.now() - localStateOverride.timestamp) < 500) {
+        console.log('⏩ Skipping due to local override');
+        return;
+      }
+      
+      // Apply the remote ball state change
+      console.log('✅ Applying remote ball state:', newBallState);
+      setBallState(newBallState);
+      
+      // Also update ball side if provided
+      if (data.ballSide !== undefined) {
+        setBallSide(data.ballSide);
+      }
+      if (data.currentServeSide !== undefined) {
+        setCurrentServeSide(data.currentServeSide);
+      }
+    },
+    
+    // Handle serve side changes from other users
+    onServeSideChange: (newServeSide, data) => {
+      console.log('🎯 ExpressStatLogger: Received serve side change:', {
+        newServeSide,
+        fromUser: data.username,
+        currentLocal: currentServeSide
+      });
+      
+      // Skip if this is our own change
+      if (data.userId === getCurrentUserId()) {
+        console.log('⏩ Skipping own serve side change');
+        return;
+      }
+      
+      // Check if we have a local override
+      if (localStateOverride?.currentServeSide && 
+          (Date.now() - localStateOverride.timestamp) < 500) {
+        console.log('⏩ Skipping due to local override');
+        return;
+      }
+      
+      // Apply the remote serve side change
+      console.log('✅ Applying remote serve side:', newServeSide);
+      setCurrentServeSide(newServeSide);
+      setBallSide(newServeSide);
+    },
+    
+    // Handle general game state changes
+    onGameStateChange: (gameState, data) => {
+      console.log('🎯 ExpressStatLogger: Received game state change:', {
+        gameState,
+        fromUser: data.username
+      });
+      
+      // Skip if this is our own change
+      if (data.userId === getCurrentUserId()) {
+        console.log('⏩ Skipping own game state change');
+        return;
+      }
+      
+      // This is a catch-all for any game state changes
+      // Individual handlers above are more specific
+    }
+  });
+  
+  console.log('✅ ExpressStatLogger: Callbacks registered successfully');
+  
+}, [
+  collaborativeMode, 
+  registerStateCallbacks, 
+  ballState, 
+  currentServeSide,
+  localStateOverride,
+  getCurrentUserId
+]);
+
+useEffect(() => {
+  if (!collaborativeMode || !socket) return;
+  
+  const handleAssistWaitingStarted = (data) => {
+    const currentUserId = getCurrentUserId();
+    
+    if (data.assistPlayer) {
+      console.log('🔵 Setting assist state from OTHER user');
+      setCollaborativeAssistWaiting(true);
+      setAssistWaitingPlayer(data.assistPlayer);
+      setAssistWaitingTimer(10);
+      assistWaitingServeSideRef.current = data.serveSideAtRallyStart;
+      
+      showActionToast(`${data.initiatedBy?.username || 'Another user'} started assist timer for ${data.assistPlayer.name}`, 'info');
+    }
+  };
+  
+ 
+
+ const handleAssistKillCompleted = (data) => {
+    const currentUserId = getCurrentUserId();
+    
+    console.log('🔴 CLEARING assist state from ANOTHER user via assist_kill_completed event');
+    assistKillSelectedRef.current = true;
+    setCollaborativeAssistWaiting(false);
+    setAssistWaitingPlayer(null);
+    setAssistWaitingTimer(0);
+    assistWaitingServeSideRef.current = null;
+    
+    setTimeout(() => {
+      assistKillSelectedRef.current = false;
+    }, 500);
+  };
+  
+  socket.on('assist_selection_started', (data) => {
+    const currentUserId = getCurrentUserId();
+    
+    if (data.initiatedBy?.userId === currentUserId) {
+      return; // Skip own event
+    }
+    
+    // Set state for prominent banner
+    setRemoteAssistInProgress(true);
+    setRemoteAssistPlayer(data.assistPlayer);
+    setRemoteAssistInitiator(data.initiatedBy);
+    
+    // Auto-hide after 10 seconds as fallback
+    setTimeout(() => {
+      setRemoteAssistInProgress(false);
+      setRemoteAssistPlayer(null);
+      setRemoteAssistInitiator(null);
+    }, 10000);
+  });
+
+  socket.on('assist_selection_completed', (data) => {
+    const currentUserId = getCurrentUserId();
+    
+    if (data.initiatedBy?.userId === currentUserId) {
+      return; // Skip own event
+    }
+    
+    // Clear the banner
+    setRemoteAssistInProgress(false);
+    setRemoteAssistPlayer(null);
+    setRemoteAssistInitiator(null);
+    
+    // Show completion notification
+    showActionToast(
+      `Assist by ${data.assistPlayer.name} → Kill by ${data.killPlayer.name}`,
+      'success'
+    );
+  });
+  
+  // Cleanup function for this useEffect
+  return () => {
+    socket.off('assist_selection_started');
+    socket.off('assist_selection_completed');
+  };
+}, [collaborativeMode, socket, showActionToast, getCurrentUserId]);
+
+useEffect(() => {
+  if (!collaborativeMode || !socket) return;
+  
+  const handleServeSideUpdated = (data) => {
+    const currentUserId = getCurrentUserId();
+    
+    // Skip if this is our own update
+    if (data.updatedBy?.userId === currentUserId) {
+      console.log('📤 Skipping own serve side update');
+      return;
+    }
+    
+    console.log('📥 Receiving serve side update from another user:', {
+      newServeSide: data.serveSide,
+      updatedBy: data.updatedBy?.username
+    });
+    
+    // Apply the serve side update
+    setCurrentServeSide(data.serveSide);
+    setBallSide(data.serveSide);
+    
+    showActionToast(
+      `${data.updatedBy?.username || 'Another user'} changed serve to ${data.serveSide === 'our' ? 'Our team' : 'Opponent'}`, 
+      'info'
+    );
+    
+    console.log('✅ Applied serve side update from remote user');
+  };
+  
+  socket.on('serve_side_updated', handleServeSideUpdated);
+  
+  return () => {
+    socket.off('serve_side_updated', handleServeSideUpdated);
+  };
+}, [
+  collaborativeMode, 
+  socket, 
+  getCurrentUserId, 
+  setCurrentServeSide,
+  setBallSide,
+  showActionToast
+]);
+
+useEffect(() => {
+  if (!collaborativeMode || !socket) return;
+  
+  const handleBallStateUpdated = (data) => {
+    const currentUserId = getCurrentUserId();
+    
+    // Skip if this is our own update
+    if (data.updatedBy?.userId === currentUserId) {
+      console.log('📤 Skipping own ball state update');
+      return;
+    }
+    
+    console.log('📥 Receiving ball state update from another user:', {
+      newBallState: data.ballState,
+      ballSide: data.context?.ballSide,
+      currentServeSide: data.context?.currentServeSide,
+      updatedBy: data.updatedBy?.username
+    });
+    
+    // Apply the ball state update
+    setBallState(data.ballState);
+    
+    // Also update ball side and serve side if provided
+    if (data.context?.ballSide !== undefined) {
+      setBallSide(data.context.ballSide);
+    }
+    
+    if (data.context?.currentServeSide !== undefined) {
+      setCurrentServeSide(data.context.currentServeSide);
+    }
+    
+    // Show notification for state changes
+    const stateLabel = data.ballState === 'serve' ? 'Serve' : 
+                       data.ballState === 'inplay' ? 'Rally' : data.ballState;
+    showActionToast(
+      `${data.updatedBy?.username || 'Another user'} changed state to ${stateLabel}`, 
+      'info'
+    );
+    
+    console.log('✅ Applied ball state update from remote user');
+  };
+  
+  socket.on('ball_state_updated', handleBallStateUpdated);
+  
+  return () => {
+    socket.off('ball_state_updated', handleBallStateUpdated);
+  };
+}, [
+  collaborativeMode, 
+  socket, 
+  getCurrentUserId, 
+  setBallState,
+  setBallSide,
+  setCurrentServeSide,
+  showActionToast
+]);
+
+useEffect(() => {
+  if (!collaborativeMode || !socket) return;
+  
+  const handleCourtPlayersUpdated = (data) => {
+    const currentUserId = getCurrentUserId();
+    
+    // Skip if this is our own update
+    if (data.updatedBy?.userId === currentUserId) {
+      console.log('📤 Skipping own court player update');
+      return;
+    }
+    
+    console.log('📥 Receiving court player update from another user:', {
+      action: data.context?.action,
+      updatedBy: data.updatedBy?.username,
+      playerCount: data.courtPlayers?.length
+    });
+    
+    // Apply the court player update from remote user
+    if (data.courtPlayers && Array.isArray(data.courtPlayers)) {
+      // Normalize the received players
+      const normalizedPlayers = data.courtPlayers.map((p, idx) => {
+        if (!p || p.name === '?') {
+          return {
+            id: `empty-${idx}`,
+            name: '?',
+            number: '?',
+            isLibero: false,
+            expressPosition: p?.expressPosition
+          };
+        }
+        
+        return {
+          _id: p._id || p.id,
+          id: p.id || p._id,
+          name: p.name,
+          number: p.number,
+          isLibero: p.isLibero || false,
+          expressPosition: p.expressPosition,
+          replacedPlayer: p.replacedPlayer,
+          careerStats: p.careerStats || {},
+          seasonStats: p.seasonStats || {}
+        };
+      });
+      
+      // Update local court players
+      setCourtPlayers(normalizedPlayers);
+      
+      // Show notification for rotations
+      if (data.context?.action === 'position_rotation' || 
+          data.context?.action === 'libero_substitution_with_rotation') {
+        showActionToast(
+          `${data.updatedBy?.username || 'Another user'} rotated positions`, 
+          'info'
+        );
+      }
+      
+      console.log('✅ Applied court player update from remote user');
+    }
+  };
+  
+  socket.on('court_players_updated', handleCourtPlayersUpdated);
+  
+  return () => {
+    socket.off('court_players_updated', handleCourtPlayersUpdated);
+  };
+}, [
+  collaborativeMode, 
+  socket, 
+  getCurrentUserId, 
+  showActionToast, 
+  setCourtPlayers
+]);
+
+
+useEffect(() => {
+  if (!collaborativeMode || !socket) return;
+  
+  const handleBlockSelectionStarted = (data) => {
+    const currentUserId = getCurrentUserId();
+    
+    if (data.initiatedBy?.userId === currentUserId) {
+      console.log('🔵 Skipping own block selection start event');
+      return;
+    }
+    
+    console.log('🔵 Block selection started by another user:', data.initiatedBy?.username);
+    
+    setCollaborativeBlockWaiting(true);
+    setBlockWaitingPlayers(data.selectedPlayers || []);
+    setBlockWaitingType(data.blockType);
+    setBlockWaitingInitiator(data.initiatedBy);
+    setBlockWaitingTimer(30);
+    
+    showActionToast(
+      `${data.initiatedBy?.username || 'Another user'} is selecting block ${data.blockType === 'assist' ? 'assist' : 'error'} partners`, 
+      'info'
+    );
+  };
+ 
+  const handleBlockCompleted = (data) => {
+    const currentUserId = getCurrentUserId();
+    
+    if (data.completedBy?.userId === currentUserId) {
+      console.log('🔵 Skipping own block completion event');
+      return;
+    }
+    
+    console.log('🔴 Block completed by another user');
+    
+    setCollaborativeBlockWaiting(false);
+    setBlockWaitingPlayers([]);
+    setBlockWaitingType(null);
+    setBlockWaitingInitiator(null);
+    setBlockWaitingTimer(0);
+    
+    if (blockWaitingTimerRef.current) {
+      clearTimeout(blockWaitingTimerRef.current);
+      blockWaitingTimerRef.current = null;
+    }
+    
+    const playerNames = data.players?.map(p => p.name).join(', ') || 'players';
+    showActionToast(`Block ${data.blockType} recorded for ${playerNames}`, 'success');
+  };
+  
+  const handleBlockCancelled = (data) => {
+    const currentUserId = getCurrentUserId();
+    
+    if (data.cancelledBy?.userId === currentUserId) {
+      return;
+    }
+    
+    console.log('❌ Block selection cancelled by another user');
+    
+    setCollaborativeBlockWaiting(false);
+    setBlockWaitingPlayers([]);
+    setBlockWaitingType(null);
+    setBlockWaitingInitiator(null);
+    setBlockWaitingTimer(0);
+    
+    if (blockWaitingTimerRef.current) {
+      clearTimeout(blockWaitingTimerRef.current);
+      blockWaitingTimerRef.current = null;
+    }
+  };
+  
+  socket.on('block_selection_started', handleBlockSelectionStarted);
+  socket.on('block_completed', handleBlockCompleted);
+  socket.on('block_cancelled', handleBlockCancelled);
+  
+  return () => {
+    socket.off('block_selection_started', handleBlockSelectionStarted);
+    socket.off('block_completed', handleBlockCompleted);
+    socket.off('block_cancelled', handleBlockCancelled);
+  };
+}, [collaborativeMode, socket, showActionToast, getCurrentUserId]);
+
+const RemoteAssistBanner = () => {
+  if (!remoteAssistInProgress || !remoteAssistPlayer) return null;
+  
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 200,
+      left: 0,
+      right: 0,
+      backgroundColor: '#FFA500', // Orange for attention
+      color: '#000',
+      padding: '16px',
+      zIndex: 9990,
+      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+      borderBottom: '3px solid #FF8C00',
+      animation: 'pulseGlow 2s infinite'
+    }}>
+      <style>
+        {`
+          @keyframes pulseGlow {
+            0% { box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+            50% { box-shadow: 0 4px 20px rgba(255,165,0,0.6); }
+            100% { box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+          }
+          
+          @keyframes slideDown {
+            from { transform: translateY(-100%); }
+            to { transform: translateY(0); }
+          }
+        `}
+      </style>
+      
+      <div style={{
+        maxWidth: '1200px',
+        margin: '0 auto',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        animation: 'slideDown 0.3s ease-out'
+      }}>
+        {/* Main message */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px'
+        }}>
+          {/* Animated icon */}
+          <div style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: '50%',
+            backgroundColor: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '20px',
+            fontWeight: 'bold',
+            animation: 'spin 2s linear infinite'
+          }}>
+            <style>
+              {`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}
+            </style>
+            ⚡
+          </div>
+          
+          {/* Text content */}
+          <div>
+            <div style={{
+              fontSize: '18px',
+              fontWeight: '700',
+              marginBottom: '2px'
+            }}>
+              Assist Selection in Progress
+            </div>
+            <div style={{
+              fontSize: '14px',
+              fontWeight: '500',
+              opacity: 0.9
+            }}>
+              {remoteAssistInitiator?.username || 'Another user'} is selecting a kill partner for {remoteAssistPlayer?.name}'s assist
+            </div>
+          </div>
+        </div>
+        
+        {/* Status indicator */}
+        <div style={{
+          padding: '8px 16px',
+          backgroundColor: 'rgba(255,255,255,0.9)',
+          borderRadius: '20px',
+          fontSize: '13px',
+          fontWeight: '600',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <div style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: '#FF4500',
+            animation: 'pulse 1s infinite'
+          }}>
+            <style>
+              {`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }`}
+            </style>
+          </div>
+          SELECTING...
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Register callbacks ONCE on mount
+const addNotificationRef = useRef(addNotification);
+const addActionLogEntryRef = useRef(addActionLogEntry);
+const setActivePlayerIdsRef = useRef(setActivePlayerIds);
+const processSetEndingRef = useRef(processSetEnding);
+const deactivatedPlayersRef = useRef(deactivatedPlayers);
+const userRef = useRef(user);
+const collaborativeModeRef = useRef(collaborativeMode);
+const registerStateCallbacksRef = useRef(registerStateCallbacks);
+const getCurrentUserIdRef = useRef(getCurrentUserId);
+const processingAssistKill = useRef(false);
+
+// Add these callback functions
+
+
+// Keep ALL refs updated with current values
+useEffect(() => {
+  setTeamStatsRef.current = setTeamStats;
+  setBallStateRef.current = setBallState;
+  setCurrentServeSideRef.current = setCurrentServeSide;
+  setBallSideRef.current = setBallSide;
+  setCourtPlayersRef.current = setCourtPlayers;
+  addNotificationRef.current = addNotification;
+  addActionLogEntryRef.current = addActionLogEntry;
+  setActivePlayerIdsRef.current = setActivePlayerIds;
+  processSetEndingRef.current = processSetEnding;
+  deactivatedPlayersRef.current = deactivatedPlayers;
+  userRef.current = user;
+  collaborativeModeRef.current = collaborativeMode;
+  registerStateCallbacksRef.current = registerStateCallbacks;
+  getCurrentUserIdRef.current = getCurrentUserId;
+});
+
+
+
+useEffect(() => {
+  if (!collaborativeMode || !socket) return;
+  
+  const handleBlockSelectionStarted = (data) => {
+    const currentUserId = getCurrentUserId();
+    if (data.initiatedBy?.userId === currentUserId) return;
+    
+    const canParticipate = courtPlayers
+      .filter((p) => {
+        return !p?.isLibero && p?._id;
+      })
+      .some(p => isAssignedToPlayer(p._id));
+    
+    setCollaborativeBlockState({
+      active: true,
+      type: data.blockType,
+      players: data.selectedPlayers || [],
+      initiator: data.initiatedBy,
+      timer: 30,
+      canParticipate
+    });
+  };
+  
+  const handleBlockCompleted = (data) => {
+    if (data.completedBy?.userId === getCurrentUserId()) return;
+    
+    setCollaborativeBlockState({
+      active: false,
+      type: null,
+      players: [],
+      initiator: null,
+      timer: 30,
+      canParticipate: false
+    });
+    
+    if (blockMode) {
+      setBlockMode(null);
+      setSelectedBlockPlayers(new Set());
+    }
+  };
+  
+  socket.on('block_selection_started', handleBlockSelectionStarted);
+  socket.on('block_completed', handleBlockCompleted);
+  socket.on('block_cancelled', handleBlockCompleted); // reuse cleanup
+  socket.on('block_timeout', handleBlockCompleted); // reuse cleanup
+  
+  return () => {
+    socket.off('block_selection_started', handleBlockSelectionStarted);
+    socket.off('block_completed', handleBlockCompleted);
+    socket.off('block_cancelled', handleBlockCompleted);
+    socket.off('block_timeout', handleBlockCompleted);
+  };
+}, [collaborativeMode, socket, courtPlayers, blockMode]);
+
+
+useEffect(() => {
+  if (collaborativeBlockState.active && collaborativeBlockState.timer > 0) {
+    const timerId = setTimeout(() => {
+      setCollaborativeBlockState(prev => ({
+        ...prev,
+        timer: prev.timer - 1
+      }));
+    }, 1000);
+    
+    return () => clearTimeout(timerId);
+  } else if (collaborativeBlockState.active && collaborativeBlockState.timer === 0) {
+    // Auto-timeout
+    if (socket && currentMatchId) {
+      socket.emit('block_timeout', {
+        matchId: currentMatchId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    setCollaborativeBlockState({
+      active: false,
+      type: null,
+      players: [],
+      initiator: null,
+      timer: 15,
+      canParticipate: false
+    });
+  }
+}, [collaborativeBlockState.active, collaborativeBlockState.timer, socket, currentMatchId]);
+
+const logStat = useCallback(async (player, label, statKeys, actionText, options = {}) => {
+
+  
+  if (!player || !currentMatchId) {
+    console.error('❌ Missing player or matchId');
+    return;
+  }
+
+  console.log('🎯 logStat wrapper called:', { 
+    player: player.name, 
+    label, 
+    statKeys,
+    collaborativeMode 
+  });
+
+
+  // ============================================
+  // ALWAYS update UI immediately (optimistic)
+  // ============================================
+  const actionEntry = actionText || formatPlayerAction(player, label);
+  addActionLogEntry(actionEntry, {
+    type: 'stat_log',
+    meta: { playerId: player._id, label, statKeys }
+  });
+
+  // ============================================
+  // Try collaborative if enabled
+  // ============================================
+  if (collaborativeMode && isCollaborativeReady()) {
+    try {
+      console.log('📤 Attempting collaborative stat logging...');
+      
+      const collaborativeSuccess = await logCollaborativeStat(player._id, label, 1, {
+        statKeys,
+        actionText,
+        playerName: player.name,
+        playerNumber: player.number
+      });
+      
+      if (collaborativeSuccess) {
+        console.log('✅ Collaborative logging succeeded');
+        showActionToast(`${player.name}: ${label} recorded`, 'success');
+        return; // Success!
+      }
+      
+      console.warn('⚠️ Collaborative logging returned false, trying local fallback');
+      
+    } catch (collabError) {
+      console.error('❌ Collaborative logging error:', collabError);
+    }
+  }
+
+  // ============================================
+  // Fallback: Local logging (ALWAYS succeeds)
+  // ============================================
+  console.log('📝 Using local stat logging');
+  
+  try {
+    await logAndSyncStat({
+      playerId: player._id,
+      playerName: player.name,
+      label,
+      statKeys,
+      setActionLog: addActionLogEntry,
+      setPlayerStats,
+      playerStats,
+      currentMatchId,
+      teamId: match?.teamName,
+    });
+    
+    console.log('✅ Local stat logging succeeded');
+    showActionToast(`${player.name}: ${label} recorded`, 'success');
+    
+  } catch (localError) {
+    console.error('❌ Even local logging failed:', localError);
+    showActionToast(`${player.name}: ${label} recorded (pending sync)`, 'warning');
+  }
+  
+}, [
+  currentMatchId, 
+  collaborativeMode, 
+  isCollaborativeReady,
+  logCollaborativeStat,
+  addActionLogEntry,
+  setPlayerStats,
+  playerStats,
+  match?.teamName,
+  formatPlayerAction,
+  showActionToast
+]);
+ 
+// ==================== BLOCK TIMER COUNTDOWN ====================
+
+useEffect(() => {
+  if (collaborativeBlockWaiting && blockWaitingTimer > 0) {
+    blockWaitingTimerRef.current = setTimeout(() => {
+      setBlockWaitingTimer(prev => prev - 1);
+    }, 1000);
+  } else if (collaborativeBlockWaiting && blockWaitingTimer === 0) {
+    // Timeout - auto-cancel
+    handleBlockTimeout();
+  }
+  
+  return () => {
+    if (blockWaitingTimerRef.current) {
+      clearTimeout(blockWaitingTimerRef.current);
+      blockWaitingTimerRef.current = null;
+    }
+  };
+}, [collaborativeBlockWaiting, blockWaitingTimer]);
+
+
+const checkGlobalRateLimit = useCallback(() => {
+  const now = Date.now();
+  const limiter = globalActionLimiterRef.current;
+  
+  // Reset window every 10 seconds
+  if (now - limiter.windowStart > 10000) {
+    limiter.actionCount = 0;
+    limiter.windowStart = now;
+  }
+  
+  // Allow max 30 actions per 10 second window
+  if (limiter.actionCount >= 30) {
+    console.warn('⚠️ Global rate limit exceeded');
+    showActionToast('Too many actions - please slow down', 'warning');
+    return false;
+  }
+  
+  // Minimum 100ms between any actions
+  if (now - limiter.lastActionTime < 100) {
+    console.warn('⚠️ Actions too rapid');
+    return false;
+  }
+  
+  limiter.actionCount++;
+  limiter.lastActionTime = now;
+  return true;
+}, [showActionToast]);
+
+  // When courtPlayers changes, ensure each player has a position label
+  useEffect(() => {
+    // When courtPlayers changes, ensure each player has a position label
+    const updatedPlayers = courtPlayers.map((player, index) => {
+      if (player && !player.expressPosition) {
+        // Default position assignment: slot 0=Pos1, slot 1=Pos2, slot 2=Pos3, etc.
+        const defaultPositions = ['4', '3', '2', '5', '6', '1'];
+        return {
+          ...player,
+          expressPosition: defaultPositions[index] || '?'
+        };
+      }
+      return player;
+    });
+    
+    if (JSON.stringify(updatedPlayers) !== JSON.stringify(courtPlayers)) {
+      setCourtPlayers(updatedPlayers);
+    }
+  }, [courtPlayers, setCourtPlayers]);
+  
+
+
+useEffect(() => {
+  // Auto-join when collaborative mode becomes enabled
+  if (collaborativeMode && currentMatchId && !isConnected && !connecting) {
+    console.log('Collaborative mode enabled, auto-joining match...');
+    joinMatch(currentMatchId);
+  }
+}, [collaborativeMode, currentMatchId, isConnected, connecting, joinMatch]);
+
+// FIXED: Helper function to add action log entries with collaborative support
+
+
+
+
+
+
+  
+  // Helper function to get current volleyball position for any UI slot
+  const getVolleyballPosition = useCallback((slotIndex) => {
+    if (typeof slotIndex !== 'number' || slotIndex < 0 || slotIndex > 5) {
+      return '?';
+    }
+    // Get position from the player object itself first
+    const player = courtPlayers[slotIndex];
+    if (player?.expressPosition) {
+      return player.expressPosition;
+    }
+    // Fallback to positionMapping if available
+    return positionMapping[slotIndex] || '?';
+  }, [courtPlayers, positionMapping]);
+  
+  
+const moveByUiIndex = useCallback((dragUiIndex, targetUiIndex) => {
+  if (dragUiIndex === targetUiIndex) return;
+
+  // Get the player being dragged
+  const draggedPlayer = courtPlayers[dragUiIndex];
+  
+  // Create a new array without the dragged player
+  const withoutDragged = courtPlayers.filter((_, idx) => idx !== dragUiIndex);
+  
+  // Insert the dragged player at the target position
+  const reordered = [
+    ...withoutDragged.slice(0, targetUiIndex),
+    draggedPlayer,
+    ...withoutDragged.slice(targetUiIndex)
+  ];
+
+  setCourtPlayers(reordered);
+  
+}, [courtPlayers, setCourtPlayers, syncCourtPlayers]);
+
+  // Helper to check if a slot is currently the server position;
+
+  // NEW: Games played credit function
+const creditGamesPlayed = useCallback(async (rawPlayerId, context = 'express', { force = false } = {}) => {
+  // Normalize + guard
+  const playerId = typeof rawPlayerId === 'string' ? rawPlayerId.trim() : rawPlayerId?._id || rawPlayerId;
+  if (!playerId || !currentMatchId || typeof maybeCreditGamesPlayed !== 'function') {
+    console.warn('creditGamesPlayed: missing required data', { playerId, currentMatchId, hasFn: !!maybeCreditGamesPlayed });
+    return false;
+  }
+
+  // Fast idempotency unless force=true
+  if (!force && creditedPlayersThisSetRef.current.has(playerId)) {
+    // Already credited this set
+    return true;
+  }
+
+  // Single-flight: reuse the same in-flight promise per player
+  if (inFlightCreditsRef.current.has(playerId)) {
+    try {
+      return await inFlightCreditsRef.current.get(playerId);
+    } catch (e) {
+      // If a shared call failed, fall through to attempt again with retries
+      inFlightCreditsRef.current.delete(playerId);
+    }
+  }
+
+  // Define the actual attempt with retries + timeout
+  const run = (async () => {
+    const maxAttempts = 3;
+    const baseBackoff = 300; // ms
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        // 2.5s hard timeout per attempt
+        const ok = await withTimeout(
+          maybeCreditGamesPlayed(playerId, /*alreadyCredited*/ false, context),
+          2500,
+          'maybeCreditGamesPlayed'
+        );
+
+        if (ok) {
+          // Mark idempotency only after success
+          creditedPlayersThisSetRef.current.add(playerId);
+          return true;
+        }
+
+        // Backend returned falsy: treat as retryable once, then give up
+        if (attempt === maxAttempts) return false;
+      } catch (err) {
+        // Network/timeout/etc. Retry unless last attempt
+        if (attempt === maxAttempts) {
+          console.error(`creditGamesPlayed: failed for ${playerId} after ${attempt} attempts`, err);
+          return false;
+        }
+      }
+
+      // Exponential backoff with jitter
+      const wait = jitter(baseBackoff * Math.pow(2, attempt - 1));
+      await sleep(wait);
+    }
+
+    return false; // should not reach here
+  })();
+
+  // Register single-flight promise
+  inFlightCreditsRef.current.set(playerId, run);
+
+  try {
+    const result = await run;
+    return result;
+  } finally {
+    // Clean up entry so future calls can try again if needed
+    inFlightCreditsRef.current.delete(playerId);
+  }
+}, [currentMatchId, maybeCreditGamesPlayed]);
+
+  // Track serve side for rotation detection
+  useEffect(() => {
+    previousServeSideRef.current = currentServeSide;
+  }, [currentServeSide]);
+  
+  // UPDATED: Auto-join collaborative mode with ownership check
+  useEffect(() => {
+    const matchId = match?._id;
+    const isCollaborative = match?.collaborativeMode;
+    
+    // Only proceed if match exists and has collaborative mode enabled
+    if (!isCollaborative || !matchId) {
+      hasAutoJoinedRef.current = false;
+      lastMatchIdRef.current = null;
+      return;
+    }
+
+    // If this is a different match, reset the auto-join flag
+    if (lastMatchIdRef.current !== matchId) {
+      hasAutoJoinedRef.current = false;
+      lastMatchIdRef.current = matchId;
+    }
+
+    // Only auto-join once per match
+    if (hasAutoJoinedRef.current) {
+      return;
+    }
+
+    // ENHANCED: Check if collaborative mode is already enabled from restoration
+    if (isCollaborative.enabled && !collaborativeMode) {
+      console.log('🔄 Restoring collaborative mode from match settings');
+      restoreCollaborativeModeFromMatch(isCollaborative);
+    }
+
+    // Auto-join if collaborative mode is now enabled AND user has access
+    if (collaborativeMode && currentMatchId === matchId) {
+      console.log('🔗 Auto-joining collaborative match:', matchId);
+      hasAutoJoinedRef.current = true;
+      
+      joinMatch(matchId).catch((error) => {
+        console.error("Auto-join failed:", error);
+        hasAutoJoinedRef.current = false;
+      });
+    }
+  }, [
+    match?._id,
+    match?.collaborativeMode,
+    currentMatchId,
+    collaborativeMode,
+    restoreCollaborativeModeFromMatch,
+    joinMatch
+  ]);
+
+ 
+
+ // Handle player drag and drop - now calls parent function
+    const handlePlayerDrop = useCallback(async (draggedPlayerIndex, targetSlotIndex) => {
+    if (draggedPlayerIndex === targetSlotIndex) return;
+    
+    // Swap players AND their position labels
+    const newCourtPlayers = [...courtPlayers];
+    const newPositionLabels = [...positionLabels];
+    
+    // Get the position labels that should swap
+    const draggedPosition = newPositionLabels[draggedPlayerIndex];
+    const targetPosition = newPositionLabels[targetSlotIndex];
+    
+    // Swap the players and update their expressPosition properties
+    const draggedPlayer = newCourtPlayers[draggedPlayerIndex];
+    const targetPlayer = newCourtPlayers[targetSlotIndex];
+    
+    // Update expressPosition on the players themselves so it persists
+    if (draggedPlayer && draggedPlayer._id) {
+      draggedPlayer.expressPosition = targetPosition;
+    }
+    if (targetPlayer && targetPlayer._id) {
+      targetPlayer.expressPosition = draggedPosition;
+    }
+    
+    newCourtPlayers[draggedPlayerIndex] = targetPlayer;
+    newCourtPlayers[targetSlotIndex] = draggedPlayer;
+    
+    // Swap the position labels
+    newPositionLabels[draggedPlayerIndex] = targetPosition;
+    newPositionLabels[targetSlotIndex] = draggedPosition;
+    
+    // Update state
+    setCourtPlayers(newCourtPlayers);
+    setPositionLabels(newPositionLabels);
+    
+  // 🔥 NEW: Save on lineup change with non-blocking save
+  addActionLogEntry('Express: Lineup changed (player swap)', {
+    type: 'lineup_change',
+    players: [draggedPlayerIndex, targetSlotIndex]
+  });
+  triggerNonBlockingSave('lineup_change');
+  
+}, [courtPlayers, positionLabels, setCourtPlayers, addActionLogEntry, triggerNonBlockingSave]);
+
+  // Handle multi-player block assist selection
+  const handleBlockAssistSelection = useCallback((playerIndex) => {
+    const player = courtPlayers[playerIndex];
+    if (!player) return;
+    
+    setSelectedBlockPlayers(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(playerIndex)) {
+        newSet.delete(playerIndex);
+      } else {
+        newSet.add(playerIndex);
+      }
+      return newSet;
+    });
+  }, [courtPlayers]);
+
+  // Express-specific position rotation function
+ // 🔥 FIXED: Express-specific position rotation function with collaborative sync
+  const rotateExpressPositions = useCallback(() => {
+    const positionRotationMap = {
+      '1': '6', '6': '5', '5': '4', '4': '3', '3': '2', '2': '1'
+    };
+    
+    // Rotate position labels attached to each player
+    const updatedPlayers = courtPlayers.map(player => {
+      if (player && player.expressPosition) {
+        return {
+          ...player,
+          expressPosition: positionRotationMap[player.expressPosition] || player.expressPosition
+        };
+      }
+      return player;
+    });
+    
+    setCourtPlayers(updatedPlayers);
+  
+  // 🔥 NEW: Sync the rotation to other collaborative users
+  if (collaborativeMode && isConnected) {
+    syncCourtPlayers(updatedPlayers, {
+      action: 'position_rotation',
+      rotationType: 'clockwise',
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  // FIXED: Use collaborative action log
+  addActionLogEntry("Express: Position labels rotated", {
+    type: 'rotation',
+    meta: { source: 'express', type: 'position_rotation' }
+  });
+   triggerNonBlockingSave('rotation');
+}, [courtPlayers, setCourtPlayers, addActionLogEntry, collaborativeMode, isConnected, syncCourtPlayers, triggerNonBlockingSave]);
+  
+
+
+ 
+ const toggleCollaborativeMode = useCallback(async (enabled) => {
+  // Only match owners can toggle collaborative mode
+  if (!isMatchOwner()) {
+    console.warn('Only match owner can toggle collaborative mode');
+    alert('Only the match creator can enable/disable collaborative mode.');
+    return;
+  }
+
+  console.log(`ExpressStatLogger: Setting collaborative mode to ${enabled}`);
+  
+  // Update the match in the database FIRST
+  if (currentMatchId) {
+    try {
+      const response = await axios.put(`${API_URL}/api/matches/${currentMatchId}`, {
+        collaborativeMode: {
+          enabled: enabled,
+          allowedUsers: [],
+          maxUsers: 15
+        }
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        withCredentials: true,
+      });
+      
+      console.log(`Database: Collaborative mode ${enabled ? 'enabled' : 'disabled'}`);
+      
+      // ✅ UPDATE: Now update the local matchSettings state so App.js knows about the change
+      if (setMatchSettings && typeof setMatchSettings === 'function') {
+        setMatchSettings(prev => ({
+          ...prev,
+          collaborativeMode: {
+            enabled: enabled,
+            allowedUsers: [],
+            maxUsers: 15
+          }
+        }));
+        console.log(`Local matchSettings updated: collaborative mode ${enabled ? 'enabled' : 'disabled'}`);
+      } else {
+        console.warn('setMatchSettings not available - local state may be out of sync');
+      }
+      
+      // If enabling, try to join immediately after state update
+     if (enabled) {
+  // The useEffect above will handle joining automatically
+  console.log('Collaborative mode enabled, useEffect will handle joining');
+} else {
+  leaveMatch();
+}
+      
+    } catch (error) {
+      console.error('Failed to update collaborative mode:', error);
+      alert('Failed to update collaborative mode. Please try again.');
+    }
+  } else {
+    console.error('No currentMatchId available for collaborative mode update');
+    alert('No active match found. Cannot toggle collaborative mode.');
+  }
+}, [currentMatchId, token, joinMatch, leaveMatch, isMatchOwner, setMatchSettings]);
+ 
+const handleDirectScoreAdjustment = useCallback((team, delta) => {
+  // Update local state optimistically
+  const newOurScore = team === 'our' ? Math.max(0, ourScore + delta) : ourScore;
+  const newOpponentScore = team === 'opponent' ? Math.max(0, opponentScore + delta) : opponentScore;
+  
+  setOurScore(newOurScore);
+  setOpponentScore(newOpponentScore);
+  
+  const message = `Manual score adjustment: ${team === 'our' ? 'Our' : 'Opponent'} team ${delta > 0 ? '+' : ''}${delta} (no stats affected)`;
+  
+  showActionToast(message, 'info');
+  addActionLogEntry(message, {
+    type: 'manual_score_adjustment',
+    meta: { team, delta, statsAffected: false }
+  });
+
+  // Use the collaborative scoring path for ALL modes
+  if (collaborativeMode && isConnected) {
+    // Collaborative: emit socket event (server broadcasts back)
+    updateCollaborativeScore(team, delta, 'manual_adjustment');
+  } else {
+    // Non-collaborative: direct database save
+    if (currentMatchId && token) {
+      axios.put(
+        `${API_URL}/api/matches/${currentMatchId}`,
+        {
+          ourScore: newOurScore,
+          opponentScore: newOpponentScore,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          withCredentials: true,
+        }
+      ).catch(error => {
+        console.error('Failed to save score:', error);
+        showActionToast('Failed to save score', 'error');
+      });
+    }
+  }
+}, [
+  ourScore,
+  opponentScore,
+  setOurScore,
+  setOpponentScore,
+  collaborativeMode,
+  isConnected,
+  updateCollaborativeScore,
+  currentMatchId,
+  token,
+  showActionToast,
+  addActionLogEntry
+]);
+ 
+const handleExpressRotation = useCallback(async () => {
+  console.log("Express: Starting rotation check...");
+  console.log("Current courtPlayers:", courtPlayers.map((p, i) => ({ 
+      index: i, 
+      name: p?.name, 
+      isLibero: p?.isLibero,
+      expressPosition: p?.expressPosition
+  })));
+  
+  // Find any libero in position 5 that needs substitution before rotation
+  let liberoToSub = null;
+  let liberoSlotIndex = null;
+
+  for (let i = 0; i < courtPlayers.length; i++) {
+    const player = courtPlayers[i];
+    if (player && player.isLibero && player.expressPosition === '5') {
+      liberoToSub = player;
+      liberoSlotIndex = i;
+      console.log(`Libero ${player.name} in position 5 needs substitution before rotating to position 4`);
+      break;
+    }
+  }
+
+  // Handle libero substitution if needed
+  if (liberoToSub && liberoToSub.replacedPlayer) {
+    console.log("Performing automatic libero substitution before rotation");
+    
+    const libero = liberoToSub;
+    const replacedPlayer = libero.replacedPlayer;
+    
+    try {
+      // Update database - libero off court, replacement on court
+      await axios.put(`${API_URL}/api/players/${libero._id}`, 
+        { isOnCourt: false }, 
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          withCredentials: true,
+        }
+      );
+      
+      await axios.put(`${API_URL}/api/players/${replacedPlayer._id}`, 
+        { isOnCourt: true }, 
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          withCredentials: true,
+        }
+      );
+      
+      // Update bench - add libero back to bench
+      setBenchPlayers(prev => {
+        const filtered = prev.filter(p => p._id !== libero._id);
+        const updated = [...filtered, { ...libero, isOnCourt: false }];
+        return updated.sort((a, b) => (a.number || 0) - (b.number || 0));
+      });
+      
+      // Create the substituted court lineup
+      const courtAfterSubstitution = [...courtPlayers];
+      courtAfterSubstitution[liberoSlotIndex] = {
+        ...replacedPlayer,
+        expressPosition: libero.expressPosition, // Keep same position (5)
+        isOnCourt: true
+      };
+      
+      // NOW rotate the positions on the substituted lineup
+      const positionRotationMap = {
+        '1': '6', '6': '5', '5': '4', '4': '3', '3': '2', '2': '1'
+      };
+      
+      const rotatedPlayers = courtAfterSubstitution.map(player => {
+        if (player && player.expressPosition) {
+          return {
+            ...player,
+            expressPosition: positionRotationMap[player.expressPosition] || player.expressPosition
+          };
+        }
+        return player;
+      });
+      
+      // Apply both substitution AND rotation in one update
+      updateCourtPositions(rotatedPlayers, positionMapping);
+      
+      // 🔥 NEW: Sync the combined substitution + rotation to other users
+      if (collaborativeMode && isConnected) {
+        syncCourtPlayers(rotatedPlayers, {
+          action: 'libero_substitution_with_rotation',
+          liberoOut: { id: libero._id, name: libero.name },
+          playerIn: { id: replacedPlayer._id, name: replacedPlayer.name },
+          rotationType: 'clockwise',
+          fromPosition: '5',
+          toPosition: '4',
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      // FIXED: Use collaborative action log
+      addActionLogEntry(
+        `Express: Auto-substitution + rotation - ${replacedPlayer.name} in for ${libero.name}, then rotated to position 4`,
+        {
+          type: 'auto_libero_substitution_with_rotation',
+          meta: {
+            type: 'auto_libero_substitution_with_rotation',
+            reason: 'rotation_prevention',
+            liberoPosition: '5'
+          }
+        }
+      );
+      
+      console.log(`Auto-substitution + rotation completed: ${replacedPlayer.name} now in position 4 after rotation`);
+      
+    } catch (error) {
+      console.error("Libero auto-substitution failed:", error);
+      // Fall back to regular rotation if substitution fails
+      
+    }
+    
+    return; // Exit here - both substitution and rotation are complete
+  } 
+  
+  if (liberoToSub && !liberoToSub.replacedPlayer) {
+    console.error("Libero needs substitution but has no replacedPlayer:", liberoToSub);
+    alert(`Libero ${liberoToSub.name} needs to rotate out but has no replacement player recorded. This may indicate a setup issue.`);
+    return;
+  }
+  
+  // No libero substitution needed - do regular rotation
+  console.log("No libero auto-substitution needed, performing regular rotation");
+  
+  
+}, [courtPlayers, positionMapping, updateCourtPositions, setBenchPlayers, addActionLogEntry, token, collaborativeMode, isConnected, syncCourtPlayers]);
+
+const handleStartBlockSelection = useCallback(async (playerIndex, blockType) => {
+  const player = courtPlayers[playerIndex];
+  if (!player) return;
+  
+  
+
+  
+  // Set block mode and track which player initiated
+  setBlockMode(blockType);
+  setBlockInitiatorIndex(playerIndex);
+  setSelectedBlockPlayers(new Set([playerIndex]));
+  
+  // Emit collaborative event
+  if (collaborativeMode && isConnected && socket) {
+    const selectedPlayersData = [{
+      _id: player._id,
+      name: player.name,
+      number: player.number,
+      index: playerIndex
+    }];
+    
+    socket.emit('block_selection_started', {
+      matchId: currentMatchId,
+      selectedPlayers: selectedPlayersData,
+      blockType,
+      initiatedBy: {
+        userId: getCurrentUserId(),
+        username: getCurrentUsername(),
+        sessionId: socket.sessionId
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  showActionToast(`Selecting players for block ${blockType}`, 'info');
+}, [
+  courtPlayers,  
+  getVolleyballPosition, 
+  collaborativeMode, 
+  isCollaborativeReady, 
+  getTrackingStatus,
+  isConnected,
+  socket,
+  currentMatchId,
+  getCurrentUserId,
+  getCurrentUsername,
+  showActionToast
+]);
+
+const handleBlockPlayerToggle = useCallback((playerIndex) => {
+  if (!blockMode) return;
+  
+  const player = courtPlayers[playerIndex];
+  if (!player) return;
+  
+  
+  // ✅ NO POSITION CHECKS - Allow toggling any non-libero player for blocks
+  
+  setSelectedBlockPlayers(prev => {
+    const newSet = new Set(prev);
+    if (newSet.has(playerIndex)) {
+      newSet.delete(playerIndex);
+    } else {
+      newSet.add(playerIndex);
+    }
+    return newSet;
+  });
+}, [
+  blockMode,
+  courtPlayers,
+  getVolleyballPosition,
+  showActionToast
+]);
+
+
+const submitBlock = useCallback(async () => {
+  if (!blockMode || selectedBlockPlayers.size === 0) return;
+  
+  // ✅ CHECK COOLDOWN FIRST
+  if (collaborativeMode && scoreCooldownActive) {
+    console.warn('⏱️ Block action blocked - scoring cooldown active');
+    showActionToast(`Wait ${scoreCooldownRemaining}s before block actions`, 'warning');
+    return;
+  }
+  
+  console.log(`🎯 Processing block ${blockMode} for ${selectedBlockPlayers.size} players`);
+
+  
+  const wasOpponentServing = currentServeSide === "opponent";
+  const processedPlayers = [];
+  const statType = blockMode === 'assist' ? 'blockAssist' : 'blockErrors';
+  const pointValue = blockMode === 'assist' ? 0.5 : 0;
+  
+  // Process each player
+  for (const playerIndex of selectedBlockPlayers) {
+    const player = courtPlayers[playerIndex];
+    
+    if (!player || !player._id || player.name === "?") {
+      console.warn(`Skipping invalid player at index ${playerIndex}`);
+      continue;
+    }
+    
+    try {
+      // Log block stat
+      await logStat(
+        player, 
+        blockMode === 'assist' ? "Block Assist" : "Block Error",
+        [statType],
+        `${player.name} (#${player.number}) → Block ${blockMode === 'assist' ? 'Assist' : 'Error'}`
+      );
+      
+      // Award points for block assist only
+      if (blockMode === 'assist' && pointValue > 0) {
+        if (collaborativeMode && isCollaborativeReady()) {
+          await logCollaborativeStat(player._id, "Block Assist Points", pointValue, {
+            statKeys: ["points"],
+            actionText: `${player.name} (#${player.number}) → Block Assist Points (${pointValue})`,
+            playerName: player.name,
+            playerNumber: player.number,
+            isPointsOnly: true
+          });
+        } else {
+          await axios.post(`${API_URL}/api/players/${player._id}/stats`, {
+            points: pointValue,
+            matchId: currentMatchId,
+          }, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            withCredentials: true,
+          });
+        }
+      }
+      
+      processedPlayers.push(player);
+      
+      if (collaborativeMode && selectedBlockPlayers.size > 1) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+    } catch (error) {
+      console.error(`Failed to process block ${blockMode} for ${player.name}:`, error);
+    }
+  }
+  
+  if (processedPlayers.length === 0) {
+    console.error('No players were successfully processed');
+    showActionToast('Failed to record block', 'error');
+    return;
+  }
+  
+  // Update score
+  if (blockMode === 'assist') {
+    
+    setTeamStats && setTeamStats(prev => ({ ...prev, ourEarned: prev.ourEarned + 1 }));
+    
+    if (collaborativeMode && isConnected) {
+      updateCollaborativeScore('our', 1, 'earned');
+    }
+  } else {
+    
+    setTeamStats && setTeamStats(prev => ({ ...prev, ourError: prev.ourError + 1 }));
+    
+    if (collaborativeMode && isConnected) {
+      updateCollaborativeScore('opponent', 1, 'our_error');
+    }
+  }
+  
+  setBallStateWithSync("serve");
+  const newServeSide = blockMode === 'assist' ? 'our' : 'opponent';
+  setCurrentServeSideWithSync(newServeSide);
+  
+  if (blockMode === 'assist' && wasOpponentServing) {
+    setTimeout(() => {
+      handleExpressRotation();
+    }, 100);
+  }
+  
+  // Emit completion event
+  if (collaborativeMode && isConnected && socket) {
+    socket.emit('block_completed', {
+      matchId: currentMatchId,
+      players: processedPlayers.map(p => ({
+        _id: p._id,
+        name: p.name,
+        number: p.number
+      })),
+      blockType: blockMode,
+      completedBy: {
+        userId: getCurrentUserId(),
+        username: getCurrentUsername(),
+        sessionId: socket.sessionId
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  const playerNames = processedPlayers.map(p => `${p.name} (#${p.number})`).join(', ');
+  addActionLogEntry(
+    `Block ${blockMode === 'assist' ? 'Assist' : 'Error'} by: ${playerNames}`,
+    {
+      type: `block_${blockMode}`,
+      meta: {
+        type: `block_${blockMode}`,
+        playerCount: processedPlayers.length,
+        pointsPerPlayer: pointValue
+      }
+    }
+  );
+  
+  setBlockMode(null);
+  setBlockInitiatorIndex(null);
+  setSelectedBlockPlayers(new Set());
+  
+  showActionToast(
+    `Block ${blockMode} recorded for ${processedPlayers.length} player(s)`, 
+    blockMode === 'assist' ? 'success' : 'warning'
+  );
+}, [
+  blockMode,
+  selectedBlockPlayers,
+  courtPlayers,
+  currentServeSide,
+  collaborativeMode,
+  isConnected,
+  isCollaborativeReady,
+  logStat,
+  logCollaborativeStat,
+  setTeamStats,
+  updateCollaborativeScore,
+  setBallStateWithSync,
+  setCurrentServeSideWithSync,
+  handleExpressRotation,
+  socket,
+  scoreCooldownActive,
+  scoreCooldownRemaining,
+  currentMatchId,
+  getCurrentUserId,
+  getCurrentUsername,
+  addActionLogEntry,
+  showActionToast,
+  token
+]);
+
+const cancelBlock = useCallback(() => {
+  if (collaborativeMode && isConnected && socket && currentMatchId) {
+    socket.emit('block_cancelled', {
+      matchId: currentMatchId,
+      cancelledBy: {
+        userId: getCurrentUserId(),
+        username: getCurrentUsername(),
+        sessionId: socket.sessionId
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  setBlockMode(null);
+  setSelectedBlockPlayers(new Set());
+  showActionToast('Block selection cancelled', 'info');
+}, [collaborativeMode, isConnected, socket, currentMatchId, getCurrentUserId, getCurrentUsername, showActionToast]);
+
+
+const handleAssistTimeout = useCallback(async () => {
+  // ✅ Set flag FIRST
+  assistKillSelectedRef.current = true;
+  
+  // ✅ Clear timer
+  if (assistTimerRef.current) {
+    clearTimeout(assistTimerRef.current);
+    assistTimerRef.current = null;
+  }
+  
+  if (!assistWaitingPlayer) {
+    console.log('Timeout cancelled - no assist player');
+    setCollaborativeAssistWaiting(false);
+    setAssistWaitingPlayer(null);
+    setAssistWaitingTimer(0);
+    assistWaitingServeSideRef.current = null;
+    return;
+  }
+  
+  // ✅ CHECK COOLDOWN FIRST
+  if (collaborativeMode && scoreCooldownActive) {
+    console.warn('⏱️ Assist timeout blocked - scoring cooldown active');
+    showActionToast(`Wait ${scoreCooldownRemaining}s before scoring`, 'warning');
+    assistKillSelectedRef.current = false;
+    return;
+  }
+  
+  // ✅ Clear overlay state IMMEDIATELY
+  setCollaborativeAssistWaiting(false);
+  setAssistWaitingTimer(0);
+
+  
+  const player = assistWaitingPlayer;
+  const effectiveServeSide = assistWaitingServeSideRef.current || currentServeSide;
+  const wasOpponentServing = effectiveServeSide === "opponent";
+  
+  setAssistWaitingPlayer(null);
+  assistWaitingServeSideRef.current = null;
+  
+  const currentUserId = getCurrentUserId();
+  const trackingStatus = getTrackingStatus(player._id);
+  const isInitiator = trackingStatus?.isMe || trackingStatus?.trackedByUserId === currentUserId;
+  
+  if (!isInitiator) {
+    console.log('Not the initiator - skipping timeout handling');
+    setTimeout(() => {
+      assistKillSelectedRef.current = false;
+    }, 500);
+    return;
+  }
+  
+  console.log('Initiator handling assist timeout - assist already logged, just scoring point');
+  
+  // ✅ DON'T LOG ASSIST AGAIN - it was already logged when button was clicked
+  // Just award the earned point
+  
+  
+  setTeamStats && setTeamStats(prev => ({ ...prev, ourEarned: prev.ourEarned + 1 }));
+  
+  if (collaborativeMode && isConnected) {
+    updateCollaborativeScore('our', 1, 'earned');
+  }
+  
+  setBallStateWithSync("serve");
+  setCurrentServeSideWithSync("our");
+  
+  if (wasOpponentServing) {
+    setTimeout(() => {
+      handleExpressRotation();
+    }, 100);
+  }
+  
+  addActionLogEntry(
+    `Assist by ${player.name} (#${player.number}) → Earned point (10s timeout, no kill recorded)`,
+    {
+      type: 'assist_timeout',
+      meta: {
+        type: 'assist_timeout',
+        assistPlayer: { id: player._id, name: player.name, number: player.number }
+      }
+    }
+  );
+  
+  showActionToast('Point awarded - no kill within 10s', 'info');
+  
+  setTimeout(() => {
+    assistKillSelectedRef.current = false;
+  }, 1000);
+}, 
+ [
+  assistWaitingPlayer, 
+  currentServeSide, 
+  logStat, 
+  setTeamStats, 
+  collaborativeMode, 
+  isConnected, 
+  updateCollaborativeScore, 
+  setBallStateWithSync,
+  setCurrentServeSideWithSync, 
+  handleExpressRotation, 
+  addActionLogEntry, 
+  showActionToast,
+  getCurrentUserId,
+  getTrackingStatus,
+  scoreCooldownActive,
+  scoreCooldownRemaining
+]);
+
+useEffect(() => {
+  // ✅ Exit early if flag is set
+  if (assistKillSelectedRef.current) {
+    if (assistTimerRef.current) {
+      clearTimeout(assistTimerRef.current);
+      assistTimerRef.current = null;
+    }
+    return;
+  }
+  
+  if (collaborativeAssistWaiting && assistWaitingTimer > 0) {
+    assistTimerRef.current = setTimeout(() => {
+      setAssistWaitingTimer(prev => prev - 1);
+    }, 1000);
+  } else if (collaborativeAssistWaiting && assistWaitingTimer === 0 && !assistKillSelectedRef.current) {
+    // Only timeout if kill wasn't manually selected
+    handleAssistTimeout();
+  }
+  
+  return () => {
+    if (assistTimerRef.current) {
+      clearTimeout(assistTimerRef.current);
+	  assistTimerRef.current = null; 
+    }
+  };
+}, [collaborativeAssistWaiting, assistWaitingTimer, handleAssistTimeout]);
+
+
+const handleBlockTimeout = useCallback(() => {
+  console.log('⏰ Block selection timed out');
+  
+  // Clear all block waiting state
+  setCollaborativeBlockWaiting(false);
+  setBlockWaitingPlayers([]);
+  setBlockWaitingType(null);
+  setBlockWaitingInitiator(null);
+  setBlockWaitingTimer(0);
+  
+  // Clear the timer ref
+  if (blockWaitingTimerRef.current) {
+    clearTimeout(blockWaitingTimerRef.current);
+    blockWaitingTimerRef.current = null;
+  }
+  
+  // Emit timeout event to notify other users
+  if (collaborativeMode && isConnected && socket && currentMatchId) {
+    socket.emit('block_timeout', {
+      matchId: currentMatchId,
+      timestamp: new Date().toISOString(),
+      timedOutBy: {
+        userId: getCurrentUserId(),
+        username: getCurrentUsername(),
+        sessionId: socket.sessionId
+      }
+    });
+  }
+  
+  // Show notification
+  showActionToast('Block selection timed out', 'warning');
+  
+  // If in local block mode, also clear that
+  if (blockMode) {
+    setBlockMode(null);
+    setSelectedBlockPlayers(new Set());
+  }
+}, [
+  collaborativeMode,
+  isConnected,
+  socket,
+  currentMatchId,
+  getCurrentUserId,
+  getCurrentUsername,
+  showActionToast,
+  blockMode
+]);
+
+useEffect(() => {
+  return () => {
+    // Cleanup on unmount
+    if (assistTimerRef.current) {
+      clearTimeout(assistTimerRef.current);
+      assistTimerRef.current = null;
+    }
+    assistKillSelectedRef.current = false;
+  };
+}, []);
+
+useEffect(() => {
+  if (ballState === "inplay") {
+    serveSideAtRallyStartRef.current = currentServeSide;
+  }
+}, [ballState, currentServeSide]);
+
+  // Submit block assist for all selected players
+  
+const ignoreKill = useCallback(async () => {
+  if (selectedAssistPlayer === null) return;
+  
+  // ✅ CHECK COOLDOWN FIRST
+  if (collaborativeMode && scoreCooldownActive) {
+    console.warn('⏱️ Ignore kill blocked - scoring cooldown active');
+    showActionToast(`Wait ${scoreCooldownRemaining}s before scoring`, 'warning');
+    return;
+  }
+  
+  const assistPlayer = courtPlayers[selectedAssistPlayer];
+  
+  if (!assistPlayer) return;
+  
+  const effectiveServeSide = serveSideAtRallyStartRef.current || currentServeSide;
+  const wasOpponentServing = effectiveServeSide === "opponent";
+  
+  // Use logStat for collaborative sync
+  await logStat(assistPlayer, "Assist", ["sets", "assists"], 
+    `${assistPlayer.name} (#${assistPlayer.number}) → Assist (Kill ignored)`);
+  
+  // 🔥 FIXED: ALWAYS update local score immediately for responsive UX
+  setTeamStats && setTeamStats(prev => ({ ...prev, ourEarned: prev.ourEarned + 1 }));
+  
+  // 🔥 THEN send collaborative update to other users
+  if (collaborativeMode && isConnected) {
+    const collaborativeSuccess = updateCollaborativeScore('our', 1, 'earned');
+    if (!collaborativeSuccess) {
+      console.warn('Failed to send collaborative score update to other users');
+    }
+  }
+  
+  // FIXED: Use collaborative-aware state setters
+  setBallStateWithSync("serve");
+  setCurrentServeSideWithSync("our");
+  
+  // Handle rotation if opponent was serving
+  if (wasOpponentServing) {
+    setTimeout(() => {
+      handleExpressRotation();
+    }, 100);
+  }
+  
+  // Add action log entry for ignored kill
+  addActionLogEntry(
+    `Assist by ${assistPlayer.name} (#${assistPlayer.number}) → Kill ignored (inactive player or other reason)`,
+    {
+      type: 'assist_kill_ignored',
+      meta: {
+        type: 'assist_kill_ignored',
+        assistPlayer: { id: assistPlayer._id, name: assistPlayer.name, number: assistPlayer.number },
+        reason: 'kill_ignored'
+      }
+    }
+  );
+  
+  // Exit assist mode
+  setAssistMode(false);
+  setSelectedAssistPlayer(null);
+}, [
+  selectedAssistPlayer,
+  courtPlayers,
+  currentServeSide,
+  collaborativeMode,
+  isConnected,
+  updateCollaborativeScore,
+  setTeamStats,
+  setBallStateWithSync,
+  setCurrentServeSideWithSync,
+  addActionLogEntry,
+  logStat,
+  currentMatchId,
+  match?.teamName,
+  handleExpressRotation,
+  scoreCooldownActive,
+  scoreCooldownRemaining,
+  showActionToast
+]);
+
+const submitBlockAssist = useCallback(async () => {
+  if (selectedBlockPlayers.size === 0) return;
+  
+  // ✅ CHECK COOLDOWN FIRST
+  if (collaborativeMode && scoreCooldownActive) {
+    console.warn('⏱️ Block assist blocked - scoring cooldown active');
+    showActionToast(`Wait ${scoreCooldownRemaining}s before block actions`, 'warning');
+    return;
+  }
+  
+   if (collaborativeMode && isConnected && socket) {
+    const selectedPlayersData = Array.from(selectedBlockPlayers).map(index => {
+      const player = courtPlayers[index];
+      return {
+        _id: player._id,
+        name: player.name,
+        number: player.number,
+        index: index
+      };
+    });
+    
+    socket.emit('block_selection_started', {
+      matchId: currentMatchId,
+      selectedPlayers: selectedPlayersData,
+      blockType: 'assist',
+      initiatedBy: {
+        userId: getCurrentUserId(),
+        username: getCurrentUsername(),
+        sessionId: socket.sessionId
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  console.log('🏐 Block Assist: Processing', selectedBlockPlayers.size, 'players');
+  console.log('🏐 Selected player indices:', Array.from(selectedBlockPlayers));
+  
+  const wasOpponentServing = currentServeSide === "opponent";
+  const newServeSide = "our";
+  const serveSideChanged = wasOpponentServing && (newServeSide !== currentServeSide);
+  
+  const playerNames = [];
+  const processedPlayers = [];
+  
+  // Process each player individually with error handling
+  for (const playerIndex of selectedBlockPlayers) {
+    const player = courtPlayers[playerIndex];
+    console.log(`🏐 Processing player ${playerIndex}:`, player?.name);
+    
+    if (!player || !player._id || !player.name || player.name === "?") {
+      console.warn(`🏐 Skipping invalid player at index ${playerIndex}:`, player);
+      continue;
+    }
+    
+    try {
+      // Log the block assist stat
+      console.log(`🏐 Logging block assist for ${player.name}...`);
+      await logStat(player, "Block Assist", ["blockAssist"], 
+        `${player.name} (#${player.number}) → Block Assist`);
+      
+      // Award 0.5 points through collaborative system when available
+      if (collaborativeMode && isCollaborativeReady()) {
+        console.log(`🏐 Awarding collaborative 0.5 points to ${player.name}...`);
+        try {
+          const pointsSuccess = await logCollaborativeStat(player._id, "Block Assist Points", 0.5, {
+            statKeys: ["points"],
+            actionText: `${player.name} (#${player.number}) → Block Assist Points (0.5)`,
+            playerName: player.name,
+            playerNumber: player.number,
+            isPointsOnly: true
+          });
+          
+          if (!pointsSuccess) {
+            console.warn(`🏐 Collaborative points failed for ${player.name}, using direct API`);
+            await axios.post(`${API_URL}/api/players/${player._id}/stats`, {
+              points: 0.5,
+              matchId: currentMatchId,
+            }, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+              withCredentials: true,
+            });
+          }
+        } catch (collaborativeError) {
+          console.error(`🏐 Collaborative error for ${player.name}:`, collaborativeError);
+          // Fallback to direct API
+          await axios.post(`${API_URL}/api/players/${player._id}/stats`, {
+            points: 0.5,
+            matchId: currentMatchId,
+          }, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            withCredentials: true,
+          });
+        }
+      } else {
+        console.log(`🏐 Non-collaborative: Awarding 0.5 points to ${player.name}...`);
+        await axios.post(`${API_URL}/api/players/${player._id}/stats`, {
+          points: 0.5,
+          matchId: currentMatchId,
+        }, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          withCredentials: true,
+        });
+      }
+      
+      console.log(`✅ Block assist complete for ${player.name}`);
+      playerNames.push(`${player.name} (#${player.number})`);
+      processedPlayers.push(player);
+      
+      // Small delay between players to avoid overwhelming the collaborative system
+      if (collaborativeMode && selectedBlockPlayers.size > 1) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+    } catch (error) {
+      console.error(`❌ Failed to process block assist for ${player.name}:`, error);
+      // Continue with other players even if one fails
+    }
+  }
+  
+  console.log(`🏐 Block assist completed for ${processedPlayers.length}/${selectedBlockPlayers.size} players`);
+  
+  // Only proceed with scoring if at least one player was processed
+  if (processedPlayers.length === 0) {
+    console.error('🏐 No players were successfully processed for block assist');
+    return;
+  }
+  
+  // Update score and game state
+  setTeamStats && setTeamStats(prev => ({ ...prev, ourEarned: prev.ourEarned + 1 }));
+  
+  if (collaborativeMode && isConnected) {
+    const collaborativeSuccess = updateCollaborativeScore('our', 1, 'earned');
+    if (!collaborativeSuccess) {
+      console.warn('Failed to send collaborative score update to other users');
+    }
+  }
+  if (collaborativeMode && isConnected && socket) {
+    socket.emit('block_completed', {
+      matchId: currentMatchId,
+      players: processedPlayers.map(p => ({
+        _id: p._id,
+        name: p.name,
+        number: p.number
+      })),
+      blockType: 'assist',
+      completedBy: {
+        userId: getCurrentUserId(),
+        username: getCurrentUsername(),
+        sessionId: socket.sessionId
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  setBallStateWithSync("serve");
+  setCurrentServeSideWithSync("our");
+  
+  if (serveSideChanged) {
+    setTimeout(() => {
+      handleExpressRotation();
+    }, 100);
+  }
+  
+  addActionLogEntry(
+    `Block Assist (0.5 pts each) by: ${playerNames.join(', ')}`,
+    {
+      type: 'block_assist',
+      meta: {
+        type: 'block_assist',
+        playerCount: processedPlayers.length,
+        selectedCount: selectedBlockPlayers.size,
+        pointsPerPlayer: 0.5
+      }
+    }
+  );
+  
+  setBlockMode(null);
+  setSelectedBlockPlayers(new Set());
+}, [
+  selectedBlockPlayers, 
+  courtPlayers, 
+  currentServeSide, 
+  collaborativeMode,
+  isConnected,
+  isCollaborativeReady,
+  logCollaborativeStat,
+  updateCollaborativeScore, 
+  setTeamStats, 
+  setBallStateWithSync,
+  setCurrentServeSideWithSync,
+  addActionLogEntry,
+  logStat,
+  currentMatchId, 
+  token,
+  handleExpressRotation,
+  scoreCooldownActive,
+  scoreCooldownRemaining,
+  showActionToast
+]);
+
+  // Cancel block assist mode
+const cancelBlockAssist = useCallback(() => {
+  // EMIT CANCEL EVENT for collaborative users
+  if (collaborativeMode && isConnected && socket) {
+    socket.emit('block_cancelled', {
+      matchId: currentMatchId,
+      cancelledBy: {
+        userId: getCurrentUserId(),
+        username: getCurrentUsername(),
+        sessionId: socket.sessionId
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  setBlockMode(null);
+  setBlockInitiatorIndex(null);
+  setSelectedBlockPlayers(new Set());
+}
+, []);
+
+  // Kill/Assist selection helpers (same pattern as block)
+  const DraggablePlayerCard = ({ player, index, children }) => {
+    const [{ isDragging }, drag] = useDrag(() => ({
+      type: "EXPRESS_PLAYER",
+      item: { playerIndex: index },
+      collect: (monitor) => ({
+        isDragging: monitor.isDragging(),
+      }),
+    }), [index]);
+
+    return (
+      <div
+        ref={drag}
+        style={{
+          opacity: isDragging ? 0.5 : 1,
+          cursor: player ? (isDragging ? 'grabbing' : 'grab') : 'default',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+        }}
+      >
+        {children}
+      </div>
+    );
+  };
+
+  // Droppable Slot Component  
+  const DroppableSlot = ({ index, children }) => {
+    const [{ isOver }, drop] = useDrop(() => ({
+      accept: "EXPRESS_PLAYER",
+      drop: (item) => {
+        moveByUiIndex(item.playerIndex, index)
+      },
+      collect: (monitor) => ({
+        isOver: monitor.isOver(),
+      }),
+    }), [index, handlePlayerDrop]);
+
+    return (
+      <div
+        ref={drop}
+        style={{
+          backgroundColor: isOver ? 'rgba(0, 122, 255, 0.1)' : 'transparent',
+          borderRadius: '8px',
+          transition: 'background-color 0.2s ease',
+          border: isOver ? '2px dashed #007AFF' : '2px solid transparent',
+          position: 'relative',
+        }}
+      >
+        {isOver && (
+          <div style={{
+            position: 'absolute',
+            top: '-25px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#007AFF',
+            color: 'white',
+            padding: '2px 0px',
+            borderRadius: '4px',
+            fontSize: '10px',
+            fontWeight: '600',
+            zIndex: 10,
+            whiteSpace: 'nowrap'
+          }}>
+            Will bring dragged player here
+          </div>
+        )}
+        {children}
+      </div>
+    );
+  };
+
+  // ========================================================================
+  // NEW: Fetch all roster players and initialize on/off status
+  // ========================================================================
+  useEffect(() => {
+    const fetchRoster = async () => {
+      if (!match?.teamName) return;
+
+      try {
+        const response = await axios.get(`${API_URL}/api/players`, {
+          params: { team: match.teamName },
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        const roster = response.data || [];
+        setAllRosterPlayers(roster);
+
+        // Initialize on/off status: players in courtPlayers are ON, rest are OFF
+        const newStatus = {};
+        roster.forEach(player => {
+          const isInCourt = courtPlayers.some(cp => cp?._id === player._id);
+          newStatus[player._id] = isInCourt;
+        });
+        setPlayerOnOffStatus(newStatus);
+      } catch (error) {
+        console.error('Failed to fetch roster:', error);
+      }
+    };
+
+    fetchRoster();
+  }, [match?.teamName, token]);
+
+  // ========================================================================
+  // NEW: Handle player ON/OFF toggle
+  // ========================================================================
+  const handlePlayerToggle = useCallback((playerId) => {
+    setPlayerOnOffStatus(prev => {
+      // Count how many players are currently ON
+      const currentOnCount = Object.values(prev).filter(Boolean).length;
+      
+      // If trying to turn ON and already have 6 ON players, prevent it
+      if (!prev[playerId] && currentOnCount >= 6) {
+        showActionToast('Maximum 6 players on court. Turn OFF a player first.', 'warning');
+        return prev; // Don't change status
+      }
+
+      const newStatus = { ...prev };
+      newStatus[playerId] = !newStatus[playerId];
+
+      const rosterPlayer = allRosterPlayers.find(p => p._id === playerId);
+      if (!rosterPlayer) return prev;
+
+      if (newStatus[playerId]) {
+        // Add to court
+        setCourtPlayers(prevPlayers => {
+          if (prevPlayers.some(p => p._id === playerId)) {
+            return prevPlayers;
+          }
+          return [...prevPlayers, rosterPlayer];
+        });
+      } else {
+        // Remove from court
+        setCourtPlayers(prevPlayers =>
+          prevPlayers.filter(p => p._id !== playerId)
+        );
+      }
+
+      return newStatus;
+    });
+  }, [allRosterPlayers, setCourtPlayers, showActionToast]);
+
+  // ========================================================================
+  // HELPER: Get current server player info
+  // ========================================================================
+
+
+
+  useEffect(() => {
+    if (!currentMatchId || !currentUserId) return;
+    
+    // Only save if we have actual players (not just empty slots)
+    const hasPlayers = courtPlayers.some(p => p && p._id);
+    if (!hasPlayers) return;
+    
+    const storageKey = `slotOrder_${currentUserId}_${currentMatchId}`;
+    
+    // Save the order of player IDs in their current slots
+    const slotOrder = courtPlayers.map(p => p?._id || null);
+    
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(slotOrder));
+    } catch (error) {
+      console.error('Failed to save slot order:', error);
+    }
+  }, [courtPlayers, currentMatchId, currentUserId]);
+
+  // Track which match we've loaded slot order for
+  const loadedSlotOrderForMatchRef = useRef(null);
+
+  // Load saved slot order from localStorage when match changes
+  useEffect(() => {
+    if (!currentMatchId || !currentUserId) return;
+    
+    // Only load once per match
+    if (loadedSlotOrderForMatchRef.current === currentMatchId) return;
+    
+    const storageKey = `slotOrder_${currentUserId}_${currentMatchId}`;
+    
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (!saved) {
+        loadedSlotOrderForMatchRef.current = currentMatchId;
+        return;
+      }
+      
+      const savedOrder = JSON.parse(saved);
+      if (!Array.isArray(savedOrder) || savedOrder.length !== 6) {
+        loadedSlotOrderForMatchRef.current = currentMatchId;
+        return;
+      }
+      
+      // Small delay to ensure courtPlayers are populated
+      setTimeout(() => {
+        setCourtPlayers(current => {
+          // Reorder courtPlayers to match the saved slot order
+          const reordered = savedOrder.map(savedId => {
+            if (!savedId) return EMPTY_PLAYER;
+            return current.find(p => p?._id === savedId) || EMPTY_PLAYER;
+          });
+          
+          // Only apply if it's actually different and we have players
+          const hasPlayers = reordered.some(p => p && p._id);
+          const isDifferent = reordered.some((p, i) => p?._id !== current[i]?._id);
+          
+          if (hasPlayers && isDifferent) {
+            return reordered;
+          }
+          return current;
+        });
+        
+        loadedSlotOrderForMatchRef.current = currentMatchId;
+      }, 100);
+      
+    } catch (error) {
+      console.error('Failed to load slot order:', error);
+      loadedSlotOrderForMatchRef.current = currentMatchId;
+    }
+  }, [currentMatchId, currentUserId, setCourtPlayers]);
+
+  // Format player action for logging
+
+ const handleRallyStart = useCallback(() => {
+  // Remember who was serving when the rally began
+  serveSideAtRallyStartRef.current = currentServeSide;
+  
+  // Move to rally with sync
+  setBallStateWithSync('inplay');
+  
+  // Mid-rally, we don't track possession with ballSide; clear it
+  setBallSide(null);
+  
+  // Log it
+  addActionLogEntry('Manual: Rally started', {
+    type: 'rally_start',
+    meta: { type: 'rally_start', serveSideAtStart: currentServeSide }
+  });
+}, [currentServeSide, setBallStateWithSync, setBallSide, addActionLogEntry]); 
+
+ // Handle player actions - updated to use courtPlayers
+
+const handlePlayerAction = useCallback(async (playerIndex, actionType, passGrade = null) => {
+  const player = courtPlayers[playerIndex];
+  if (!player) return;
+  // Don't require isPlayerActive check - roster players toggled ON should be able to log stats
+  
+    if (actionType === "OPEN_SERVE") {
+    setSelectedActionFamily("SERVE");
+    setSelectedPlayerForActions(playerIndex);
+    return;
+  }
+
+  if (actionType === "OPEN_RECEIVE") {
+    setSelectedActionFamily("RECEIVE");
+    setSelectedPlayerForActions(playerIndex);
+    return;
+  }
+
+  if (actionType === "OPEN_SET") {
+    setSelectedActionFamily("SET");
+    setSelectedPlayerForActions(playerIndex);
+    return;
+  }
+
+  if (actionType === "OPEN_ATTACK") {
+    setSelectedActionFamily("ATTACK");
+    setSelectedPlayerForActions(playerIndex);
+    return;
+  }
+
+  if (actionType === "OPEN_BLOCK") {
+    setSelectedActionFamily("BLOCK");
+    setSelectedPlayerForActions(playerIndex);
+    return;
+  }
+
+  if (actionType === "BACK_TO_ACTIONS") {
+    setSelectedActionFamily(null);
+    setSelectedPlayerForActions(null);
+    return;
+  }
+
+  // ✅ CHECK COOLDOWN FIRST - Block scoring actions during cooldown
+const scoringActions = ['ACE', 'KILL', 'SOLO_BLOCK', 'SERVE_ERR', 'REC_ERR', 
+                        'DIG_ERR', 'SET_ERR', 'ATTACK_ERR', 'BLOCK_ERR'];
+
+// Allow KILL during assist flow (it's just selecting the kill player, not scoring yet)
+const isKillDuringAssist = actionType === 'KILL' && collaborativeAssistWaiting && assistWaitingPlayer;
+
+if (collaborativeMode && scoreCooldownActive && scoringActions.includes(actionType) && !isKillDuringAssist) {
+  console.warn('⏱️ Action blocked - scoring cooldown active');
+  showActionToast(`Wait ${scoreCooldownRemaining}s before scoring actions`, 'warning');
+  triggerActionFeedback(`player-${playerIndex}-${actionType}`, 'error');
+  return;
+}
+
+  if (assignmentInProgress) return;
+
+  // Check collaborative permissions and handle auto-assignment
+if (collaborativeMode) {
+  const trackingStatus = getTrackingStatus(player._id);
+    console.log(`📋 Tracking status for ${player.name}:`, trackingStatus);
+
+  // ✅ CASE 1: Player is already assigned to ME - just continue with action
+  if (trackingStatus?.isAssigned && trackingStatus?.isMe) {
+    console.log(`✅ ${player.name} already assigned to me - continuing`);
+    // Fall through to execute action
+  }
+  // ✅ CASE 2: Player is assigned to SOMEONE ELSE - block the action
+  else if (trackingStatus?.isAssigned && !trackingStatus?.isMe) {
+    console.log(`❌ ${player.name} assigned to ${trackingStatus.trackedBy} - blocking`);
+    alert(`${player.name} is being tracked by ${trackingStatus.trackedBy}. You cannot perform actions for this player.`);
+    return;
+	
+  }
+  // ✅ CASE 3: Player is NOT assigned - auto-assign now
+ else if (!trackingStatus?.isAssigned) {
+  console.log(`🔄 ${player.name} unassigned - auto-assigning`);
+  setAssignmentInProgress(true);
+  
+  try {
+    const userId = getCurrentUserId();
+    const username = getCurrentUsername();
+    
+    if (!userId) {
+      showActionToast('User authentication required', 'error');
+      setAssignmentInProgress(false);
+      return;
+    }
+
+    const response = await axios.post(`${API_URL}/api/matches/${currentMatchId}/assign-player`, {
+      playerId: player._id,
+      playerName: player.name,
+      assignedToUserId: userId,
+      assignedToUsername: username
+    }, {
+      headers: { 
+        'Authorization': `Bearer ${token}`, 
+        'Content-Type': 'application/json' 
+      },
+      withCredentials: true
+    });
+    
+    // 🔥 NEW: Check for conflict response
+    if (response.data.error === 'ASSIGNMENT_CONFLICT') {
+      console.warn(`⚠️ ${player.name} already assigned to ${response.data.currentAssignment?.assignedTo?.username}`);
+      showActionToast(
+        `${player.name} is being tracked by ${response.data.currentAssignment?.assignedTo?.username}`, 
+        'error'
+      );
+      
+      // Reload assignments to get latest state
+      if (loadAssignmentsFromBackend) {
+        await loadAssignmentsFromBackend();
+      }
+      
+      setAssignmentInProgress(false);
+      return; // ABORT - don't continue with action
+    }
+    
+    showActionToast(`Auto-assigned to track ${player.name}`, 'info');
+    
+    if (loadAssignmentsFromBackend) {
+      await loadAssignmentsFromBackend();
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+  } catch (error) {
+    // 🔥 NEW: Handle 409 Conflict status
+    if (error.response?.status === 409) {
+      const conflictData = error.response.data;
+      console.warn('⚠️ Assignment conflict:', conflictData.message);
+      
+      showActionToast(
+        `${player.name} is being tracked by ${conflictData.currentAssignment?.assignedTo?.username}`, 
+        'error'
+      );
+      
+      // Reload assignments to sync state
+      if (loadAssignmentsFromBackend) {
+        await loadAssignmentsFromBackend();
+      }
+      
+      setAssignmentInProgress(false);
+      return; // ABORT - don't continue with action
+    }
+    
+    console.error('❌ Auto-assignment failed:', error);
+    showActionToast('Auto-assignment failed, continuing with action', 'warning');
+  } finally {
+    setAssignmentInProgress(false);
+  }
+}
+}
+
+// Now execute the actual action)
+  
+  // Special handling for starting block assist and assist mode
+
+  if (actionType === 'ASSIST_BLOCK') {
+    handleStartBlockSelection(playerIndex, 'assist');
+    setSelectedActionFamily(null);
+    return;
+  }
+  
+  if (actionType === 'ERROR_BLOCK') {
+    handleStartBlockSelection(playerIndex, 'error');
+	 setSelectedActionFamily(null);
+    return;
+  }
+
+if (actionType === 'ASSIST') {
+  // Show modal for both collaborative and non-collaborative modes
+  setAssistMode(true);
+  setSelectedAssistPlayer(playerIndex);
+  
+  // If collaborative, notify others that assist selection is in progress
+  if (collaborativeMode && isConnected && socket) {
+    socket.emit('assist_selection_started', {
+      matchId: currentMatchId,
+      assistPlayer: {
+        _id: player._id,
+        name: player.name,
+        number: player.number
+      },
+      initiatedBy: {
+        userId: getCurrentUserId(),
+        username: getCurrentUsername(),
+        sessionId: socket.sessionId
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+   setSelectedActionFamily(null);
+  
+  return;
+}
+
+  if (actionType === 'RALLY_START') {
+    handleRallyStart();
+    return;
+  }
+
+  let statKeys = [];
+  let label = "";
+  let shouldScore = null;
+  let shouldChangeBallState = null;
+  let shouldRotate = false;
+
+  switch (actionType) {
+case 'SERVE':
+  console.log('🎾 SERVE action triggered:', { player: player.name });
+  label = "Serve Attempt";
+  statKeys = ["serves", "zeroServes"];
+  setSelectedActionFamily(null);
+  break;
+      
+    case 'ACE':
+      label = "Service Ace";
+      statKeys = ["aces", "serveAttempts", "points"];
+	   setSelectedActionFamily(null);
+      break;
+      
+    case 'SERVE_ERR':
+      label = "Service Error";
+      statKeys = ["serveErrors", "serveAttempts"];
+	  setSelectedActionFamily(null);
+      break;
+      
+     case 'REC':
+        label = "Reception";
+        statKeys = ["receptions"];
+        // NEW: map passGrade → receive_1/2/3
+		if (passGrade === 0) statkeys.push('receive_0');
+        else if (passGrade === 1) statKeys.push('receive_1');
+        else if (passGrade === 2) statKeys.push('receive_2');
+        else if (passGrade === 3) statKeys.push('receive_3');
+		setSelectedActionFamily(null);
+        break;
+      
+    case 'REC_ERR':
+      label = "Reception Error";
+      statKeys = ["receiveErrors", "receptions"];
+	  statKeys.push('receive_0');
+	  setSelectedActionFamily(null);
+      break;
+      
+     
+
+      case 'DIG':
+        label = "Dig";
+        statKeys = ["digs"];
+        // NEW: map passGrade → dig_0/1/2/3
+		if (passGrade === 0) statKeys.push('dig_0');
+        else if (passGrade === 1) statKeys.push('dig_1');
+        else if (passGrade === 2) statKeys.push('dig_2');
+        else if (passGrade === 3) statKeys.push('dig_3');
+		setSelectedActionFamily(null);
+        break;
+      
+    case 'DIG_ERR':
+      label = "Dig Error";
+      statKeys = ["digErrors", "digs"];
+	  statKeys.push('dig_0');
+       setSelectedActionFamily(null);
+      break;
+      
+    case 'SET':
+      label = "Set";
+      statKeys = ["sets", "zeroSets"];
+	   setSelectedActionFamily(null);
+      break;
+      
+    case 'SET_ERR':
+      label = "Set Error";
+      statKeys = ["setErrors", "sets"];
+       setSelectedActionFamily(null);
+      break;
+      
+    case 'ATTACK':
+      label = "Attack";
+      statKeys = ["zeroAttacks", "attacks"];
+	   setSelectedActionFamily(null);
+      break;
+      
+    case 'FREE_BALL':
+      label = "Free Ball";
+      statKeys = ["freeballs", "zeroAttacks"];
+       setSelectedActionFamily(null);
+      break;
+      
+case 'KILL':
+  // Start kill mode - show inline menu to select assist players
+  setKillMode('kill');
+  setKillInitiatorIndex(playerIndex);
+  setSelectedAssistPlayers(new Set()); // Start with no assists selected
+  setSelectedActionFamily(null);
+  return; // Exit early, don't process normal kill logic yet
+      
+    case 'ATTACK_ERR':
+      label = "Attack Error";
+      statKeys = ["attackErrors", "attacks"];
+       setSelectedActionFamily(null);
+      break;
+      
+    case 'SOLO_BLOCK':
+      label = "Solo Block";
+      statKeys = ["blockSolo", "points"];
+      shouldScore = "our";
+       setSelectedActionFamily(null);
+      break;
+      
+    case 'BLOCK_ERR':
+      label = "Block Error";
+      statKeys = ["blockErrors"];
+       setSelectedActionFamily(null);
+      break;
+      
+    default:
+      return;
+  }
+
+  // Log the stat
+  await logStat(player, label, statKeys);
+
+
+
+
+
+
+}, [
+  courtPlayers,  
+  collaborativeMode, 
+  scoreCooldownActive,
+  scoreCooldownRemaining,
+  triggerActionFeedback,
+  isConnected,
+  isAssignedToPlayer, 
+  getTrackingStatus, 
+  logStat, 
+  updateCollaborativeScore,
+  setTeamStats, 
+  setBallStateWithSync, 
+  setCurrentServeSideWithSync, 
+  currentServeSide, 
+  handleExpressRotation,
+  handleRallyStart,
+  assignmentInProgress,
+  assignmentDeclinedPlayers,
+  user,
+  getCurrentUserId,
+  getCurrentUsername,
+  showActionToast,
+  loadAssignmentsFromBackend,
+  currentMatchId,
+  token,
+  collaborativeAssistWaiting,
+  assistWaitingPlayer,
+  handleStartBlockSelection
+]);
+
+// Cooldown Overlay Component - ONLY IN COLLABORATIVE MODE
+const CooldownOverlay = () => {
+  // ✅ ONLY SHOW IN COLLABORATIVE MODE
+  if (!collaborativeMode || !scoreCooldownActive) return null;
+  
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      height: '140px',
+      backgroundColor: 'rgba(0, 0, 0, 0.85)',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 1001,
+      borderTop: '3px solid #ffc107'
+    }}>
+      <div style={{
+        fontSize: '48px',
+        fontWeight: '800',
+        color: '#ffc107',
+        marginBottom: '8px',
+        textShadow: '0 2px 8px rgba(255, 193, 7, 0.5)'
+      }}>
+        {scoreCooldownRemaining}
+      </div>
+      <div style={{
+        fontSize: '16px',
+        fontWeight: '600',
+        color: '#ffffff',
+        marginBottom: '4px'
+      }}>
+        Collaborative Scoring Cooldown
+      </div>
+      <div style={{
+        fontSize: '12px',
+        color: '#cccccc',
+        fontStyle: 'italic'
+      }}>
+        All point actions are momentarily locked.
+      </div>
+      
+      {/* Progress bar */}
+      <div style={{
+        marginTop: '12px',
+        width: '80%',
+        maxWidth: '300px',
+        height: '4px',
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        borderRadius: '2px',
+        overflow: 'hidden'
+      }}>
+        <div style={{
+          height: '100%',
+          width: `${((5 - scoreCooldownRemaining) / 5) * 100}%`,
+          backgroundColor: '#ffc107',
+          transition: 'width 1s linear',
+          borderRadius: '2px'
+        }} />
+      </div>
+    </div>
+  );
+};
+
+// Remove the old assignment prompt functions since we're doing auto-assignment
+// Keep these functions but make them no-ops or remove the modal entirely
+
+const handleAssignmentPrompt = useCallback((player, playerIndex, actionType) => {
+  // This function is no longer needed with auto-assignment
+  return false;
+}, []);
+
+// Optional: Add a function to manually decline auto-assignment for a player
+const declineAutoAssignmentForPlayer = useCallback((playerId) => {
+  setAssignmentDeclinedPlayers(prev => new Set(prev).add(playerId));
+  showActionToast('Auto-assignment disabled for this player', 'info');
+}, [showActionToast]);
+
+// Optional: Add a function to re-enable auto-assignment for a player
+const enableAutoAssignmentForPlayer = useCallback((playerId) => {
+  setAssignmentDeclinedPlayers(prev => {
+    const newSet = new Set(prev);
+    newSet.delete(playerId);
+    return newSet;
+  });
+  showActionToast('Auto-assignment enabled for this player', 'info');
+}, [showActionToast]);
+
+
+// Add cleanup on unmount
+useEffect(() => {
+  return () => {
+    // Clean up assignment state on unmount
+    setAssignmentInProgress(false);
+  };
+}, []);
+
+const handlePlayerActionWithFeedback = useCallback(
+  async (playerIndex, actionType) => {
+    if (!checkGlobalRateLimit()) {
+      return;
+    }
+
+    if (actionType === 'CANCEL_PASS_GRADE') {
+      cancelPassGrade();
+      return;
+    }
+
+    if (actionType === 'PASS_GRADE_0') {
+      await handlePassGradeSelect(0);
+	  cancelPassGrade();
+      return;
+    }
+
+    if (actionType === 'PASS_GRADE_1') {
+      await handlePassGradeSelect(1);
+	  cancelPassGrade();
+      return;
+    }
+
+    if (actionType === 'PASS_GRADE_2') {
+      await handlePassGradeSelect(2);
+	  cancelPassGrade();
+      return;
+    }
+
+    if (actionType === 'PASS_GRADE_3') {
+      await handlePassGradeSelect(3);
+	  cancelPassGrade();
+      return;
+    }
+    
+    // Block selection actions
+    if (actionType.startsWith('BLOCK_SELECT_')) {
+      const selectedIndex = parseInt(actionType.split('_')[2]);
+      handleBlockAssistSelection(selectedIndex);
+      return;
+    }
+
+    if (actionType === 'BLOCK_SOLO') {
+      // Solo block - only one player, so they're the only one
+      // Just close the menu
+      cancelBlockAssist();
+      showActionToast('Need at least 2 players on court for block assist', 'warning');
+      return;
+    }
+
+    if (actionType === 'BLOCK_SUBMIT') {
+      await submitBlock();
+      return;
+    }
+
+    if (actionType === 'BLOCK_CANCEL') {
+      cancelBlockAssist();
+      return;
+    }
+
+    // Kill/Assist selection actions (same pattern as block)
+
+    const player = courtPlayers[playerIndex];
+    if (!player) return;
+    // Don't require isPlayerActive check - roster players toggled ON should be able to log stats
+
+    const buttonId = `player-${playerIndex}-${actionType}`;
+
+    // NEW: intercept for pass grading on REC/DIG
+    if (passGradingEnabled && (actionType === 'REC' || actionType === 'DIG')) {
+      // We still give a quick visual "pending" ping
+      triggerActionFeedback(buttonId, 'pending');
+      setPendingPassGrade({ playerIndex, actionType, buttonId });
+      return;
+    }
+  
+  // Trigger immediate visual feedback
+  triggerActionFeedback(buttonId, 'pending');
+
+  try {
+    // Call the original action handler
+    await handlePlayerAction(playerIndex, actionType);
+    
+    // Show success feedback
+    triggerActionFeedback(buttonId, 'success');
+    
+    // Show action toast
+    const actionLabels = {
+      'SERVE': 'Serve',
+      'ACE': 'Ace',
+      'SERVE_ERR': 'Service Error',
+      'REC': 'Reception',
+      'REC_ERR': 'Reception Error',
+      'DIG': 'Dig',
+      'DIG_ERR': 'Dig Error',
+      'SET': 'Set',
+      'SET_ERR': 'Set Error',
+      'ATTACK': 'Attack',
+      'KILL': 'Kill',
+      'ATTACK_ERR': 'Attack Error',
+      'SOLO_BLOCK': 'Solo Block',
+      'BLOCK_ERR': 'Block Error',
+      'ASSIST': 'Assist',
+      'FREE_BALL': 'Free Ball',
+      'RALLY_START': 'Rally Started'
+    };
+    
+    const actionLabel = actionLabels[actionType] || actionType;
+    const toastType = actionType.includes('ERR') ? 'error' : 'success';
+    showActionToast(`${player.name}: ${actionLabel}`, toastType);
+    
+  } catch (error) {
+    // Show error feedback
+    triggerActionFeedback(buttonId, 'error');
+    showActionToast(`Failed to record ${actionType}`, 'error');
+    console.error('Action failed:', error);
+  }
+}, [
+  handlePlayerAction, 
+  courtPlayers, 
+  triggerActionFeedback, 
+  showActionToast,
+  handleBlockAssistSelection,
+  cancelBlockAssist,
+  submitBlock,
+  checkGlobalRateLimit,
+  passGradingEnabled,
+  pendingPassGrade
+]);
+
+const handlePassGradeSelect = useCallback(
+  async (grade) => {
+    if (!pendingPassGrade) return;
+
+    const { playerIndex, actionType, buttonId } = pendingPassGrade;
+    const player = courtPlayers[playerIndex];
+
+    setPendingPassGrade(null);
+
+    if (!player) return;
+
+    try {
+      // call the same core handler but with passGrade set
+      await handlePlayerAction(playerIndex, actionType, grade);
+
+      if (buttonId) {
+        triggerActionFeedback(buttonId, 'success');
+      }
+
+      const actionLabels = {
+        REC: 'Reception',
+        DIG: 'Dig',
+      };
+      const actionLabel = actionLabels[actionType] || actionType;
+      showActionToast(
+        `${player.name}: ${actionLabel} (grade ${grade})`,
+        'success'
+      );
+    } catch (error) {
+      if (buttonId) {
+        triggerActionFeedback(buttonId, 'error');
+      }
+      showActionToast(`Failed to record ${actionType} grade`, 'error');
+      console.error('Pass grade action failed:', error);
+    }
+  },
+  [pendingPassGrade, courtPlayers, handlePlayerAction, triggerActionFeedback, showActionToast]
+);
+
+const cancelPassGrade = useCallback(() => {
+  setPendingPassGrade(null);
+}, []);
+
+// Toast notification component
+const ActionToasts = () => (
+  <div style={{
+    position: 'fixed',
+    top: '20px',
+    right: '20px',
+    zIndex: 10001,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    pointerEvents: 'none'
+  }}>
+    {recentActions.map((toast, index) => {
+      const age = Date.now() - toast.timestamp;
+      const opacity = Math.max(0, 1 - (age / 2000)); // Fade out over 2 seconds
+      
+      return (
+        <div
+          key={toast.id}
+          style={{
+            backgroundColor: toast.type === 'success' ? '#28a745' : 
+                           toast.type === 'error' ? '#dc3545' : '#007AFF',
+            color: '#ffffff',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            fontSize: '12px',
+            fontWeight: '600',
+            opacity,
+            transform: `translateY(${index * -60}px) scale(${opacity})`,
+            transition: 'all 0.3s ease',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            maxWidth: '250px',
+            wordBreak: 'break-word'
+          }}
+        >
+          {toast.message}
+        </div>
+      );
+    })}
+  </div>
+);
+
+// Enhanced bottom bar button style with feedback
+
+
+  // Open roster modal
+  const openRosterModal = useCallback((slotIndex) => {
+    setSelectedSlot(slotIndex);
+    setShowRosterModal(true);
+  }, []);
+
+  // NEW: Enhanced selectPlayer with full libero substitution logic
+const selectPlayer = useCallback(async (player, isCollaborativeUpdate = false) => {
+  if (selectedSlot !== null) {
+    // NEW: Libero validation - prevent front row position placement
+    const volleyballPosition = getVolleyballPosition(selectedSlot);
+    if (player.isLibero && (volleyballPosition === '2' || volleyballPosition === '3' || volleyballPosition === '4')) {
+      alert(`⚠️ Liberos cannot be placed in front row positions. This slot has volleyball position ${volleyballPosition}.`);
+      setShowRosterModal(false);
+      setSelectedSlot(null);
+      return;
+    }
+
+    const newPlayers = [...courtPlayers];
+    const targetPlayer = newPlayers[selectedSlot];
+    const isLiberoSub = player.isLibero;
+
+    if (player.isLibero && (!targetPlayer || targetPlayer.name === "?" || !targetPlayer._id)) {
+      alert(`⚠️ Libero must replace an existing player. This slot is currently empty.`);
+      setShowRosterModal(false);
+      setSelectedSlot(null);
+      return;
+    }
+
+    // Handle libero substitution logic
+    if (isLiberoSub) {
+      if (volleyballPosition === '2' || volleyballPosition === '3' || volleyballPosition === '4') {
+        alert("⚠️ Liberos cannot be placed in front row positions.");
+        setShowRosterModal(false);
+        setSelectedSlot(null);
+        return;
+      }
+
+      if (!targetPlayer || targetPlayer.name === "?") {
+        alert("⚠️ Libero must replace an existing player.");
+        setShowRosterModal(false);
+        setSelectedSlot(null);
+        return;
+      }
+
+      const currentLibero = courtPlayers.find(p => p.isLibero);
+      const isTargetLibero = targetPlayer.isLibero;
+      const validPartners = [slot5TargetId?._id, allowedLiberoSubTarget?._id].filter(Boolean);
+      const isValidPartner = targetPlayer && validPartners.includes(targetPlayer._id);
+
+      // Libero-for-libero swap
+      if (isTargetLibero && player.isLibero) {
+        const outgoingLibero = targetPlayer;
+
+        newPlayers[selectedSlot] = {
+          ...player,
+          isLibero: true,
+          expressPosition: outgoingLibero.expressPosition,
+          replacedPlayer: outgoingLibero.replacedPlayer || null,
+          isOnCourt: true,
+        };
+
+        // Update bench players
+        const newBenchPlayers = benchPlayers.filter(p => p._id !== outgoingLibero._id);
+        newBenchPlayers.push({ ...outgoingLibero, isLibero: true, isOnCourt: false });
+        setBenchPlayers([...newBenchPlayers].sort((a, b) => (a.number || 0) - (b.number || 0)));
+
+        try {
+          await axios.put(`${API_URL}/api/players/${outgoingLibero._id}`, { isOnCourt: false }, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            withCredentials: true,
+          });
+          await axios.put(`${API_URL}/api/players/${player._id}`, { isOnCourt: true }, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            withCredentials: true,
+          });
+        } catch (err) {
+          console.error("Failed to update libero states in DB:", err);
+        }
+
+        updateCourtPositions(newPlayers, positionMapping);
+        
+        // 🔥 SYNC: Libero-for-libero swap - only if this is a local action
+        if (!isCollaborativeUpdate && collaborativeMode && isConnected) {
+          syncCourtPlayers(newPlayers, {
+            action: 'libero_swap',
+            selectedPlayer: { id: player._id, name: player.name },
+            replacedPlayer: { id: outgoingLibero._id, name: outgoingLibero.name },
+            slot: selectedSlot,
+            position: outgoingLibero.expressPosition
+          });
+        }
+        
+        // 🎯 FIX: Only credit games played if this is a LOCAL action, not a collaborative update
+        if (!isCollaborativeUpdate) {
+          await creditGamesPlayed(player._id, "express_libero_swap");
+        }
+        
+        console.log(`Libero swap: ${player.name} in for ${outgoingLibero.name} at position ${outgoingLibero.expressPosition}`);
+        
+        setShowRosterModal(false);
+        setSelectedSlot(null);
+        return;
+      }
+
+      // First-time libero substitution
+      if (!currentLibero && !allowedLiberoSubTarget) {
+        newPlayers[selectedSlot] = {
+          ...player,
+          expressPosition: targetPlayer.expressPosition,
+          replacedPlayer: targetPlayer,
+          isOnCourt: true,
+        };
+
+        const newBenchPlayers = [...benchPlayers];
+        newBenchPlayers.push({ ...targetPlayer, isLibero: false, isOnCourt: false });
+        setBenchPlayers([...newBenchPlayers].sort((a, b) => (a.number || 0) - (b.number || 0)));
+
+        try {
+          await axios.put(`${API_URL}/api/players/${targetPlayer._id}`, { isOnCourt: false }, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            withCredentials: true,
+          });
+          await axios.put(`${API_URL}/api/players/${player._id}`, { isOnCourt: true }, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            withCredentials: true,
+          });
+        } catch (err) {
+          console.error("Failed to update players in DB:", err);
+          setShowRosterModal(false);
+          setSelectedSlot(null);
+          return;
+        }
+
+        updateCourtPositions(newPlayers, positionMapping);
+        
+        // 🔥 SYNC: First-time libero substitution - only if this is a local action
+        if (!isCollaborativeUpdate && collaborativeMode && isConnected) {
+          syncCourtPlayers(newPlayers, {
+            action: 'first_libero_substitution',
+            liberoIn: { id: player._id, name: player.name },
+            playerOut: { id: targetPlayer._id, name: targetPlayer.name },
+            slot: selectedSlot,
+            position: targetPlayer.expressPosition
+          });
+        }
+        
+        setAllowedLiberoSubTarget && setAllowedLiberoSubTarget(targetPlayer);
+        
+        // 🎯 FIX: Only credit games played if this is a LOCAL action, not a collaborative update
+        if (!isCollaborativeUpdate) {
+          await creditGamesPlayed(player._id, "express_first_libero_sub");
+        }
+        
+        // FIXED: Use collaborative action log
+        addActionLogEntry(
+          `Express: ${player.name} (Libero) substituted in for ${targetPlayer.name} at position ${targetPlayer.expressPosition}`,
+          {
+            type: 'libero_substitution',
+            meta: {
+              type: 'first_libero_sub',
+              liberoIn: { id: player._id, name: player.name },
+              playerOut: { id: targetPlayer._id, name: targetPlayer.name },
+              position: targetPlayer.expressPosition
+            }
+          }
+        );
+
+        setShowRosterModal(false);
+        setSelectedSlot(null);
+        return;
+      }
+
+      // Standard libero substitution with existing libero
+      if (!isValidPartner) {
+        const confirmOverride = window.confirm(
+          `⚠️ This substitution seems illegal based on earlier libero entries.\n\n` +
+          `Libero is trying to sub in for ${targetPlayer.name}, who is not a registered partner.\n\n` +
+          `Do you want to proceed anyway and update the slot5 partner to ${targetPlayer.name}?`
+        );
+        if (!confirmOverride) {
+          setShowRosterModal(false);
+          setSelectedSlot(null);
+          return;
+        }
+
+        setSlot5TargetId && setSlot5TargetId(targetPlayer);
+      }
+
+      if (currentLibero && currentLibero._id !== player._id) {
+        const newBenchPlayers = [...benchPlayers];
+        newBenchPlayers.push({ ...currentLibero, isLibero: true, isOnCourt: false });
+        setBenchPlayers([...newBenchPlayers].sort((a, b) => (a.number || 0) - (b.number || 0)));
+        
+        try {
+          await axios.put(`${API_URL}/api/players/${currentLibero._id}`, { isOnCourt: false }, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            withCredentials: true,
+          });
+        } catch (err) {
+          console.error("Failed to update current libero in DB:", err);
+        }
+      }
+
+      newPlayers[selectedSlot] = {
+        ...player,
+        expressPosition: targetPlayer.expressPosition,
+        replacedPlayer: targetPlayer,
+        isOnCourt: true,
+      };
+
+      if (!allowedLiberoSubTarget) setAllowedLiberoSubTarget && setAllowedLiberoSubTarget(targetPlayer);
+      
+      const newBenchPlayers = benchPlayers.filter(p => p._id !== targetPlayer._id);
+      if (!newBenchPlayers.some(p => p._id === targetPlayer._id)) {
+        newBenchPlayers.push({ ...targetPlayer, isLibero: false, isOnCourt: false });
+      }
+      setBenchPlayers([...newBenchPlayers].sort((a, b) => (a.number || 0) - (b.number || 0)));
+
+      try {
+        await axios.put(`${API_URL}/api/players/${targetPlayer._id}`, { isOnCourt: false }, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          withCredentials: true,
+        });
+        await axios.put(`${API_URL}/api/players/${player._id}`, { isOnCourt: true }, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          withCredentials: true,
+        });
+      } catch (err) {
+        console.error("Failed to update players in DB:", err);
+        setShowRosterModal(false);
+        setSelectedSlot(null);
+        return;
+      }
+
+      updateCourtPositions(newPlayers, positionMapping);
+      
+      // 🔥 SYNC: Standard libero substitution - only if this is a local action
+      if (!isCollaborativeUpdate && collaborativeMode && isConnected) {
+        syncCourtPlayers(newPlayers, {
+          action: 'libero_substitution',
+          liberoIn: { id: player._id, name: player.name },
+          playerOut: { id: targetPlayer._id, name: targetPlayer.name },
+          slot: selectedSlot,
+          position: targetPlayer.expressPosition
+        });
+      }
+      
+      // 🎯 FIX: Only credit games played if this is a LOCAL action, not a collaborative update
+      if (!isCollaborativeUpdate) {
+        await creditGamesPlayed(player._id, "express_libero_partner_sub");
+      }
+
+      // FIXED: Use collaborative action log
+      addActionLogEntry(
+        `Express: ${player.name} (Libero) substituted in for ${targetPlayer.name} at position ${targetPlayer.expressPosition}`,
+        {
+          type: 'libero_substitution',
+          meta: {
+            type: 'libero_partner_sub',
+            liberoIn: { id: player._id, name: player.name },
+            playerOut: { id: targetPlayer._id, name: targetPlayer.name },
+            position: targetPlayer.expressPosition
+          }
+        }
+      );
+
+      setShowRosterModal(false);
+      setSelectedSlot(null);
+      return;
+    }
+
+    // 🔧 FIXED: Regular (non-libero) player placement with position preservation
+    if (targetPlayer && targetPlayer._id && targetPlayer.name !== "?") {
+      // Log the substitution before making database changes
+      const substitutionEntry = {
+        in: {
+          _id: player._id,
+          name: player.name,
+          number: player.number,
+          isLibero: player.isLibero || false
+        },
+        out: {
+          _id: targetPlayer._id,
+          name: targetPlayer.name,
+          number: targetPlayer.number,
+          isLibero: targetPlayer.isLibero || false
+        },
+        timestamp: new Date().toISOString(),
+        type: 'regular_substitution',
+        source: 'express_logger',
+        slotIndex: selectedSlot,
+        volleyballPosition: targetPlayer.expressPosition
+      };
+
+      // Update substitution log
+      if (setSubstitutionLog) {
+        setSubstitutionLog(prev => [...prev, substitutionEntry]);
+      }
+
+      // FIXED: Log to action log as well
+      addActionLogEntry(
+        `Express: ${player.name} (#${player.number}) substituted in for ${targetPlayer.name} (#${targetPlayer.number}) at position ${targetPlayer.expressPosition}`,
+        {
+          type: 'substitution',
+          meta: {
+            source: 'express',
+            subType: 'regular',
+            slotIndex: selectedSlot,
+            position: targetPlayer.expressPosition
+          }
+        }
+      );
+
+      try {
+        await axios.put(`${API_URL}/api/players/${targetPlayer._id}`, { 
+          isOnCourt: false 
+        }, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          withCredentials: true,
+        });
+      } catch (error) {
+        console.error("Failed to update previous player in database:", error);
+      }
+
+      // 🔧 CRITICAL FIX: Preserve the volleyball position of the replaced player
+      newPlayers[selectedSlot] = {
+        ...player,
+        expressPosition: targetPlayer.expressPosition, // Inherit position from replaced player
+        isOnCourt: true
+      };
+    } else {
+      // 🔧 FIXED: Empty slot - use position based on slot, but ensure it's set
+      const slotPosition = getVolleyballPosition(selectedSlot);
+      newPlayers[selectedSlot] = {
+        ...player,
+        expressPosition: slotPosition, // Use the slot's designated position
+        isOnCourt: true
+      };
+    }
+
+    updateCourtPositions(newPlayers, positionMapping);
+    
+    // 🔥 SYNC: Regular player selection (both substitution and empty slot) - only if this is a local action
+    if (!isCollaborativeUpdate && collaborativeMode && isConnected) {
+      syncCourtPlayers(newPlayers, {
+        action: 'regular_player_selection',
+        selectedPlayer: { id: player._id, name: player.name },
+        replacedPlayer: targetPlayer ? { id: targetPlayer._id, name: targetPlayer.name } : null,
+        slot: selectedSlot,
+        position: newPlayers[selectedSlot].expressPosition
+      });
+    }
+    
+    // 🎯 FIX: Only credit games played if this is a LOCAL action, not a collaborative update
+    // Credit games played for non-libero players
+    if (!isCollaborativeUpdate && !player.isLibero) {
+      await creditGamesPlayed(player._id, "express_regular_sub");
+    }
+  }
+  
+  setShowRosterModal(false);
+  setSelectedSlot(null);
+}, [
+  checkGlobalRateLimit,
+  selectedSlot, 
+  courtPlayers, 
+  updateCourtPositions, 
+  positionMapping, 
+  token, 
+  creditGamesPlayed, 
+  getVolleyballPosition, 
+  allowedLiberoSubTarget, 
+  slot5TargetId, 
+  benchPlayers, 
+  setBenchPlayers, 
+  setAllowedLiberoSubTarget, 
+  setSlot5TargetId, 
+  addActionLogEntry, 
+  setSubstitutionLog,
+  // 🔥 ADD THESE: Collaborative sync dependencies
+  collaborativeMode,
+  isConnected,
+  syncCourtPlayers
+]);
+
+const handleCollaborativeIgnoreKill = useCallback(async () => {
+  if (!assistWaitingPlayer) return;
+  
+  // Check cooldown first
+  if (collaborativeMode && scoreCooldownActive) {
+    console.warn('⏱️ Ignore kill blocked - scoring cooldown active');
+    showActionToast(`Wait ${scoreCooldownRemaining}s before scoring`, 'warning');
+    return;
+  }
+  
+  // Set flag to prevent timeout
+  assistKillSelectedRef.current = true;
+  
+  // Clear timer
+  if (assistTimerRef.current) {
+    clearTimeout(assistTimerRef.current);
+    assistTimerRef.current = null;
+  }
+  
+  // Store assist player and serve side
+  const player = assistWaitingPlayer;
+  const effectiveServeSide = assistWaitingServeSideRef.current || currentServeSide;
+  const wasOpponentServing = effectiveServeSide === "opponent";
+  
+  // Clear assist waiting state
+  setCollaborativeAssistWaiting(false);
+  setAssistWaitingPlayer(null);
+  setAssistWaitingTimer(0);
+  assistWaitingServeSideRef.current = null;
+  
+  console.log('🎯 Ignoring kill - awarding point for assist only');
+  
+  // Award the point (assist was already logged when button was clicked)
+  
+  setTeamStats && setTeamStats(prev => ({ ...prev, ourEarned: prev.ourEarned + 1 }));
+  
+  if (collaborativeMode && isConnected) {
+    updateCollaborativeScore('our', 1, 'earned');
+  }
+  
+  setBallStateWithSync("serve");
+  setCurrentServeSideWithSync("our");
+  
+  if (wasOpponentServing) {
+    setTimeout(() => {
+      handleExpressRotation();
+    }, 100);
+  }
+  
+  // Add action log
+  addActionLogEntry(
+    `Assist by ${player.name} (#${player.number}) → Point awarded (kill ignored)`,
+    {
+      type: 'assist_kill_ignored',
+      meta: {
+        type: 'assist_kill_ignored',
+        assistPlayer: { id: player._id, name: player.name, number: player.number },
+        reason: 'manual_ignore'
+      }
+    }
+  );
+  
+  // Emit completion event to notify other users
+  if (socket) {
+    socket.emit('assist_kill_completed', {
+      matchId: currentMatchId,
+      assistPlayer: {
+        _id: player._id,
+        name: player.name,
+        number: player.number
+      },
+      killIgnored: true,
+      timestamp: new Date().toISOString()
+    });
+  }
+  
+  showActionToast('Point awarded - kill ignored', 'success');
+  
+  // Reset flag after delay
+  setTimeout(() => {
+    assistKillSelectedRef.current = false;
+  }, 1000);
+}, [
+  assistWaitingPlayer,
+  currentServeSide,
+  collaborativeMode,
+  scoreCooldownActive,
+  scoreCooldownRemaining,
+  isConnected,
+  setTeamStats,
+  updateCollaborativeScore,
+  setBallStateWithSync,
+  setCurrentServeSideWithSync,
+  handleExpressRotation,
+  addActionLogEntry,
+  socket,
+  currentMatchId,
+  showActionToast
+]);
+  // UPDATED: Collaborative controls component with ownership check
+// UPDATED: Collaborative controls component with ownership check
+const renderCollaborativeControls = () => {
+
+  
+  if (!isMatchOwner()) {
+    // Non-owners need a user account and collaborative mode to be enabled
+    if (!user || !collaborativeMode) return null;
+    
+    const myAssignments = playerAssignments.filter(a => 
+      a.isActive && a.assignedTo?.userId === user.id
+    );
+    
+    return (
+      <div style={{
+        backgroundColor: '#fff',
+        borderRadius: '12px',
+        padding: '12px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        border: '1px solid #ddd',
+        marginTop: '8px'
+      }}>
+        <div style={{
+          fontSize: '12px',
+          fontWeight: '600',
+          marginBottom: '8px',
+          color: '#333',
+          textAlign: 'center'
+        }}>
+          Player Assignment Management
+        </div>
+        
+        {myAssignments.length > 0 ? (
+          <div style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '6px',
+            justifyContent: 'center',
+            marginBottom: '8px'
+          }}>
+            {myAssignments.map(assignment => (
+              <div
+                key={assignment.playerId}
+                style={{
+                  padding: '4px 8px',
+                  backgroundColor: '#28a745',
+                  color: '#fff',
+                  borderRadius: '12px',
+                  fontSize: '11px',
+                  fontWeight: '600'
+                }}
+              >
+                {assignment.playerName}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{
+            fontSize: '11px',
+            color: '#999',
+            textAlign: 'center',
+            fontStyle: 'italic',
+            marginBottom: '8px'
+          }}>
+            No players assigned to you
+          </div>
+        )}
+
+        <button
+          onClick={async () => {
+            try {
+              await loadAssignmentsFromBackend();
+              console.log('Assignments refreshed');
+            } catch (error) {
+              console.error('Failed to refresh assignments:', error);
+            }
+          }}
+          style={{
+            padding: '6px 12px',
+            borderRadius: '6px',
+            border: 'none',
+            backgroundColor: '#007AFF',
+            color: '#fff',
+            fontSize: '11px',
+            cursor: 'pointer',
+            width: '100%'
+          }}
+        >
+          Refresh My Assignments
+        </button>
+      </div>
+    );
+  }
+
+  // OWNERS: Show full collaborative mode management - ALWAYS VISIBLE regardless of user state
+  const myAssignments = user && playerAssignments ? playerAssignments.filter(a => 
+    a.isActive && a.assignedTo?.userId === user.id
+  ) : [];
+
+  return (
+    <div style={{
+      position: 'static',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '10px',
+      alignItems: 'center',
+      marginTop: '8px'
+    }}>
+      {/* Collaborative Mode Toggle - OWNERS ONLY, ALWAYS VISIBLE */}
+      <div style={{
+        backgroundColor: '#fff',
+        borderRadius: '12px',
+        padding: '12px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        border: '1px solid #ddd'
+      }}>
+        <div style={{
+          fontSize: '12px',
+          fontWeight: '600',
+          marginBottom: '8px',
+          color: '#333'
+        }}>
+          Collaborative Mode
+        </div>
+        
+        <label style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          cursor: 'pointer',
+          fontSize: '14px'
+        }}>
+          <input
+            type="checkbox"
+            checked={collaborativeMode}
+            onChange={(e) => toggleCollaborativeMode(e.target.checked)}
+            style={{
+              transform: 'scale(1.2)',
+              accentColor: '#007AFF'
+            }}
+          />
+          Enable Multi-User Logging
+        </label>
+
+        {collaborativeMode && (
+          <div style={{
+            marginTop: '8px',
+            padding: '6px 10px',
+            borderRadius: '6px',
+            backgroundColor: isCollaborativeReady() ? 'rgba(40, 167, 69, 0.1)' : 'rgba(220, 53, 69, 0.1)',
+            border: `1px solid ${isCollaborativeReady() ? '#28a745' : '#dc3545'}`,
+            fontSize: '11px',
+            fontWeight: '600',
+            color: isCollaborativeReady() ? '#155724' : '#721c24',
+            textAlign: 'center'
+          }}>
+            {isCollaborativeReady() ? 
+              'Ready for collaborative logging' : 
+              `Not ready: ${!isConnected ? 'No connection' : 'Missing session data'}`
+            }
+          </div>
+        )}
+        
+        {/* Show user status for debugging - only if no user */}
+        {!user && (
+          <div style={{
+            marginTop: '8px',
+            padding: '6px 10px',
+            borderRadius: '6px',
+            backgroundColor: 'rgba(255, 193, 7, 0.1)',
+            border: '1px solid #ffc107',
+            fontSize: '11px',
+            fontWeight: '600',
+            color: '#856404',
+            textAlign: 'center'
+          }}>
+            Warning: No user logged in
+          </div>
+        )}
+      </div>
+
+      {/* Connection and Assignment Controls - OWNERS ONLY, only when collaborative mode enabled AND user exists */}
+      {collaborativeMode && user && (
+        <>
+          {/* Connection Controls */}
+          <button
+            onClick={async () => {
+              if (connecting) return;
+              if (!currentMatchId) {
+                alert('Open or create a match first.');
+                return;
+              }
+              try {
+                setConnecting(true);
+                const ok = isConnected
+                  ? await leaveMatch()
+                  : await joinMatch(currentMatchId);
+                if (ok === false) {
+                  alert('Could not connect. Check network/WebSocket.');
+                }
+              } finally {
+                setConnecting(false);
+              }
+            }}
+            style={{
+              padding: '8px 12px',
+              borderRadius: '6px',
+              border: 'none',
+              backgroundColor: isCollaborativeReady() ? '#28a745' : '#6c757d',
+              color: '#fff',
+              fontSize: '12px',
+              cursor: 'pointer'
+            }}
+          >
+            {isCollaborativeReady() ? 'Connected & Ready' : (connecting ? 'Connecting…' : 'Connect')}
+          </button>
+
+          {isCollaborativeReady() && activeSessions.length > 1 && (
+            <div style={{
+              padding: '6px 10px',
+              borderRadius: '6px',
+              backgroundColor: 'rgba(255,255,255,0.9)',
+              fontSize: '11px',
+              textAlign: 'center',
+              border: '1px solid #ddd'
+            }}>
+              {activeSessions.filter(s => s.isOnline).length} users online
+            </div>
+          )}
+
+          {/* Assignment Management - OWNERS ONLY */}
+          {isCollaborativeReady() && (
+            <div style={{
+              backgroundColor: '#fff',
+              borderRadius: '12px',
+              padding: '12px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+              border: '1px solid #ddd'
+            }}>
+              <div style={{
+                fontSize: '12px',
+                fontWeight: '600',
+                marginBottom: '8px',
+                color: '#333',
+                textAlign: 'center'
+              }}>
+                Player Assignment Management
+              </div>
+              
+              {myAssignments.length > 0 ? (
+                <div style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: '6px',
+                  justifyContent: 'center',
+                  marginBottom: '8px'
+                }}>
+                  {myAssignments.map(assignment => (
+                    <div
+                      key={assignment.playerId}
+                      style={{
+                        padding: '4px 8px',
+                        backgroundColor: '#28a745',
+                        color: '#fff',
+                        borderRadius: '12px',
+                        fontSize: '11px',
+                        fontWeight: '600'
+                      }}
+                    >
+                      {assignment.playerName}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{
+                  fontSize: '11px',
+                  color: '#999',
+                  textAlign: 'center',
+                  fontStyle: 'italic',
+                  marginBottom: '8px'
+                }}>
+                  No assignments set
+                </div>
+              )}
+
+              <button
+                onClick={async () => {
+                  try {
+                    await loadAssignmentsFromBackend();
+                    console.log('Assignments refreshed');
+                  } catch (error) {
+                    console.error('Failed to refresh assignments:', error);
+                  }
+                }}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: '#007AFF',
+                  color: '#fff',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  width: '100%',
+                  marginBottom: '8px'
+                }}
+              >
+                Refresh My Assignments
+              </button>
+              
+              <button
+                onClick={() => setShowAssignmentModal(true)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: '#28a745',
+                  color: '#fff',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  width: '100%'
+                }}
+              >
+                Assign All Players
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+const togglePlayerActivation = useCallback((playerIndex) => {
+    const player = courtPlayers[playerIndex];
+    if (!player || !player._id) return;
+    
+    const playerId = player._id;
+    const isCurrentlyActive = activePlayerIds.has(playerId);
+    
+    if (isCurrentlyActive) {
+      // Deactivating player - add to deactivated list and remove from active
+      setActivePlayerIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(playerId);
+        return newSet;
+      });
+      
+      setDeactivatedPlayers(prev => {
+        if (!prev.includes(playerId)) {
+          return [...prev, playerId];
+        }
+        return prev;
+      });
+      
+      // FIXED: Log the deactivation
+      addActionLogEntry(
+        `Express: ${player.name} (#${player.number}) deactivated from stat tracking`,
+        {
+          type: 'player_deactivated',
+          meta: { type: 'player_deactivated', playerId }
+        }
+      );
+    } else {
+      // Activating player - remove from deactivated list and add to active
+      setActivePlayerIds(prev => {
+        const newSet = new Set(prev);
+        newSet.add(playerId);
+        return newSet;
+      });
+      
+      setDeactivatedPlayers(prev => prev.filter(id => id !== playerId));
+      
+      // FIXED: Log the activation
+      addActionLogEntry(
+        `Express: ${player.name} (#${player.number}) activated for stat tracking`,
+        {
+          type: 'player_activated',
+          meta: { type: 'player_activated', playerId }
+        }
+      );
+    }
+  }, [courtPlayers, activePlayerIds, setDeactivatedPlayers, addActionLogEntry]);
+
+
+  const updateLocalScore = useCallback((team, pointType, wasOpponentServing) => {
+    try {
+      if (team === 'our') {
+        
+        setTeamStats && setTeamStats(prev => ({ 
+          ...prev, 
+          [pointType === 'ourEarned' ? 'ourEarned' : 'oppError']: 
+            prev[pointType === 'ourEarned' ? 'ourEarned' : 'oppError'] + 1 
+        }));
+      } else {
+        
+        setTeamStats && setTeamStats(prev => ({ 
+          ...prev, 
+          [pointType === 'opponentEarned' ? 'oppEarned' : 'ourError']: 
+            prev[pointType === 'opponentEarned' ? 'oppEarned' : 'ourError'] + 1 
+        }));
+      }
+
+      setBallStateWithSync("serve");
+      const newServeSide = team === 'our' ? 'our' : 'opponent';
+      setCurrentServeSideWithSync(newServeSide);
+
+      if (team === 'our' && wasOpponentServing) {
+        setTimeout(() => {
+          handleExpressRotation();
+        }, 100);
+      }
+      
+    } catch (error) {
+      console.error('Local scoring error:', error);
+      showActionToast(`Failed to record point: ${error.message}`, 'error');
+    }
+  }, [
+    setTeamStats,
+    setBallStateWithSync,
+    setCurrentServeSideWithSync,
+    handleExpressRotation,
+    showActionToast
+  ]);
+
+const debugScoringState = useCallback(() => {
+  console.log('🔍 ExpressStatLogger Scoring Debug:');
+  console.log('  Collaborative Mode:', collaborativeMode);
+  console.log('  Is Connected:', isConnected);
+  console.log('  Is Ready:', isCollaborativeReady());
+  console.log('  Last Score Update:', lastScoreUpdate);
+  console.log('  Current Serve Side:', currentServeSide);
+  console.log('  Ball State:', ballState);
+  console.log('  Can Score?', !(collaborativeMode && !isConnected && !isCollaborativeReady()));
+}, [collaborativeMode, isConnected, isCollaborativeReady, lastScoreUpdate, currentServeSide, ballState]);
+
+  // Enhanced point handlers with 4 different point types
+ // Improved version with better collaborative fallback
+const handlePointAwarded = useCallback((pointType) => {
+  console.log('🎯 Point button clicked:', pointType);
+  
+  // ✅ ONLY CHECK COOLDOWN IN COLLABORATIVE MODE
+  if (collaborativeMode && scoreCooldownActive) {
+    console.log('🚫 Scoring blocked - cooldown active (collaborative mode)');
+    showActionToast(`Wait ${scoreCooldownRemaining}s before scoring again`, 'warning');
+    return;
+  }
+  
+  if (scoringInProgress) {
+    console.log('🚫 Scoring blocked - operation in progress');
+    showActionToast('Score update in progress, please wait', 'info');
+    return;
+  }
+  
+  const now = Date.now();
+  if (lastScoreUpdate && (now - lastScoreUpdate) < 800) {
+    console.log('🚫 Rapid scoring prevented');
+    showActionToast('Please wait between score updates', 'warning');
+    return;
+  }
+  
+  setLastScoreUpdate(now);
+
+  const wasOpponentServing = currentServeSide === "opponent";
+  let team = '';
+  let reason = '';
+
+  switch (pointType) {
+    case 'ourEarned':
+      team = 'our';
+      reason = 'earned';
+      break;
+    case 'opponentError':
+      team = 'our';
+      reason = 'opponent_error';
+      break;
+    case 'ourError':
+      team = 'opponent';
+      reason = 'our_error';
+      break;
+    case 'opponentEarned':
+      team = 'opponent';
+      reason = 'opponent_earned';
+      break;
+    default:
+      return;
+  }
+  
+  // ALWAYS update local state immediately for responsive UX
+  if (team === 'our') {
+    
+    if (reason === 'earned') {
+      setTeamStats && setTeamStats(prev => ({ ...prev, ourEarned: prev.ourEarned + 1 }));
+    } else if (reason === 'opponent_error') {
+      setTeamStats && setTeamStats(prev => ({ ...prev, oppError: prev.oppError + 1 }));
+    }
+  } else {
+    
+    if (reason === 'opponent_earned') {
+      setTeamStats && setTeamStats(prev => ({ ...prev, oppEarned: prev.oppEarned + 1 }));
+    } else if (reason === 'our_error') {
+      setTeamStats && setTeamStats(prev => ({ ...prev, ourError: prev.ourError + 1 }));
+    }
+  }
+
+  // 🔥 FIX: Update serve side FIRST, then ball state
+  // This ensures the correct serve side is captured for collaborative sync
+  setCurrentServeSide(team);
+  setBallSide(team);
+  setBallState("serve");
+  
+  // Now sync to collaborative mode with the CORRECT values
+  if (collaborativeMode && isConnected) {
+    // Sync serve side change
+    updateCollaborativeServeSide(team);
+    
+    // Sync ball state with the NEW serve side
+    updateCollaborativeBallState("serve", {
+      ballSide: team,
+      currentServeSide: team
+    });
+    
+    // Send score update
+    const collaborativeSuccess = updateCollaborativeScore(team, 1, reason);
+    
+    if (!collaborativeSuccess) {
+      console.warn('Failed to send collaborative score update');
+      showActionToast('Score recorded locally', 'warning');
+    }
+  }
+
+  // Handle rotation
+  if (team === 'our' && wasOpponentServing) {
+    setTimeout(() => {
+      handleExpressRotation();
+    }, 100);
+  }
+
+  addActionLogEntry(
+    `Manual point: ${reason}`,
+    {
+      type: 'manual_point',
+      meta: { pointType, source: 'local', timestamp: now }
+    }
+  );
+  
+   triggerNonBlockingSave('point_scored');
+}, [
+  collaborativeMode,
+  isConnected,
+  isCollaborativeReady,
+  scoreCooldownActive,
+  scoreCooldownRemaining,
+  scoringInProgress, 
+  lastScoreUpdate, 
+  currentServeSide, 
+  updateCollaborativeScore,
+  updateCollaborativeServeSide,
+  updateCollaborativeBallState,
+  setTeamStats, 
+  setCurrentServeSide,
+  setBallSide,
+  setBallState,
+  handleExpressRotation, 
+  addActionLogEntry, 
+  showActionToast,
+  triggerNonBlockingSave
+]);
+// FIXED: Add cleanup for scoring timeout
+useEffect(() => {
+  return () => {
+    if (scoringTimeoutRef.current) {
+      clearTimeout(scoringTimeoutRef.current);
+    }
+  };
+}, []);
+
+
+
+
+
+// Enhanced point handling with feedback
+const handlePointAwardedWithFeedback = useCallback(async (pointType) => {
+  const buttonId = `point-${pointType}`;
+  
+  // ✅ Prevent rapid scoring
+  const now = Date.now();
+  if (scoringInProgress || (now - lastScoreAttempt) < 800) {
+    console.warn('⏱️ Scoring attempt blocked - too rapid');
+    showActionToast('Please wait between score updates', 'warning');
+    triggerActionFeedback(buttonId, 'error');
+    return;
+  }
+  
+  // ✅ Check collaborative mode readiness
+  if (collaborativeMode && !isConnected && !isCollaborativeReady()) {
+    console.warn('Score blocked - not ready');
+    showActionToast('Collaborative mode not ready', 'error');
+    return;
+  }
+  
+  triggerActionFeedback(buttonId, 'pending');
+  
+  try {
+    await handlePointAwarded(pointType);
+    triggerActionFeedback(buttonId, 'success');
+    
+    const pointLabels = {
+      'ourEarned': 'Point: We Earned',
+      'opponentError': 'Point: Opponent Error',
+      'ourError': 'Point: Our Error',
+      'opponentEarned': 'Point: They Earned'
+    };
+    
+    const isOurPoint = pointType === 'ourEarned' || pointType === 'opponentError';
+    showActionToast(pointLabels[pointType], isOurPoint ? 'success' : 'error');
+    
+  } catch (error) {
+    triggerActionFeedback(buttonId, 'error');
+    showActionToast('Failed to record point', 'error');
+    console.error('Point recording failed:', error);
+  }
+}, [
+  handlePointAwarded, 
+  triggerActionFeedback, 
+  showActionToast, 
+  scoringInProgress, 
+  lastScoreAttempt,
+  collaborativeMode, 
+  isConnected, 
+  isCollaborativeReady
+]);
+
+  // Get available actions with block assist mode support
+  
+
+const [selectedActionFamily, setSelectedActionFamily] = useState(null);
+const [selectedPlayerForActions, setSelectedPlayerForActions] = useState(null);
+const [blockInitiatorIndex, setBlockInitiatorIndex] = useState(null);
+
+// Kill mode state - for selecting assist players when kill is made
+
+const getAvailableActions = (playerIndex) => {
+  const player = courtPlayers[playerIndex];
+  if (!player) return [];
+
+  if (pendingPassGrade?.playerIndex === playerIndex) {
+    const isReceive = pendingPassGrade.actionType === "REC";
+
+    return [
+      {
+        category: isReceive ? "Serve Rec Grade" : "Dig Grade",
+        actions: [
+          { key: "PASS_GRADE_0", label: "0", variant: "danger" },
+          { key: "PASS_GRADE_1", label: "1", variant: "warn" },
+          { key: "PASS_GRADE_2", label: "2", variant: "primary" },
+          { key: "PASS_GRADE_3", label: "3", variant: "success" },
+          { key: "CANCEL_PASS_GRADE", label: "CANCEL", variant: "secondary" },
+        ],
+      },
+    ];
+  }
+
+  // Block selection mode - inline with initiating player
+  if (blockMode && blockInitiatorIndex === playerIndex) {
+    // Get all other ON players who aren't liberos (no position tracking in this mode)
+    const otherPlayers = courtPlayers
+      .map((p, idx) => ({ player: p, index: idx }))
+      .filter(({ player, index }) => {
+        return (
+          player && 
+          player.name !== "?" && 
+          !player.isLibero &&
+          index !== playerIndex // Don't include the initiator themselves
+        );
+      });
+    
+    // If no other players available, show message
+    if (otherPlayers.length === 0) {
+      return [
+        {
+          category: `Block ${blockMode === 'assist' ? 'Assist' : 'Error'}`,
+          actions: [
+            { 
+              key: `BLOCK_SOLO`, 
+              label: `Only #${player.number} on court`, 
+              variant: 'secondary' 
+            },
+            { key: `BLOCK_CANCEL`, label: '✕ Cancel', variant: 'danger' }
+          ]
+        }
+      ];
+    }
+    
+    return [
+      {
+        category: `Block ${blockMode === 'assist' ? 'Assist' : 'Error'} - Select Players:`,
+        actions: [
+          ...otherPlayers.map(({ player, index }) => ({
+            key: `BLOCK_SELECT_${index}`,
+            label: selectedBlockPlayers.has(index) ? `✓ #${player.number}` : `#${player.number} - ${player.name?.split(' ')[0]}`,
+            variant: selectedBlockPlayers.has(index) ? 'success' : 'primary'
+          })),
+{
+  key: `BLOCK_SUBMIT`,
+  label: isMobile
+    ? '✓'
+    : `✓ Submit (${selectedBlockPlayers.size})`,
+  variant: selectedBlockPlayers.size > 0 ? 'success' : 'secondary'
+},
+{
+  key: `BLOCK_CANCEL`,
+  label: isMobile
+    ? 'X'
+    : '✕ Cancel',
+  variant: 'danger'
+}
+        ]
+      }
+    ];
+  }
+
+
+  const canBlock =  !player.isLibero && !blockMode;
+
+  // Initial top-level menu for every active player
+  if (!selectedActionFamily) {
+    const starterGroups = [
+      {
+        category: "Actions",
+        actions: [
+          { key: "OPEN_SERVE", label: "SERVE", variant: "primary" },
+          { key: "OPEN_RECEIVE", label: "PASS", variant: "primary" },
+          { key: "OPEN_SET", label: "SET", variant: "primary" },
+          { key: "OPEN_ATTACK", label: "ATTACK", variant: "primary" },
+        ],
+      },
+    ];
+
+    if (canBlock) {
+      starterGroups[0].actions.push({
+        key: "OPEN_BLOCK",
+        label: "BLOCK",
+        variant: "primary",
+      });
+    }
+
+    return starterGroups;
+  }
+
+  // Submenus
+  switch (selectedActionFamily) {
+    case "SERVE":
+      return [
+        {
+          category: "Serve",
+          actions: [
+            { key: "SERVE", label: "IN PLAY", variant: "primary" },
+            { key: "ACE", label: "ACE", variant: "success" },
+            { key: "SERVE_ERR", label: "ERR", variant: "danger" },
+            { key: "BACK_TO_ACTIONS", label: "CANCEL", variant: "secondary" },
+          ],
+        },
+      ];
+
+    case "RECEIVE":
+      return [
+        {
+          category: "Receive",
+          actions: [
+            { key: "REC", label: "SERVE REC", variant: "primary" },
+            { key: "REC_ERR", label: "SERVE REC ERR", variant: "danger" },
+            { key: "DIG", label: "DIG", variant: "primary" },
+            { key: "DIG_ERR", label: "DIG ERR", variant: "danger" },
+            { key: "BACK_TO_ACTIONS", label: "CANCEL", variant: "secondary" },
+          ],
+        },
+      ];
+
+    case "SET":
+      return [
+        {
+          category: "Set",
+          actions: [
+            { key: "SET", label: "SET", variant: "primary" },
+            { key: "ASSIST", label: "ASSIST", variant: "success" },
+            { key: "SET_ERR", label: "ERR", variant: "danger" },
+            { key: "BACK_TO_ACTIONS", label: "CANCEL", variant: "secondary" },
+          ],
+        },
+      ];
+
+    case "ATTACK":
+      return [
+        {
+          category: "Attack",
+          actions: [
+            { key: "ATTACK", label: "IN PLAY", variant: "primary" },
+            { key: "KILL", label: "KILL", variant: "success" },
+            { key: "ATTACK_ERR", label: "ERR", variant: "danger" },
+            { key: "BACK_TO_ACTIONS", label: "CANCEL", variant: "secondary" },
+          ],
+        },
+      ];
+
+    case "BLOCK":
+      if (!canBlock) return [];
+      return [
+        {
+          category: "Block",
+          actions: [
+            { key: "SOLO_BLOCK", label: "SOLO", variant: "success" },
+            { key: "ASSIST_BLOCK", label: "ASSIST", variant: "success" },
+            { key: "ERROR_BLOCK", label: "ERR", variant: "danger" },
+            { key: "BACK_TO_ACTIONS", label: "CANCEL", variant: "secondary" },
+          ],
+        },
+      ];
+
+    default:
+      return [];
+  }
+};
+
+const completeAssistKillSequence = useCallback(async (assistPlayer, killPlayer, currentServeSideSnapshot = null) => {
+  processingAssistKillRef.current = true;
+  
+  // CHECK COOLDOWN FIRST
+  if (collaborativeMode && scoreCooldownActive) {
+    console.warn('⏱️ Assist-kill blocked - scoring cooldown active');
+    showActionToast(`Wait ${scoreCooldownRemaining}s before scoring`, 'warning');
+    processingAssistKillRef.current = false;
+    return;
+  }
+  
+  try {
+    const effectiveServeSide = currentServeSideSnapshot || serveSideAtRallyStartRef.current || currentServeSide;
+    const wasOpponentServing = effectiveServeSide === "opponent";
+    
+    // ✅ REMOVED: Auto-assignment logic - just log the stats directly
+    
+    // Log stats for both players
+    console.log('📊 Logging assist stat for:', assistPlayer.name);
+    await logStat(assistPlayer, "Assist", ["sets", "assists"], 
+      `${assistPlayer.name} (#${assistPlayer.number}) → Assist`);
+    
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
+    console.log('📊 Logging kill stat for:', killPlayer.name);
+    await logStat(killPlayer, "Kill", ["kills", "attacks", "points"],
+      `${killPlayer.name} (#${killPlayer.number}) → Kill`);
+    
+    await new Promise(resolve => setTimeout(resolve, 100));
+  
+    // Update score
+    console.log('💰 Attempting to update score...');
+    if (onOurPointRef.current) {
+      onOurPointRef.current(true);
+    }
+    
+    if (setTeamStatsRef.current) {
+      setTeamStatsRef.current(prev => {
+        const newStats = { ...prev, ourEarned: prev.ourEarned + 1 };
+        return newStats;
+      });
+    }
+    
+    // Send collaborative update
+    if (collaborativeMode && isConnected) {
+      updateCollaborativeScore('our', 1, 'earned');
+      
+      // Notify others that assist-kill is complete
+      if (socket) {
+        socket.emit('assist_selection_completed', {
+          matchId: currentMatchId,
+          assistPlayer: {
+            _id: assistPlayer._id,
+            name: assistPlayer.name,
+            number: assistPlayer.number
+          },
+          killPlayer: {
+            _id: killPlayer._id,
+            name: killPlayer.name,
+            number: killPlayer.number
+          },
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+  
+    // Update game state
+    setBallStateWithSync("serve");
+    setCurrentServeSideWithSync("our");
+    
+    // Handle rotation
+    if (wasOpponentServing) {
+      setTimeout(() => {
+        handleExpressRotation();
+      }, 100);
+    }
+    
+    // Add action log
+    addActionLogEntry(
+      `Assist by ${assistPlayer.name} (#${assistPlayer.number}) → Kill by ${killPlayer.name} (#${killPlayer.number})`,
+      {
+        type: 'assist_kill_combo',
+        meta: {
+          type: 'assist_kill_combo',
+          assistPlayer: { id: assistPlayer._id, name: assistPlayer.name, number: assistPlayer.number },
+          killPlayer: { id: killPlayer._id, name: killPlayer.name, number: killPlayer.number }
+        }
+      }
+    );
+    
+    console.log('✅ Assist-kill sequence completed successfully');
+  } catch (error) {
+    console.error('❌ Error in completeAssistKillSequence:', error);
+    showActionToast(`Failed to complete assist-kill: ${error.message}`, 'error');
+  } finally {
+    setTimeout(() => {
+      processingAssistKillRef.current = false;
+    }, 1000);
+  }
+}, [
+  currentServeSide, 
+  collaborativeMode,
+  isConnected,
+  isCollaborativeReady,
+  getCurrentUserId,
+  getCurrentUsername,
+  getTrackingStatus,
+  updateCollaborativeScore,
+  setBallStateWithSync, 
+  setCurrentServeSideWithSync, 
+  addActionLogEntry, 
+  logStat,
+  handleExpressRotation,
+  showActionToast,
+  currentMatchId,
+  token,
+  scoreCooldownActive,
+  scoreCooldownRemaining
+]);
+
+  
+
+
+  const cancelAssist = useCallback(() => {
+    setAssistMode(false);
+    setSelectedAssistPlayer(null);
+  }, []);
+  
+  const handleAssistSelection = useCallback(async (assistPlayerIndex, killPlayerIndex) => {
+  const assistPlayer = courtPlayers[assistPlayerIndex];
+  const killPlayer = courtPlayers[killPlayerIndex];
+  
+  // Close modal FIRST
+  setAssistMode(false);
+  setSelectedAssistPlayer(null);
+  
+  if (!assistPlayer || !killPlayer ) {
+    return;
+  }
+  
+  // Process the assist-kill sequence
+  await completeAssistKillSequence(assistPlayer, killPlayer);
+}, [courtPlayers,  completeAssistKillSequence]);
+
+
+
+  // Updated styles for mobile-friendly design
+  const containerStyle = {
+    maxWidth: '1200px',
+    margin: '0 auto',
+    padding: '8px',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    backgroundColor: '#f8f9fa',
+    borderRadius: '8px',
+    paddingBottom: '100px' // Add padding to prevent content from being hidden behind sticky bar
+  };
+  const headerStyle = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '12px',
+    padding: '8px',
+    backgroundColor: '#ffffff',
+    borderRadius: '6px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+    flexWrap: 'wrap',
+    gap: '6px'
+  };
+
+
+const renderSyncNotifications = () => {
+    if (!collaborativeMode || !syncedGameState.lastUpdateBy) return null;
+
+    return (
+      <div style={{
+        position: 'fixed',
+        top: '60px',
+        right: '20px',
+        zIndex: 1001,
+        pointerEvents: 'none'
+      }}>
+        {syncedGameState.lastUpdateBy && syncedGameState.lastUpdateBy !== 'You' && (
+          <div style={{
+            backgroundColor: 'rgba(0, 122, 255, 0.9)',
+            color: '#fff',
+            padding: '6px 10px',
+            borderRadius: '6px',
+            fontSize: '11px',
+            fontWeight: '600',
+            marginBottom: '4px',
+            opacity: 0.8
+          }}>
+            Last update by: {syncedGameState.lastUpdateBy}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+
+// UPDATED: Connection status with ownership restrictions
+const renderConnectionStatus = () => {
+    if (!collaborativeMode) return null;
+
+    let statusColor = '#6c757d';
+    let statusText = 'Offline';
+    let statusIcon = '⚫';
+
+    if (isConnected && isCollaborativeReady()) {
+      statusColor = '#28a745';
+      statusText = 'Synced';
+      statusIcon = '🟢';
+    } else if (isConnected) {
+      statusColor = '#ffc107';
+      statusText = 'Connected';
+      statusIcon = '🟡';
+    } else {
+      statusColor = '#dc3545';
+      statusText = 'Offline';
+      statusIcon = '🔴';
+    }
+
+    return (
+      <div style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px',
+        padding: '2px 8px',
+        borderRadius: '12px',
+        backgroundColor: `${statusColor}20`,
+        border: `1px solid ${statusColor}`,
+        fontSize: '11px',
+        fontWeight: '600'
+      }}>
+        <span>{statusIcon}</span>
+        <span style={{ color: statusColor }}>{statusText}</span>
+        {/* Only show user count to match owners */}
+        {isMatchOwner() && activeSessions.length > 1 && (
+          <span style={{ color: statusColor, marginLeft: '4px' }}>
+            ({activeSessions.filter(s => s.isOnline).length} users)
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  const ballStateStyle = {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+    flexWrap: 'wrap'
+  };
+
+  const stateIndicatorStyle = (isActive) => ({
+    padding: '4px 8px',
+    borderRadius: '12px',
+    fontWeight: '600',
+    fontSize: '10px',
+    backgroundColor: isActive ? '#007AFF' : '#e9ecef',
+    color: isActive ? '#ffffff' : '#6c757d',
+    marginLeft: '2px',
+    minHeight: '30px',
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+    transform: 'scale(1)',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
+  });
+
+const playersGridStyle = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+  gap: '8px',
+  marginBottom: '12px',
+  alignItems: 'start',
+};
+
+ const playerCardStyle = (isActive) => ({
+  backgroundColor: '#ffffff',
+  borderRadius: '8px',
+  padding: isActive ? '8px' : '6px',
+  boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
+  opacity: isActive ? 1 : 0.6,
+  border: isActive ? '2px solid #007AFF' : '2px solid transparent',
+  transition: 'all 0.2s ease',
+  display: 'grid',
+  gridTemplateColumns: 'minmax(110px, 110px) 1fr auto',
+  gap: '6px',
+  alignItems: 'center',
+  minHeight: isActive ? '56px' : '40px',
+  width: '100%',
+  minWidth: 0,
+});
+
+const playerHeaderStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '6px',
+  minWidth: '100px',
+  flexShrink: 0
+};
+
+  const playerNameStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    cursor: 'pointer',
+    flex: 1,
+    minWidth: '80px'
+  };
+
+  const playerControlsStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    flexShrink: 0
+  };
+
+const splitNameForDisplay = (name, maxTotalLength = 18, maxLineLength = 14) => {
+  if (!name) return { firstLine: '', secondLine: null };
+  
+  // First, cap the total name length
+  let workingName = name.length > maxTotalLength ? name.substring(0, maxTotalLength) + '...' : name;
+  
+  // If it fits on one line, return as-is
+  if (workingName.length <= maxLineLength) {
+    return { firstLine: workingName, secondLine: null };
+  }
+  
+  // Find the last space to split on
+  const lastSpaceIndex = workingName.lastIndexOf(' ');
+  
+  // If no space found, just split at max line length
+  if (lastSpaceIndex === -1) {
+    return { 
+      firstLine: workingName.substring(0, maxLineLength),
+      secondLine: workingName.substring(maxLineLength)
+    };
+  }
+  
+  // Split on last space
+  const firstPart = workingName.substring(0, lastSpaceIndex);
+  const secondPart = workingName.substring(lastSpaceIndex + 1);
+  
+  // If first part is too long, truncate it
+  const finalFirstPart = firstPart.length > maxLineLength ? 
+    firstPart.substring(0, maxLineLength) : firstPart;
+  
+  return { 
+    firstLine: finalFirstPart, 
+    secondLine: secondPart 
+  };
+};
+
+  const actionButtonsStyle = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '4px',
+    flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'center'
+  };
+
+  const actionButtonStyle = (variant = 'primary') => ({
+    padding: '4px 8px',
+    borderRadius: '4px',
+    border: 'none',
+    fontWeight: '600',
+    fontSize: '10px',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+    minWidth: '40px',
+    minHeight: '40px',
+    backgroundColor: variant === 'danger' ? '#dc3545' : variant === 'success' ? '#28a745' : variant === 'warn' ? 'orange' : '#007AFF',
+    color: '#ffffff',
+    whiteSpace: 'nowrap',
+    transform: 'scale(1)',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+  });
+
+  // NEW: Manual Position Control Section Style (Subdued)
+  const manualControlStyle = {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '12px',
+    marginBottom: '16px',
+    backgroundColor: '#ffffff',
+    borderRadius: '8px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+  };
+
+  const rotateButtonStyle = {
+    padding: '8px 16px',
+    borderRadius: '6px',
+    border: '1px solid #dee2e6',
+    backgroundColor: '#f8f9fa',
+    color: '#495057',
+    fontWeight: '500',
+    fontSize: '14px',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+    transform: 'scale(1)'
+  };
+
+  // NEW: Sticky Bottom Bar Styles
+  const stickyBottomBarStyle = {
+    position: 'fixed',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#ffffff',
+    border: '3px solid #007AFF', // Blue border matching the app design
+    borderRadius: '16px 16px 0 0',
+    padding: '12px 16px 20px 16px', // Extra bottom padding for mobile safe area
+    zIndex: 1000,
+    boxShadow: '0 -4px 12px rgba(0,0,0,0.1)'
+  };
+
+  const bottomBarContentStyle = {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '12px',
+    maxWidth: '500px',
+    margin: '0 auto'
+  };
+
+  const bottomBarSectionStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    alignItems: 'center'
+  };
+
+
+
+ 
+ // Enhanced button style function with feedback states
+const getActionButtonStyleWithFeedback = useCallback((variant = 'primary', buttonId) => {
+  const baseStyle = actionButtonStyle(variant);
+  const feedback = actionFeedback.get(buttonId);
+  
+  if (feedback) {
+    const age = Date.now() - feedback.timestamp;
+    const progress = Math.min(age / 800, 1); // 800ms animation
+    
+    switch (feedback.type) {
+      case 'pending':
+        return {
+          ...baseStyle,
+          backgroundColor: '#ffc107',
+          transform: 'scale(0.95)',
+          boxShadow: '0 0 0 3px rgba(255, 193, 7, 0.3)',
+        };
+      case 'success':
+        return {
+          ...baseStyle,
+          backgroundColor: '#28a745',
+          transform: `scale(${1 + (0.1 * (1 - progress))})`,
+          boxShadow: `0 0 0 ${3 * (1 - progress)}px rgba(40, 167, 69, ${0.5 * (1 - progress)})`,
+        };
+      case 'error':
+        return {
+          ...baseStyle,
+          backgroundColor: '#dc3545',
+          transform: `scale(${1 + (0.1 * (1 - progress))})`,
+          boxShadow: `0 0 0 ${3 * (1 - progress)}px rgba(220, 53, 69, ${0.5 * (1 - progress)})`,
+        };
+    }
+  }
+  
+  return baseStyle;
+}, [actionButtonStyle, actionFeedback]);
+
+  const bottomBarLabelStyle = {
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#333',
+    textAlign: 'center'
+  };
+
+  const bottomBarButtonRowStyle = {
+    display: 'flex',
+    gap: '6px'
+  };
+
+ const bottomBarButtonStyle = (backgroundColor, textColor = '#ffffff') => ({
+  padding: '10px 12px',
+  borderRadius: '8px',
+  border: 'none',
+  // Only disable if collaborative mode is on AND we explicitly can't score
+  backgroundColor: (collaborativeMode && !isConnected && !isCollaborativeReady()) ? '#6c757d' : backgroundColor,
+  color: textColor,
+  fontWeight: '600',
+  fontSize: '12px',
+  cursor: (collaborativeMode && !isConnected && !isCollaborativeReady()) ? 'not-allowed' : 'pointer',
+  transition: 'all 0.15s ease',
+  transform: 'scale(1)',
+  minWidth: '70px',
+  minHeight: '44px',
+  boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+  opacity: (collaborativeMode && !isConnected && !isCollaborativeReady()) ? 0.6 : 1
+});
+
+const getBottomBarButtonStyleWithFeedback = useCallback((backgroundColor, textColor = '#ffffff', buttonId) => {
+  const baseStyle = bottomBarButtonStyle(backgroundColor, textColor);
+  const feedback = actionFeedback.get(buttonId);
+  
+  // ✅ DISABLE IF SCORING IS OFF
+  if (!scoringEnabled && buttonId.startsWith('point-')) {
+    return {
+      ...baseStyle,
+      backgroundColor: '#6c757d',
+      cursor: 'not-allowed',
+      opacity: 0.5,
+      transform: 'scale(0.95)',
+      position: 'relative'
+    };
+  }
+  
+  // ✅ ONLY APPLY COOLDOWN STYLING IN COLLABORATIVE MODE
+  if (collaborativeMode && scoreCooldownActive && buttonId.startsWith('point-')) {
+    return {
+      ...baseStyle,
+      backgroundColor: '#6c757d',
+      cursor: 'not-allowed',
+      opacity: 0.5,
+      transform: 'scale(0.95)',
+      position: 'relative'
+    };
+  }
+  
+  // Add loading state for scoring in progress
+  if (scoringInProgress && buttonId.startsWith('point-')) {
+    return {
+      ...baseStyle,
+      backgroundColor: '#6c757d',
+      cursor: 'not-allowed',
+      opacity: 0.7,
+      transform: 'scale(0.98)'
+    };
+  }
+  
+  if (feedback) {
+    const age = Date.now() - feedback.timestamp;
+    const progress = Math.min(age / 800, 1);
+    
+    switch (feedback.type) {
+      case 'pending':
+        return {
+          ...baseStyle,
+          backgroundColor: '#ffc107',
+          transform: 'scale(0.95)',
+          boxShadow: '0 0 0 3px rgba(255, 193, 7, 0.4)',
+        };
+      case 'success':
+        return {
+          ...baseStyle,
+          backgroundColor: '#28a745',
+          transform: `scale(${1 + (0.05 * (1 - progress))})`,
+          boxShadow: `0 2px 8px rgba(0,0,0,0.3), 0 0 0 ${2 * (1 - progress)}px rgba(40, 167, 69, ${0.4 * (1 - progress)})`,
+        };
+      case 'error':
+        return {
+          ...baseStyle,
+          backgroundColor: '#dc3545',
+          transform: `scale(${1 + (0.05 * (1 - progress))})`,
+          boxShadow: `0 2px 8px rgba(0,0,0,0.3), 0 0 0 ${2 * (1 - progress)}px rgba(220, 53, 69, ${0.4 * (1 - progress)})`,
+        };
+    }
+  }
+  
+  return baseStyle;
+}, [bottomBarButtonStyle, actionFeedback, scoringInProgress, scoreCooldownActive, collaborativeMode, scoringEnabled]);
+
+
+ return (
+  <div style={containerStyle}>
+    <RemoteAssistBanner />
+    {/* Push content down when banner is showing */}
+    {remoteAssistInProgress && <div style={{ height: '80%' }} />}
+      {/* Only show collaborative status bar to match owners */}
+      {collaborativeMode && isMatchOwner() && <CollaborativeStatusBar />}
+      
+      <div style={headerStyle}>
+        <h2 style={{ margin: 0, color: '#333', fontSize: '18px' }}>
+          {renderConnectionStatus()}
+        </h2>
+        
+        
+       
+      </div>
+
+      {renderSyncNotifications()}
+ 
+
+
+	
+
+      {/* Player Assignment Modal - only show to match owners */}
+      {isMatchOwner() && (
+        <PlayerAssignmentModal
+          isOpen={showAssignmentModal}
+          onClose={() => setShowAssignmentModal(false)}
+          courtPlayers={courtPlayers}
+          benchPlayers={benchPlayers}
+          matchId={currentMatchId}
+          teamName={match?.teamName}
+        />
+      )}
+
+      {/* Players */}
+      <div style={playersGridStyle}>
+        {allRosterPlayers.length > 0 ? (
+          // Sort so ON players appear first (first 3 rows = 6 slots)
+          [...allRosterPlayers].sort((a, b) => {
+            const aIsOn = playerOnOffStatus[a._id] || false;
+            const bIsOn = playerOnOffStatus[b._id] || false;
+            if (aIsOn && !bIsOn) return -1;
+            if (!aIsOn && bIsOn) return 1;
+            return 0; // Keep original order within ON or OFF groups
+          }).map(player => {
+            const isOn = playerOnOffStatus[player._id] || false;
+       
+            
+            // Find this player's index in courtPlayers
+            const playerIndex = courtPlayers.findIndex(cp => cp?._id === player._id);
+            // If player is ON, they're active. Otherwise check game state.
+            const isActive = isOn;
+            
+            // Build action groups for ON players
+            let actionGroups = [];
+            if (isOn && playerIndex >= 0) {
+              const rosterPlayer = courtPlayers[playerIndex];
+              
+              if (playerIndex === selectedPlayerForActions) {
+                // This player has submenu open - show full actions (including submenu)
+                actionGroups = getAvailableActions(playerIndex);
+              } else {
+                // This player doesn't have submenu - show TOP LEVEL actions always
+                const canBlock = !rosterPlayer.isLibero && !blockMode;
+                actionGroups = [
+                  {
+                    category: "Actions",
+                    actions: [
+                      { key: "OPEN_SERVE", label: "SERVE", variant: "primary" },
+                      { key: "OPEN_RECEIVE", label: "PASS", variant: "primary" },
+                      { key: "OPEN_SET", label: "SET", variant: "primary" },
+                      { key: "OPEN_ATTACK", label: "ATTACK", variant: "primary" },
+                    ],
+                  },
+                ];
+                
+                if (canBlock) {
+                  actionGroups[0].actions.push({
+                    key: "OPEN_BLOCK",
+                    label: "BLOCK",
+                    variant: "primary",
+                  });
+                }
+              }
+            }
+            
+            const trackingStatus = getTrackingStatus(player._id);
+
+            return (
+              <div key={player._id} style={{ marginBottom: '8px' }}>
+                {/* Player Row Header with Toggle */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 12px',
+                    backgroundColor: '#ffffff',
+                    borderRadius: isOn ? '6px 6px 0 0' : '6px',
+                    border: isOn ? '2px solid #4caf50' : '1px solid #ddd',
+                    borderBottom: isOn && actionGroups.length > 0 ? 'none' : undefined,
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                    transition: 'all 0.2s ease',
+                    opacity: isOn ? 1 : 0.7,
+                    position: 'relative'
+                  }}
+                >
+                  {/* Collaborative tracking overlay */}
+                  {collaborativeMode && trackingStatus?.isAssigned && !trackingStatus?.isMe && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      backgroundColor: 'rgba(0,122,255,0.9)',
+                      color: '#fff',
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      fontSize: '10px',
+                      fontWeight: '600',
+                      zIndex: 5,
+                      pointerEvents: 'none'
+                    }}>
+                      Tracked by {trackingStatus.trackedBy}
+                    </div>
+                  )}
+
+                  {/* Player Info: Number | Name (L) */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    flex: 1
+                  }}>
+                    <div style={{
+                      fontSize: '14px',
+                      fontWeight: '700',
+                      color: '#007AFF',
+                      minWidth: '30px'
+                    }}>
+                      {player.number}
+                    </div>
+                    <div style={{
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      color: '#333',
+                      flex: 1
+                    }}>
+                      {player.name}
+                      {player.isLibero && (
+                        <span style={{
+                          fontSize: '11px',
+                          color: '#999',
+                          marginLeft: '6px',
+                          fontWeight: '400'
+                        }}>
+                          (L)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Toggle Button */}
+                  <button
+                    onClick={() => handlePlayerToggle(player._id)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '20px',
+                      border: 'none',
+                      backgroundColor: isOn ? '#4caf50' : '#ccc',
+                      color: '#fff',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      minWidth: '60px'
+                    }}
+                    onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                    onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                  >
+                    {isOn ? '✓ ON' : '○ OFF'}
+                  </button>
+                </div>
+
+                {/* Action Buttons - Show if player is ON */}
+                {isOn && actionGroups.length > 0 && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      padding: '8px 12px',
+                      backgroundColor: '#f8f9fa',
+                      borderRadius: '0 0 6px 6px',
+                      border: '2px solid #4caf50',
+                      borderTop: 'none'
+                    }}
+                  >
+                    {actionGroups.map((group, groupIndex) => (
+                      <div key={group.category} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {/* Show category label for block selections */}
+                        {group.category.includes('Block') && (
+                          <div style={{
+                            fontSize: '11px',
+                            fontWeight: '700',
+                            color: '#555',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px'
+                          }}>
+                            {group.category}
+                          </div>
+                        )}
+
+                        {/* Action buttons for this group */}
+                        <div style={{
+                          display: 'flex',
+                          gap: '6px',
+                          flexWrap: 'wrap',
+                          alignItems: 'center'
+                        }}>
+                          {group.actions.map(action => (
+                            <button
+                              key={action.key}
+                              onClick={() => handlePlayerActionWithFeedback(playerIndex, action.key)}
+                              onMouseDown={(e) => {
+                                e.target.style.transform = 'scale(0.95)';
+                                e.target.style.opacity = '0.8';
+                              }}
+                              onMouseUp={(e) => {
+                                e.target.style.transform = 'scale(1)';
+                                e.target.style.opacity = '1';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.target.style.transform = 'scale(1)';
+                                e.target.style.opacity = '1';
+                              }}
+                              style={getActionButtonStyleWithFeedback(action.variant, `player-${playerIndex}-${action.key}`)}
+                              title={action.label}
+                            >
+                              {action.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+              </div>
+            );
+          })
+        ) : (
+          <div style={{
+            padding: '12px',
+            textAlign: 'center',
+            color: '#999',
+            fontSize: '13px'
+          }}>
+            Loading roster...
+          </div>
+        )}
+      </div>
+
+{/* Collaborative Assist Waiting Banner - Bottom */}
+
+{collaborativeAssistWaiting && assistWaitingPlayer && (
+  <div style={{
+    position: 'fixed',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#007AFF',
+    borderTop: '3px solid #0056b3',
+    padding: '12px',
+    zIndex: 1001,
+    boxShadow: '0 -4px 12px rgba(0,0,0,0.2)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center'
+  }}>
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '20px',
+      maxWidth: '600px'
+    }}>
+      {/* Timer Circle */}
+      <div style={{
+        minWidth: '50px',
+        height: '50px',
+        borderRadius: '50%',
+        backgroundColor: '#ffffff',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+        flexShrink: 0
+      }}>
+        <div style={{
+          fontSize: '20px',
+          fontWeight: '800',
+          color: '#007AFF'
+        }}>
+          {assistWaitingTimer}s
+        </div>
+      </div>
+      
+      {/* Info Section */}
+      <div style={{
+        color: '#ffffff',
+        textAlign: 'left',
+        flex: 1
+      }}>
+        <div style={{
+          fontSize: '14px',
+          fontWeight: '700',
+          marginBottom: '2px'
+        }}>
+          ✔ Assist: {assistWaitingPlayer.name} (#{assistWaitingPlayer.number})
+        </div>
+        <div style={{
+          fontSize: '11px',
+          opacity: 0.9
+        }}>
+          Click KILL on any player or ignore
+        </div>
+      </div>
+      
+      {/* Ignore Kill Button */}
+      <button
+        onClick={handleCollaborativeIgnoreKill}
+        style={{
+          padding: '10px 20px',
+          borderRadius: '6px',
+          backgroundColor: '#ffc107',
+          color: '#212529',
+          border: 'none',
+          fontWeight: '700',
+          fontSize: '13px',
+          cursor: 'pointer',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+          transition: 'all 0.2s ease',
+          flexShrink: 0,
+          whiteSpace: 'nowrap'
+        }}
+        onMouseDown={(e) => {
+          e.target.style.transform = 'scale(0.95)';
+          e.target.style.opacity = '0.9';
+        }}
+        onMouseUp={(e) => {
+          e.target.style.transform = 'scale(1)';
+          e.target.style.opacity = '1';
+        }}
+        onMouseLeave={(e) => {
+          e.target.style.transform = 'scale(1)';
+          e.target.style.opacity = '1';
+        }}
+      >
+        Ignore Kill
+      </button>
+    </div>
+  </div>
+)}
+
+
+
+      {/* Only show collaborative controls to match owners */}
+      {renderCollaborativeControls()}
+
+      {/* Assist Mode Modal */}
+      {assistMode && selectedAssistPlayer !== null && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9998
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '12px',
+            padding: '20px',
+            maxWidth: '500px',
+            width: '95%',
+            maxHeight: '80vh',
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            touchAction: 'pan-y',
+            overscrollBehavior: 'contain',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+          }}>
+            <h3 style={{ 
+              marginTop: 0, 
+              marginBottom: '16px',
+              fontSize: '18px',
+              color: '#333',
+              textAlign: 'center'
+            }}>
+              Who got the kill?
+            </h3>
+            
+            <div style={{
+              marginBottom: '16px',
+              padding: '12px',
+              backgroundColor: '#e8f5e8',
+              borderRadius: '8px',
+              border: '1px solid #28a745'
+            }}>
+              <div style={{ fontSize: '14px', color: '#155724', textAlign: 'center' }}>
+                <strong>Assisting Player:</strong> {courtPlayers[selectedAssistPlayer]?.name} (#{courtPlayers[selectedAssistPlayer]?.number})
+              </div>
+            </div>
+            
+            <p style={{
+              fontSize: '14px',
+              color: '#666',
+              textAlign: 'center',
+              marginBottom: '16px'
+            }}>
+              Select the player who got the kill from this assist.
+            </p>
+
+            {/* Other Players Selection */}
+            <div style={{
+              marginBottom: '16px',
+              padding: '12px',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '8px'
+            }}>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: '#333', marginBottom: '12px' }}>
+                Available Players:
+              </div>
+              
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
+                {courtPlayers
+                  .map((player, index) => ({ player, index }))
+                  .filter(({ player, index }) => {
+                    return player && 
+                           player.name !== "?" && 
+                           player._id && 
+                           index !== selectedAssistPlayer;
+                  })
+                  .sort((a, b) => (a.player.number || 999) - (b.player.number || 999)) // Sort by number
+                  .map(({ player, index }) => (
+                    <div
+                      key={index}
+                      onClick={() => handleAssistSelection(selectedAssistPlayer, index)}
+                      style={{
+                        padding: '12px',
+                        borderRadius: '8px',
+                        border: '2px solid #dee2e6',
+                        backgroundColor: '#ffffff',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}
+                      onMouseOver={(e) => {
+                        e.target.style.backgroundColor = '#f8f9fa';
+                        e.target.style.borderColor = '#007AFF';
+                      }}
+                      onMouseOut={(e) => {
+                        e.target.style.backgroundColor = '#ffffff';
+                        e.target.style.borderColor = '#dee2e6';
+                      }}
+                    >
+                      <div>
+                        <div style={{ 
+                          fontWeight: '600', 
+                          fontSize: '14px',
+                          color: '#333'
+                        }}>
+                          {player.name}
+                        </div>
+                      </div>
+                      
+                      <div style={{
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        backgroundColor: '#28a745',
+                        color: '#ffffff'
+                      }}>
+                        SELECT
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+            
+            {/* Action Buttons */}
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'center'
+            }}>
+              <button
+                onClick={ignoreKill}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: '#ffc107',
+                  color: '#212529',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                Ignore Kill
+              </button>
+              <button
+                onClick={cancelAssist}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: '#dc3545',
+                  color: '#ffffff',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+	  
+	  <ActionToasts />
+		<CooldownOverlay />
+      
+  
+
+
+    </div>
+  )
+};
+
+export default ExpressStatLogger;

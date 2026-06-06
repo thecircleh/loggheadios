@@ -1,0 +1,287 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
+import { useAuth } from './AuthContext';
+import MatchModeSelector from './MatchModeSelector';
+import { calculateMatchAge } from './MatchSelectorUtils';
+import ExpressStatPage from './ExpressStatPage';
+
+const getApiUrl = () => {
+  if (window.location.hostname.startsWith("10.")) {
+    return `http://${window.location.hostname}:3000`;
+  }
+  return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
+};
+
+const API_URL = getApiUrl();
+
+/**
+ * StatBookContainer - Wraps ExpressStatPage with MatchModeSelector
+ * 
+ * This container manages:
+ * - Match selection/creation logic
+ * - Match state initialization
+ * - Integration between MatchModeSelector and ExpressStatPage
+ */
+export default function StatBookContainer({
+  // All the props from your parent component (e.g., from App.js)
+  courtPlayers,
+  updateCourtPositions,
+  rotateCourtPositions,
+  swapCourtPlayers,
+  positionMapping,
+  currentMatchId,
+  setCurrentMatchId,
+  match,
+  setMatch,
+  setMatchSettings,
+  actionLog,
+  setActionLog,
+  ourScore,
+  opponentScore,
+  onOurPoint,
+  onOpponentPoint,
+  teamStats,
+  setTeamStats,
+  openEndSetDialog,
+  ballState,
+  setBallState,
+  ballSide,
+  setBallSide,
+  isMobile,
+  isPortrait,
+  isTouch,
+  deactivatedPlayers,
+  setDeactivatedPlayers,
+  currentServeSide,
+  setCurrentServeSide,
+  saveMatchData,
+  maybeCreditGamesPlayed,
+  scoreCooldownActive,
+  scoreCooldownRemaining,
+  autoJoinMatchIfPossible,
+  allowedLiberoSubTarget,
+  setAllowedLiberoSubTarget,
+  slot5TargetId,
+  setSlot5TargetId,
+  benchPlayers,
+  setBenchPlayers,
+  substitutionLog,
+  setSubstitutionLog,
+  updatePlayersOnCourt,
+  setCourtPlayers,
+  isMatchOwner,
+  setOurScore,
+  setOpponentScore,
+}) {
+  const { user, token } = useAuth();
+  const [currentMatchAge, setCurrentMatchAge] = useState(0);
+
+  // Calculate match age whenever match data updates
+  useEffect(() => {
+    if (match?.updatedAt) {
+      const age = calculateMatchAge(match.updatedAt);
+      setCurrentMatchAge(age);
+      
+      // Update age every minute
+      const interval = setInterval(() => {
+        const newAge = calculateMatchAge(match.updatedAt);
+        setCurrentMatchAge(newAge);
+      }, 60000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [match?.updatedAt]);
+
+  /**
+   * Handle starting a new Stat Book match
+   */
+  const handleStartNewMatch = useCallback(async (config) => {
+    console.log('🚀 StatBook: Starting new match with config:', config);
+    
+    try {
+      // Fetch the full match data from API
+      const response = await axios.get(`${API_URL}/api/matches/${config.matchId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true,
+      });
+
+      const matchData = response.data;
+      console.log('📥 StatBook: Loaded new match data:', matchData);
+
+      // Update match state
+      setCurrentMatchId(config.matchId);
+      setMatch(matchData);
+
+      // Initialize match settings if needed
+      if (setMatchSettings) {
+        setMatchSettings({
+          mode: config.mode, // Set the mode!
+          teamName: config.teamName,
+          opponentName: config.opponentName,
+          sets: config.sets,
+          points: config.points,
+          decidingSetPoints: config.decidingSetPoints,
+          playAllSets: config.playAllSets,
+        });
+      }
+
+      // Reset scores for new match
+      if (setOurScore) setOurScore(0);
+      if (setOpponentScore) setOpponentScore(0);
+
+      // Clear action log for new match
+      if (setActionLog) setActionLog([]);
+
+      console.log('✅ StatBook: New match initialized successfully');
+    } catch (error) {
+      console.error('❌ StatBook: Failed to initialize new match:', error);
+      alert('Failed to load match data. Please try again.');
+    }
+  }, [token, setCurrentMatchId, setMatch, setMatchSettings, setOurScore, setOpponentScore, setActionLog]);
+
+  /**
+   * Handle resuming an existing Stat Book match
+   */
+  const handleResumeMatch = useCallback(async (config) => {
+    console.log('🔄 StatBook: Resuming match with config:', config);
+    
+    try {
+      // Fetch the full match data including all saved state
+      const response = await axios.get(`${API_URL}/api/matches/${config.matchId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true,
+      });
+
+      const matchData = response.data;
+      console.log('📥 StatBook: Loaded resumed match data:', matchData);
+
+      // Update match state
+      setCurrentMatchId(config.matchId);
+      setMatch(matchData);
+
+      // Restore match settings
+      if (setMatchSettings) {
+        setMatchSettings({
+          mode: matchData.mode, // Restore the mode!
+          teamName: matchData.teamName,
+          opponentName: matchData.opponentName || matchData.matchData?.opponentName,
+          sets: matchData.totalSets || matchData.matchData?.sets,
+          points: matchData.pointsNonDeciding || matchData.matchData?.points,
+          decidingSetPoints: matchData.pointsDeciding || matchData.matchData?.decidingSetPoints,
+          playAllSets: matchData.playAllSets || matchData.matchData?.playAllSets,
+        });
+      }
+
+      // Restore scores
+      if (setOurScore && matchData.ourScore !== undefined) {
+        setOurScore(matchData.ourScore);
+      }
+      if (setOpponentScore && matchData.opponentScore !== undefined) {
+        setOpponentScore(matchData.opponentScore);
+      }
+
+      // Restore action log if available
+      if (setActionLog && matchData.actionLog) {
+        setActionLog(matchData.actionLog);
+      }
+
+      // Restore court players if available
+      if (setCourtPlayers && matchData.courtPlayers) {
+        setCourtPlayers(matchData.courtPlayers);
+      }
+
+      // Restore bench players if available
+      if (setBenchPlayers && matchData.benchPlayers) {
+        setBenchPlayers(matchData.benchPlayers);
+      }
+
+      // Restore team stats if available
+      if (setTeamStats && matchData.teamStats) {
+        setTeamStats(matchData.teamStats);
+      }
+
+      console.log('✅ StatBook: Match resumed successfully');
+    } catch (error) {
+      console.error('❌ StatBook: Failed to resume match:', error);
+      alert('Failed to load match data. Please try again.');
+    }
+  }, [
+    token, 
+    setCurrentMatchId, 
+    setMatch, 
+    setMatchSettings, 
+    setOurScore, 
+    setOpponentScore, 
+    setActionLog,
+    setCourtPlayers,
+    setBenchPlayers,
+    setTeamStats
+  ]);
+
+  return (
+    <>
+      {/* Match Mode Selector - shows when needed */}
+      <MatchModeSelector
+        currentPage="statbook"
+        currentMatchId={currentMatchId}
+        currentMatchMode={match?.mode}
+        currentMatchAge={currentMatchAge}
+        onStartNewMatch={handleStartNewMatch}
+        onResumeMatch={handleResumeMatch}
+      />
+
+      {/* Main Stat Book Page - only render when we have a match */}
+      {currentMatchId && match && (
+        <ExpressStatPage
+          courtPlayers={courtPlayers}
+          updateCourtPositions={updateCourtPositions}
+          rotateCourtPositions={rotateCourtPositions}
+          swapCourtPlayers={swapCourtPlayers}
+          positionMapping={positionMapping}
+          currentMatchId={currentMatchId}
+          match={match}
+          setMatchSettings={setMatchSettings}
+          actionLog={actionLog}
+          setActionLog={setActionLog}
+          ourScore={ourScore}
+          opponentScore={opponentScore}
+          onOurPoint={onOurPoint}
+          onOpponentPoint={onOpponentPoint}
+          teamStats={teamStats}
+          setTeamStats={setTeamStats}
+          openEndSetDialog={openEndSetDialog}
+          ballState={ballState}
+          setBallState={setBallState}
+          ballSide={ballSide}
+          setBallSide={setBallSide}
+          isMobile={isMobile}
+		  isPortrait={isPortrait}
+		  isTouch={isTouch}
+          deactivatedPlayers={deactivatedPlayers}
+          setDeactivatedPlayers={setDeactivatedPlayers}
+          currentServeSide={currentServeSide}
+          setCurrentServeSide={setCurrentServeSide}
+          saveMatchData={saveMatchData}
+          maybeCreditGamesPlayed={maybeCreditGamesPlayed}
+          scoreCooldownActive={scoreCooldownActive}
+          scoreCooldownRemaining={scoreCooldownRemaining}
+          token={token}
+          autoJoinMatchIfPossible={autoJoinMatchIfPossible}
+          allowedLiberoSubTarget={allowedLiberoSubTarget}
+          setAllowedLiberoSubTarget={setAllowedLiberoSubTarget}
+          slot5TargetId={slot5TargetId}
+          setSlot5TargetId={setSlot5TargetId}
+          benchPlayers={benchPlayers}
+          setBenchPlayers={setBenchPlayers}
+          substitutionLog={substitutionLog}
+          setSubstitutionLog={setSubstitutionLog}
+          updatePlayersOnCourt={updatePlayersOnCourt}
+          setCourtPlayers={setCourtPlayers}
+          isMatchOwner={isMatchOwner}
+          setOurScore={setOurScore}
+          setOpponentScore={setOpponentScore}
+        />
+      )}
+    </>
+  );
+}

@@ -1,0 +1,20 @@
+import React from 'react';
+import { Link } from 'react-router-dom';
+
+const Contact = () => (
+  <div style={{ padding: '20px' }}>
+    <h1>Contact Us</h1>
+    <p>
+      Have a question or feedback? Email us at <a href="mailto:admin@loggerhead.app">admin@loggerhead.app</a>
+    </p>
+	    <div className="login-footer-links" style={{ marginTop: '40px', textAlign: 'center', fontSize: '13px' }}>
+      <Link to="/about">About</Link> |{" "}
+	  <Link to="/login">Login</Link> |{" "}
+      <Link to="/privacy">Privacy</Link> |{" "}
+      <Link to="/terms">Terms</Link> |{" "}
+	  <a href="#" className="termly-display-preferences">Consent Preferences</a>
+    </div>
+  </div>
+);
+
+export default Contact;

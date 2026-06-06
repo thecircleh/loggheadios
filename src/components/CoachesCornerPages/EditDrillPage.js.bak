@@ -1,0 +1,165 @@
+// client/src/components/CoachesCornerPages/EditDrillPage.js
+import React, { useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { useAuth } from "../AuthContext";
+import { getDrillById, updateDrill } from "./coachDrillsApi";
+
+const styles = {
+  page: { padding: 16, maxWidth: 980, margin: "0 auto" },
+  h1: { margin: 0, fontSize: 22 },
+  sub: { margin: "6px 0 0", color: "#666", fontSize: 13 },
+  card: {
+    background: "#fff",
+    border: "1px solid rgba(0,0,0,0.08)",
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 14,
+  },
+  label: { display: "block", fontSize: 12, color: "#666", marginBottom: 6 },
+  input: {
+    width: "100%",
+    border: "1px solid rgba(0,0,0,0.15)",
+    borderRadius: 12,
+    padding: "10px 12px",
+    fontSize: 14,
+    outline: "none",
+    boxSizing: "border-box",
+  },
+  textarea: { minHeight: 220, resize: "vertical" },
+  row: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
+  btnRow: { display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" },
+  btn: {
+    border: "1px solid rgba(0,0,0,0.12)",
+    borderRadius: 999,
+    padding: "10px 14px",
+    background: "#111",
+    color: "white",
+    cursor: "pointer",
+    fontWeight: 600,
+    fontSize: 13,
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+  },
+  btnSecondary: {
+    border: "1px solid rgba(0,0,0,0.12)",
+    borderRadius: 999,
+    padding: "10px 14px",
+    background: "white",
+    color: "#111",
+    cursor: "pointer",
+    fontWeight: 600,
+    fontSize: 13,
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+  },
+};
+
+export default function EditDrillPage() {
+  const { token } = useAuth();
+  const { drillId } = useParams();
+  const nav = useNavigate();
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const [title, setTitle] = useState("");
+  const [goal, setGoal] = useState("");
+  const [drillText, setDrillText] = useState("");
+
+  useEffect(() => {
+    const run = async () => {
+      setMsg("");
+      setLoading(true);
+      try {
+        const d = await getDrillById(token, drillId);
+        setTitle(d?.title || "");
+        setGoal(d?.goal || "");
+        setDrillText(d?.drillText || "");
+		setNotes(d?.notes || "");
+      } catch (e) {
+        setMsg(e?.response?.data?.message || e?.message || "Failed to load drill.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    run();
+  }, [token, drillId]);
+
+  const onSave = async () => {
+    setMsg("");
+    setSaving(true);
+    try {
+      const updated = await updateDrill(token, drillId, {
+        title: title.trim(),
+        goal,
+        drillText,
+      });
+      if (!updated) throw new Error("Update failed");
+      nav(`/coaches-corner/drills/${drillId}`);
+    } catch (e) {
+      setMsg(e?.response?.data?.message || e?.message || "Failed to save.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <div style={styles.page}>Loading…</div>;
+
+  return (
+    <div style={styles.page}>
+      <div>
+        <h1 style={styles.h1}>Edit Drill</h1>
+        <div style={styles.sub}>Tight edits. Keep it runnable. Save and go.</div>
+      </div>
+
+      {msg ? <div style={{ marginTop: 10, color: "#b00020" }}>{msg}</div> : null}
+
+      <div style={styles.card}>
+        <div style={styles.row}>
+          <div>
+            <label style={styles.label}>Title</label>
+            <input style={styles.input} value={title} onChange={(e) => setTitle(e.target.value)} />
+          </div>
+          <div>
+            <label style={styles.label}>Goal</label>
+            <input style={styles.input} value={goal} onChange={(e) => setGoal(e.target.value)} />
+          </div>
+        </div>
+
+        <div style={{ marginTop: 10 }}>
+          <label style={styles.label}>Drill text</label>
+          <textarea
+            style={{ ...styles.input, ...styles.textarea }}
+            value={drillText}
+            onChange={(e) => setDrillText(e.target.value)}
+          />
+        </div>
+<div style={{ marginTop: 10 }}>
+  <label style={styles.label}>Personal notes (only you)</label>
+  <textarea
+    style={{ ...styles.input, ...styles.textarea, minHeight: 120 }}
+    value={notes}
+    onChange={(e) => setNotes(e.target.value)}
+    placeholder="What you want to remember next time you run this drill…"
+  />
+</div>
+
+        <div style={styles.btnRow}>
+          <button style={styles.btn} onClick={onSave} disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </button>
+          <Link to={`/coaches-corner/drills/${drillId}`} style={styles.btnSecondary}>
+            Cancel
+          </Link>
+          <Link to="/coaches-corner/drills" style={styles.btnSecondary}>
+            Saved Drills
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}

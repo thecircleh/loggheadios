@@ -1,0 +1,105 @@
+import React from 'react';
+import PropTypes from 'prop-types';
+import { STYLES } from '../constants/statDefinitions';
+
+/**
+ * Component for export and action buttons
+ */
+const ExportControls = ({ 
+  onExportPDF, 
+  onExportCSV, 
+  onPurgeStats, 
+  isSubscriber,
+  onAnalyzeMatch,
+  hasInsights,
+  onClearInsights,
+  isAnalyzing,
+  analysisError
+}) => {
+  return (
+    <div style={{ marginTop: 20 }}>
+      <button 
+        onClick={onExportPDF} 
+        style={{ ...STYLES.button, ...STYLES.primaryButton }}
+      >
+        Export PDF
+      </button>
+      
+      <button 
+        onClick={onExportCSV} 
+        style={{ ...STYLES.button, ...STYLES.successButton }}
+      >
+        Export CSV
+      </button>
+      
+      <button 
+        onClick={onPurgeStats} 
+        style={{ ...STYLES.button, ...STYLES.dangerButton }}
+      >
+        Purge All Team Stats
+      </button>
+      
+      {isSubscriber && (
+        <>
+          <button
+            onClick={onAnalyzeMatch}
+            disabled={isAnalyzing}
+            style={{
+              ...STYLES.button,
+              ...STYLES.insightButton,
+              opacity: isAnalyzing ? 0.7 : 1
+            }}
+          >
+            {isAnalyzing ? 'Analyzing...' : 'Get Insights'}
+          </button>
+
+          {hasInsights && (
+            <button
+              onClick={onClearInsights}
+              style={{
+                ...STYLES.button,
+                ...STYLES.neutralButton,
+                marginLeft: "10px"
+              }}
+            >
+              Clear Insights
+            </button>
+          )}
+        </>
+      )}
+      
+      {analysisError && (
+        <div style={{ 
+          marginTop: 10, 
+          color: '#FF3B30', 
+          fontSize: 14,
+          backgroundColor: '#ffefef',
+          padding: '8px 12px',
+          borderRadius: 4
+        }}>
+          {analysisError}
+        </div>
+      )}
+    </div>
+  );
+};
+
+ExportControls.propTypes = {
+  onExportPDF: PropTypes.func.isRequired,
+  onExportCSV: PropTypes.func.isRequired,
+  onPurgeStats: PropTypes.func.isRequired,
+  isSubscriber: PropTypes.bool,
+  onAnalyzeMatch: PropTypes.func,
+  hasInsights: PropTypes.bool,
+  onClearInsights: PropTypes.func,
+  isAnalyzing: PropTypes.bool,
+  analysisError: PropTypes.string
+};
+
+ExportControls.defaultProps = {
+  isSubscriber: false,
+  hasInsights: false,
+  isAnalyzing: false
+};
+
+export default ExportControls;

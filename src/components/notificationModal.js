@@ -1,0 +1,203 @@
+import React from "react";
+
+const sevColor = (sev) => {
+  if (sev === "warning") return "#ff9500";
+  if (sev === "success") return "#34c759";
+  return "#007aff";
+};
+
+const renderBodyWithLinks = (text) => {
+  if (!text) return null;
+
+  // Improved regex that properly handles URLs with query params and fragments
+  // Matches http(s):// followed by any non-whitespace, excluding problematic trailing chars
+  const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`\[\]]*[^\s<>"{}|\\^`\[\].,:;!?()\-])/g;
+
+  const parts = text.split(urlRegex);
+
+  return parts.map((part, index) => {
+    if (part && part.match(urlRegex)) {
+      return (
+        <a
+          key={index}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: "#007aff",
+            fontWeight: 600,
+            textDecoration: "underline",
+            wordBreak: "break-word",
+          }}
+        >
+          {part}
+        </a>
+      );
+    }
+    return <React.Fragment key={index}>{part}</React.Fragment>;
+  });
+};
+
+
+export default function NotificationModal({
+  open,
+  notifications = [],
+  onDismissOne,
+  onDismissAll,
+  onClose,
+  title = "What's New",
+}) {
+  if (!open) return null;
+
+  return (
+    <div
+      className="modal-overlay"
+      style={{
+        zIndex: 10050,
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.35)",
+        display: "flex",
+        alignItems: "flex-start",
+        justifyContent: "center",
+        padding: 16,
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="modal"
+        style={{
+          width: "min(520px, 92vw)",
+          maxHeight: "80vh",
+          background: "rgba(255,255,255,0.92)",
+          backdropFilter: "blur(14px)",
+          borderRadius: 16,
+          boxShadow: "0 10px 30px rgba(0,0,0,0.25)",
+          border: "1px solid rgba(0,0,0,0.10)",
+          overflow: "auto",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            padding: "14px 16px",
+            borderBottom: "1px solid rgba(0,0,0,0.08)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+          }}
+        >
+          <div style={{ fontWeight: 800, fontSize: 16, color: "#111" }}>
+            {title}
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {notifications.length > 1 && (
+              <button
+                onClick={onDismissAll}
+                style={{
+                  border: "1px solid rgba(0,0,0,0.12)",
+                  background: "#fff",
+                  borderRadius: 10,
+                  padding: "7px 10px",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Dismiss all
+              </button>
+            )}
+
+            <button
+              onClick={onClose}
+              style={{
+                border: "none",
+                background: "transparent",
+                fontSize: 22,
+                lineHeight: "22px",
+                cursor: "pointer",
+                color: "#666",
+              }}
+              aria-label="Close"
+              title="Close"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: 16,
+            overflowY: "auto",
+            maxHeight: "calc(80vh - 56px)",
+          }}
+        >
+          {notifications.length === 0 ? (
+            <div style={{ color: "#666", fontSize: 13 }}>
+              No new notifications.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {notifications.map((n) => (
+                <div
+                  key={n._id}
+                  style={{
+                    border: "1px solid rgba(0,0,0,0.10)",
+                    background: "#fff",
+                    borderRadius: 14,
+                    padding: 12,
+                    display: "flex",
+                    gap: 12,
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 999,
+                      background: sevColor(n.severity),
+                      marginTop: 5,
+                      flex: "0 0 auto",
+                    }}
+                    title={n.severity || "info"}
+                  />
+
+                  <div style={{ flex: "1 1 auto" }}>
+                    <div style={{ fontWeight: 800, fontSize: 14, color: "#111" }}>
+                      {n.title || "Update"}
+                    </div>
+                    <div style={{ marginTop: 4, fontSize: 13, color: "#333", lineHeight: 1.35 }}>
+                      {renderBodyWithLinks(n.body)}
+                    </div>
+
+                    <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+                      <button
+                        onClick={() => onDismissOne?.(n._id)}
+                        style={{
+                          border: "none",
+                          background: "#007aff",
+                          color: "#fff",
+                          borderRadius: 10,
+                          padding: "8px 10px",
+                          fontSize: 12,
+                          fontWeight: 800,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

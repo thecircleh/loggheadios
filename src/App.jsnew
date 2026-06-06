@@ -1,0 +1,517 @@
+// App.js
+import React, { useEffect, useState } from "react";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Link,
+  Navigate,
+  useNavigate,
+  useLocation,
+} from "react-router-dom";
+import axios from "axios";
+import VolleyballCourt from "./components/VolleyballCourt";
+import Scoreboard from "./components/Scoreboard";
+import SettingsPanel from "./components/SettingsPanel";
+import { DndProvider } from "react-dnd";
+import { HTML5Backend } from "react-dnd-html5-backend";
+import { TouchBackend } from "react-dnd-touch-backend";
+import Login from "./components/Login";
+import Register from "./components/Register";
+import Profile from "./components/Profile";
+import { AuthProvider, useAuth } from "./components/AuthContext";
+import { saveAs } from 'file-saver';
+import { v4 as uuidv4 } from 'uuid';
+import PlayerStatsPage from "./components/PlayerStatsPage";
+
+const isMobile = typeof window !== "undefined" && window.innerWidth < 480;
+const backend = isMobile ? TouchBackend : HTML5Backend;
+const navLinkStyle = {
+  fontSize: "18px",
+  textDecoration: "none",
+  color: "#007AFF",
+  fontWeight: "600",
+  padding: "10px",
+};
+
+
+
+const saveFullMatch = async () => {
+  try {
+    const matchData = {
+      userId: user.id,
+      courtPlayers, // use your current court state
+      benchPlayers,
+      substitutionLog,
+      actionLog,
+      ourScore,
+      opponentScore,
+      timestamp: new Date(),
+      matchSettings,
+      liberoSubTargets: {
+        allowedLiberoSubTarget,
+        slot5TargetId,
+      },
+    };
+
+    if (currentMatchId) {
+      // Update existing match
+      await axios.put(`/api/matches/${currentMatchId}`, matchData);
+      alert("Match updated successfully.");
+    } else {
+      // Create new match
+      const res = await axios.post(`/api/matches/save`, matchData);
+      setCurrentMatchId(res.data._id);
+      alert("New match saved successfully.");
+    }
+  } catch (err) {
+    console.error("Error saving match:", err);
+    alert("Failed to save match.");
+  }
+};
+
+function PrivateRoute({ children }) {
+  const { token, loading } = useAuth();
+  const navigate = useNavigate();
+  if (loading) return <div>Loading...</div>;
+  return token ? children : <Navigate to="/login" />;
+}
+
+function AppContent() {
+  const { user } = useAuth();
+  const location = useLocation();
+
+useEffect(() => {
+  if (currentMatchId && location.pathname !== "/") {
+    saveFullMatch();
+  }
+}, [location.pathname]);
+
+const [loadingMatch, setLoadingMatch] = useState(true);
+  const [showHeader, setShowHeader] = useState(true);
+  const [isPortrait, setIsPortrait] = useState(window.innerHeight > window.innerWidth);
+  const [courtPlayers, setCourtPlayers] = useState(Array.from({ length: 6 }, () => ({ name: "?", number: "?" })));
+  const [ourScore, setOurScore] = useState(0);
+  const [opponentScore, setOpponentScore] = useState(0);
+  const [serveSide, setServeSide] = useState("our");
+  const [playerStats, setPlayerStats] = useState({});
+const [matchSettings, setMatchSettings] = useState({ teamName: "", opponentName: "" });
+const [players, setPlayers] = useState(null);
+  const [ourSetsWon, setOurSetsWon] = useState(0);
+  const [opponentSetsWon, setOpponentSetsWon] = useState(0);
+  const [comments, setComments] = useState([]);
+  const [substitutionLog, setSubstitutionLog] = useState([]);
+  const [actionLog, setActionLog] = useState([]);
+  const [allowedLiberoSubTarget, setAllowedLiberoSubTarget] = useState(null);
+  const [slot5TargetId, setSlot5TargetId] = useState(null);
+  const [currentMatchId, setCurrentMatchId] = useState(null);
+  const opponentName = matchSettings?.opponentName ?? "Opponent";
+
+  const toggleHeader = () => setShowHeader(prev => !prev);
+
+useEffect(() => {
+  if (!user || !user._id || !matchSettings?.teamName) return;
+
+  const fetchPlayers = async () => {
+    try {
+      const response = await axios.get("/api/players", {
+        params: { userId: user._id, team: matchSettings.teamName },
+      });
+
+      const bench = response.data
+      setPlayers(bench); // Set all players associated with the team.
+    } catch (error) {
+      console.error("Failed to fetch players:", error.message);
+    }
+  };
+
+  fetchPlayers();
+}, [user, matchSettings]);
+
+
+
+
+  const handlePlayerUpdate = async (id, updates) => {
+    await axios.put(`/api/players/${id}`, updates);
+    await getAllPlayers();
+  };
+
+  const handlePlayerDelete = async (id) => {
+    await axios.delete(`/api/players/${id}`);
+    await getAllPlayers();
+  };
+
+useEffect(() => {
+  const loadMatch = async () => {
+    if (!currentMatchId) {
+      setLoadingMatch(false);
+      return;
+    }
+
+    try {
+      const res = await axios.get(`/api/matches/${currentMatchId}`);
+      const match = res.data;
+      setMatchSettings(match.matchSettings ?? {}); // Set the match settings
+      setOurScore(match.ourScore || 0);
+      setOpponentScore(match.opponentScore || 0);
+      setCourtPlayers(match.courtPlayers || []); // Set the court players
+      setPlayers(match.benchPlayers || []);      // Set the bench players
+      setSubstitutionLog(match.substitutionLog || []);
+      setActionLog(match.actionLog || []);
+      setAllowedLiberoSubTarget(match.liberoSubTargets?.allowedLiberoSubTarget || null);
+      setSlot5TargetId(match.liberoSubTargets?.slot5TargetId || null);
+      setOurSetsWon(match.ourSetsWon || 0);
+      setOpponentSetsWon(match.opponentSetsWon || 0);
+    } catch (err) {
+      console.error("❌ Failed to load match:", err);
+    } finally {
+      setLoadingMatch(false);
+    }
+  };
+
+  loadMatch();
+}, [currentMatchId]);
+
+
+
+
+  const onResetBench = async () => {
+    await axios.delete("/api/players", { params: { team: matchSettings.teamName } });
+    setPlayers([]);
+  };
+
+  const handlePlayerCreate = async (playerData) => {
+    await axios.post("/api/players", playerData);
+    await getAllPlayers();
+  };
+
+  const onRecallBench = async (team) => {
+    const response = await axios.get("/api/players/bench/recall", { params: { team } });
+    setPlayers(response.data);
+  };
+
+  const clearCourt = async () => {
+    const onCourt = courtPlayers.filter(p => p.name !== "?");
+    await Promise.all(onCourt.map(p => axios.put(`/api/players/${p._id}`, { isOnCourt: false })));
+    setCourtPlayers(Array.from({ length: 6 }, () => ({ name: "?", number: "?" })));
+    await getAllPlayers();
+  };
+
+  const onAddPoint = (team, amount) => {
+    team === "our" ? setOurScore(prev => prev + amount) : setOpponentScore(prev => prev + amount);
+  };
+
+  const onRemovePoint = (team, amount) => {
+    team === "our" ? setOurScore(prev => Math.max(0, prev - amount)) : setOpponentScore(prev => Math.max(0, prev - amount));
+  };
+
+
+
+
+  const saveCurrentMatchToDB = async () => {
+    const payload = {
+      userId: user?.id,
+      teamName: matchSettings.teamName,
+      opponentName: matchSettings.opponentName,
+      eventName: matchSettings.eventName,
+      location: matchSettings.location,
+      currentSet: matchSettings.currentSet,
+	  ourSetsWon,
+      opponentSetsWon,
+      ourScore,
+      opponentScore,
+      courtPlayers,
+      benchPlayers: players,
+      substitutionLog,
+      actionLog,
+      liberoSubTargets: { allowedLiberoSubTarget, slot5TargetId },
+    };
+    await axios.post("/api/matches/save", payload);
+    alert("Match saved.");
+  };
+  
+  
+  const onAddPoint = (team, amount) => {
+    if (team === "our") {
+      setOurScore((prev) => prev + amount);
+    } else {
+      setOpponentScore((prev) => prev + amount);
+    }
+  };
+
+  const onRemovePoint = (team, amount) => {
+    if (team === "our") {
+      setOurScore((prev) => Math.max(0, prev - amount));
+    } else {
+      setOpponentScore((prev) => Math.max(0, prev - amount));
+    }
+  };
+
+  
+const getAllPlayers = async () => {
+  if (!user || !user._id || !matchSettings?.teamName) return;
+
+  try {
+    const response = await axios.get("/api/players", {
+      params: { userId: user._id, team: matchSettings.teamName },
+    });
+
+    const bench = response.data
+    setPlayers(bench); // Set all players associated with the team.
+  } catch (error) {
+    console.error("Failed to fetch players:", error.message);
+  }
+};
+
+
+  const handleNewMatch = async () => {
+    const confirmSave = window.confirm("Do you want to save the current match before starting a new one?");
+    if (confirmSave) await saveCurrentMatchToDB();
+    setCourtPlayers(Array.from({ length: 6 }, () => ({ name: "?", number: "?" })));
+    setPlayers([]);
+    setOurScore(0);
+    setOpponentScore(0);
+    setOurSetsWon(0);            // ✅ Reset sets won
+	setOpponentSetsWon(0);      // ✅ Reset sets won
+    setSubstitutionLog([]);
+    setActionLog([]);
+    setMatchSettings(prev => ({ ...prev, opponentName: "Opponent", currentSet: 1 }));
+    setAllowedLiberoSubTarget(null);
+    setSlot5TargetId(null);
+    await getAllPlayers();
+  };
+
+  useEffect(() => {
+    const checkOrientation = () => setIsPortrait(window.innerHeight > window.innerWidth);
+    window.addEventListener("resize", checkOrientation);
+    return () => window.removeEventListener("resize", checkOrientation);
+  }, []);
+
+
+  useEffect(() => {if (!matchSettings) return;
+
+    const requiredPoints = matchSettings.currentSet === matchSettings.totalSets ? matchSettings.pointsDeciding : matchSettings.pointsNonDeciding;
+    if ((ourScore >= requiredPoints || opponentScore >= requiredPoints) && Math.abs(ourScore - opponentScore) >= 2) {
+      const winner = ourScore > opponentScore ? "our" : "opponent";
+      const name = winner === "our" ? matchSettings.teamName : matchSettings.opponentName;
+      if (window.confirm(`${name} wins the set. Clear court for the next set?`)) {
+        winner === "our" ? setOurSetsWon(p => p + 1) : setOpponentSetsWon(p => p + 1);
+        clearCourt();
+        setOurScore(0);
+        setOpponentScore(0);
+		setAllowedLiberoSubTarget(null);
+		setSlot5TargetId(null);
+        setMatchSettings(p => ({ ...p, currentSet: p.currentSet + 1 }));
+      }
+    }
+  }, [ourScore, opponentScore, matchSettings]);
+
+useEffect(() => {
+  if (!matchSettings || !matchSettings.totalSets) return;
+
+  const setsToWin = Math.ceil(matchSettings.totalSets / 2);
+  if (ourSetsWon >= setsToWin || opponentSetsWon >= setsToWin) {
+    alert("Match over!");
+  }
+}, [ourSetsWon, opponentSetsWon, matchSettings]);
+
+console.log("matchSettings in App.js:", matchSettings);
+console.log("courtPlayers in App.js:", courtPlayers);
+  return (
+    <DndProvider backend={backend}>
+{showHeader && location.pathname !== "/login" && (
+  <header style={{
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "14px 20px",
+    background: "#fff",
+    boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro', sans-serif",
+    position: "sticky",
+    top: 0,
+    zIndex: 1000,
+    height: "60px"
+  }}>
+    <img
+      src={`${process.env.PUBLIC_URL}/favicon-96x96.png`}
+      alt="Loggerhead Logo"
+      style={{ height: "60px", width: "60px", objectFit: "contain" }}
+    />
+    <h1 style={{ fontSize: "30px", fontWeight: "bold", margin: "0", textAlign: "left", flexGrow: 1 }}>
+      Loggerhead
+    </h1>
+    <nav style={{ display: "flex", gap: "16px" }}>
+<button
+  onClick={() => {
+    setAllowedLiberoSubTarget(null);
+    setSlot5TargetId(null);
+  }}
+>
+  Clear Libero
+</button>
+      
+	  <Link to="/profile" style={navLinkStyle}>👤 Profile</Link>
+      <Link to="/settings" style={navLinkStyle}>⚙️ Settings</Link>
+	  <Link to="/" style={navLinkStyle}>🏐 Match</Link>
+	  <Link to="/stats" style={navLinkStyle}>📈 Player Stats</Link>
+    </nav>
+  </header>
+)}
+
+{location.pathname !== "/login" && (
+  <button
+    onClick={toggleHeader}
+    style={{
+      position: "fixed",
+      top: showHeader ? "64px" : "10px",
+      right: "10px",
+      zIndex: 1001,
+      padding: "6px 10px",
+      borderRadius: "6px",
+      fontSize: "12px",
+      background: "#007AFF",
+      color: "white",
+      border: "none",
+      boxShadow: "0 2px 4px rgba(0,0,0,0.2)"
+    }}
+  >
+    {showHeader ? "▲ Hide Header" : "▼ Show Header"}
+  </button>
+)}
+{isPortrait && location.pathname === "/" && (
+  <div style={{
+    position: "fixed",
+    top: 0,
+    left: 0,
+    width: "100vw",
+    height: "100vh",
+    backgroundColor: "#fff",
+    color: "#111",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "50px",
+    padding: "2rem",
+    zIndex: 9999,
+    textAlign: "center"
+  }}>
+    <img
+      src={`${process.env.PUBLIC_URL}/favicon-96x96.png`}
+      alt="Flipped Loggerhead"
+      style={{
+        width: "500px",
+        height: "500px",
+        transform: "rotate(210deg)",
+        marginBottom: "20px",
+        opacity: 0.8
+      }}
+    />
+    <p style={{ fontWeight: "bold", fontSize: "60px", marginBottom: "12px" }}>
+      Whoops!
+    </p>
+    <p>
+      Match logging works best in <strong>landscape</strong> mode.<br />
+      Please rotate your device and help Stanton flip back over.
+    </p>
+  </div>
+)}
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
+ <Route
+  path="/"
+  element={
+    <PrivateRoute>
+      {!loadingMatch && matchSettings && Array.isArray(players) ? (
+        <VolleyballCourt
+          courtPlayers={courtPlayers}
+          benchPlayers={players}
+          matchSettings={matchSettings}
+          currentMatchId={currentMatchId}
+          setCourtPlayers={setCourtPlayers}
+          setPlayers={setPlayers}
+          actionLog={actionLog}
+          setActionLog={setActionLog}
+          substitutionLog={substitutionLog}
+          setSubstitutionLog={setSubstitutionLog}
+          allowedLiberoSubTarget={allowedLiberoSubTarget}
+          setAllowedLiberoSubTarget={setAllowedLiberoSubTarget}
+          slot5TargetId={slot5TargetId}
+          setSlot5TargetId={setSlot5TargetId}
+          ourScore={ourScore}
+          setOurScore={setOurScore}
+          opponentScore={opponentScore}
+          setOpponentScore={setOpponentScore}
+          ourSetsWon={ourSetsWon}
+          setOurSetsWon={setOurSetsWon}
+          opponentSetsWon={opponentSetsWon}
+          setOpponentSetsWon={setOpponentSetsWon}
+        />
+      ) : (
+        <div style={{ padding: 40, textAlign: "center" }}>
+          Loading match...
+        </div>
+      )}
+    </PrivateRoute>
+  }
+/>
+<Route path="/settings" element={
+  <SettingsPanel
+    matchSettings={matchSettings}
+    setMatchSettings={setMatchSettings}
+	setCurrentMatchId={setCurrentMatchId}
+    benchPlayers={players}
+    setBenchPlayers={setPlayers}
+    onCreatePlayer={handlePlayerCreate}
+    onDeletePlayer={handlePlayerDelete}
+    onUpdatePlayer={handlePlayerUpdate}
+    onResetBench={onResetBench}
+	currentMatchId={currentMatchId}
+    refreshBench={getAllPlayers}
+    onRecallBench={onRecallBench}
+    handleNewMatch={handleNewMatch}
+    ourScore={ourScore}
+	setOurScore={setOurScore}
+	setSubstitutionLog={setSubstitutionLog}
+	setActionLog={setActionLog}
+    setOpponentScore={setOpponentScore}
+	setAllowedLiberoSubTarget={setAllowedLiberoSubTarget}
+	setSlot5TargetId={setSlot5TargetId}
+    opponentScore={opponentScore}
+	ourSetsWon={ourSetsWon}
+	opponentSetsWon={opponentSetsWon}
+    courtPlayers={courtPlayers}
+	setCourtPlayers={setCourtPlayers}
+	setPlayers={setPlayers}
+    substitutionLog={substitutionLog}
+    actionLog={actionLog}
+    playerStats={playerStats}
+    allowedLiberoSubTarget={allowedLiberoSubTarget}
+    slot5TargetId={slot5TargetId}
+	saveCurrentMatchToDB={saveCurrentMatchToDB}
+  />}
+ />
+ <Route path="/stats" element={
+  <PrivateRoute>
+    <PlayerStatsPage currentMatchId={currentMatchId} playerStats={playerStats} />
+  </PrivateRoute>
+} />
+      </Routes>
+    </DndProvider>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <AppContent />
+      </Router>
+    </AuthProvider>
+  );
+}
+
+export default App;

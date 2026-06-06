@@ -1,0 +1,948 @@
+// App.js
+import React, { useEffect, useState, useCallback } from "react";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Link,
+  Navigate,
+  useNavigate,
+  useLocation,
+} from "react-router-dom";
+import axios from "axios";
+import { DndProvider } from "react-dnd";
+import { HTML5Backend } from "react-dnd-html5-backend";
+import { TouchBackend } from "react-dnd-touch-backend";
+import { AuthProvider, useAuth } from "./components/AuthContext";
+
+// Component imports
+import VolleyballCourt from "./components/VolleyballCourt";
+import SettingsPanel from "./components/SettingsPanel";
+import Login from "./components/Login";
+import Register from "./components/Register";
+import Profile from "./components/Profile";
+import PlayerStatsPage from "./components/PlayerStatsPage";
+
+// Constants
+const API_URL = "https://api.loggerhead.app";
+const APP_VERSION = "v2025.04.13-j";
+console.log(`🦑 Loggerhead deployed version: ${APP_VERSION}`);
+
+const isMobile = typeof window !== "undefined" && window.innerWidth < 480;
+const backend = isMobile ? TouchBackend : HTML5Backend;
+const navLinkStyle = {
+  fontSize: "18px",
+  textDecoration: "none",
+  color: "#007AFF",
+  fontWeight: "600",
+  padding: "10px",
+};
+
+// PrivateRoute component
+function PrivateRoute({ children }) {
+  const { token, loading } = useAuth();
+  if (loading) return <div>Loading...</div>;
+  return token ? children : <Navigate to="/login" />;
+}
+
+// Main App component
+function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <AppContent />
+      </Router>
+    </AuthProvider>
+  );
+}
+
+// App content component
+function AppContent() {
+  const { user, token } = useAuth();
+  const location = useLocation();
+
+  // State variables
+  const [loadingMatch, setLoadingMatch] = useState(true);
+  const [isStartingNewMatch, setIsStartingNewMatch] = useState(false);
+  const [showHeader, setShowHeader] = useState(true);
+  const [isPortrait, setIsPortrait] = useState(window.innerHeight > window.innerWidth);
+  const [courtPlayers, setCourtPlayers] = useState(
+    Array.from({ length: 6 }, (_, i) => ({ id: `empty-${i}`, name: "?", number: "?", isLibero: false }))
+  );
+  const [ourScore, setOurScore] = useState(0);
+  const [opponentScore, setOpponentScore] = useState(0);
+  const [serveSide, setServeSide] = useState("our");
+  const [matchSettings, setMatchSettings] = useState(null);
+  const [benchPlayers, setBenchPlayers] = useState([]);
+  const [ourSetsWon, setOurSetsWon] = useState(0);
+  const [opponentSetsWon, setOpponentSetsWon] = useState(0);
+  const [substitutionLog, setSubstitutionLog] = useState([]);
+  const [actionLog, setActionLog] = useState([]);
+  const [allowedLiberoSubTarget, setAllowedLiberoSubTarget] = useState(null);
+  const [slot5TargetId, setSlot5TargetId] = useState(null);
+  const [currentMatchId, setCurrentMatchId] = useState(null);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+
+  // Callback functions
+  const onOurPoint = useCallback(() => {
+    setOurScore(prev => prev + 1);
+  }, []);
+
+  const onOpponentPoint = useCallback(() => {
+    setOpponentScore(prev => prev + 1);
+  }, []);
+
+  // Effect for creating new match
+  useEffect(() => {
+  if (isStartingNewMatch && matchSettings?.teamName && !currentMatchId && user?.id) {
+    (async () => {
+      console.log("💾 Saving new match for team:", matchSettings.teamName);
+      const newId = await saveMatchData();
+      if (newId) {
+        setCurrentMatchId(newId);
+        console.log("✅ Match created with ID:", newId);
+
+        try {
+          await axios.put(
+            `${API_URL}/api/users/${user.id}/match-id`,
+            { currentMatchId: newId },
+            {
+              headers: { Authorization: `Bearer ${token}` },
+              withCredentials: true,
+            }
+          );
+          console.log("🔁 currentMatchId synced to user profile");
+        } catch (err) {
+          console.error("❌ Failed to sync currentMatchId to user:", err);
+        }
+
+        setLoadingMatch(false);
+        setIsStartingNewMatch(false);
+      }
+    })(); 
+  }
+}, [isStartingNewMatch, matchSettings, currentMatchId, user?.id, token]);
+  // Function to update court players
+  const updatePlayersOnCourt = (newCourtPlayers) => {
+    setCourtPlayers(newCourtPlayers);
+  };
+
+  const toggleHeader = () => setShowHeader(prev => !prev);
+
+  // Consolidated Save Match Function
+  const saveMatchData = useCallback(async (showAlert = false) => {
+    if (!user?.id) {
+      console.error("Cannot save match, user not logged in.");
+      if (showAlert) alert("Cannot save match, user not logged in.");
+      return null;
+    }
+    if (!matchSettings?.teamName) {
+      console.error("Cannot save match, team name not set.");
+      if (showAlert) alert("Cannot save match, team name not set in settings.");
+      return null;
+    }
+
+const payload = {
+  userId: user.id,
+  courtPlayers: courtPlayers.map(p => p?._id || null),
+  benchPlayers,
+  substitutionLog,
+  actionLog,
+  ourScore,
+  opponentScore,
+  timestamp: new Date(),
+      teamName: matchSettings?.teamName || "",
+    opponentName: matchSettings?.opponentName || "",
+    eventName: matchSettings?.eventName || "",
+    location: matchSettings?.location || "",
+    currentSet: matchSettings?.currentSet || 1,
+    totalSets: matchSettings?.totalSets || 3,
+    pointsNonDeciding: matchSettings?.pointsNonDeciding || 25,
+  pointsDeciding: matchSettings?.pointsDeciding || 15,
+  matchSettings: {
+    teamName: matchSettings?.teamName || "",
+    opponentName: matchSettings?.opponentName || "",
+    eventName: matchSettings?.eventName || "",
+    location: matchSettings?.location || "",
+    currentSet: matchSettings?.currentSet || 1,
+    totalSets: matchSettings?.totalSets || 3,
+    pointsNonDeciding: matchSettings?.pointsNonDeciding || 25,
+    pointsDeciding: matchSettings?.pointsDeciding || 15,
+  },
+  liberoSubTargets: {
+    allowedLiberoSubTarget: allowedLiberoSubTarget?._id || null,
+    slot5TargetId: slot5TargetId?._id || null,
+  },
+  ourSetsWon,
+  opponentSetsWon,
+};
+    try {
+      let matchIdToUpdate = currentMatchId;
+      if (matchIdToUpdate) {
+        // Update existing match
+        await axios.put(`${API_URL}/api/matches/${matchIdToUpdate}`, payload);
+        if (showAlert) alert("Match updated successfully.");
+        console.log("Match updated:", matchIdToUpdate);
+      } else {
+        // Create new match
+        const res = await axios.post(`${API_URL}/api/matches/save`, payload);
+        const newMatchId = res.data._id;
+        setCurrentMatchId(newMatchId);
+        if (showAlert) alert("New match saved successfully.");
+        console.log("Match saved:", newMatchId);
+        matchIdToUpdate = newMatchId;
+      }
+      return matchIdToUpdate;
+    } catch (err) {
+      console.error("Error saving match:", err);
+      if (showAlert) alert("Failed to save match.");
+      return null;
+    }
+  }, [
+    user?.id,
+    courtPlayers,
+    benchPlayers,
+    substitutionLog,
+    actionLog,
+    ourScore,
+    opponentScore,
+    matchSettings,
+    allowedLiberoSubTarget,
+    slot5TargetId,
+    currentMatchId,
+    ourSetsWon,
+    opponentSetsWon,
+  ]);
+
+  // Effect for Auto-Saving
+  const previousPathname = React.useRef(location.pathname);
+  useEffect(() => {
+    const isMatchPage = (pathname) => ["/", "/settings"].includes(pathname);
+
+    if (currentMatchId && !isMatchPage(location.pathname) && isMatchPage(previousPathname.current)) {
+      console.log(`Navigating away from match page (${previousPathname.current} -> ${location.pathname}), saving...`);
+      saveMatchData(false);
+    }
+    
+    previousPathname.current = location.pathname;
+  }, [location.pathname, currentMatchId, saveMatchData]);
+
+  // Fetch Bench Players Function
+const refreshBenchPlayers = useCallback(async () => {
+  console.log("Manual refreshBenchPlayers triggered");
+  if (!user?.id || !matchSettings?.teamName) return;
+
+  try {
+    const response = await axios.get(`${API_URL}/api/players`, {
+      params: { userId: user.id, team: matchSettings.teamName }
+    });
+
+    const fetchedBench = response.data.filter(
+      (player) => player.isOnCourt === false
+    );
+
+    console.log(`✅ Refreshed bench: ${fetchedBench.length} players`);
+    setBenchPlayers(fetchedBench);
+  } catch (error) {
+    console.error("❌ Failed to fetch bench players:", error.message);
+  }
+}, [user?.id, matchSettings?.teamName]);
+      
+
+// Effect to Fetch Players on Team Change
+useEffect(() => {
+    if (matchSettings && matchSettings.teamName) {
+    refreshBenchPlayers();
+   }
+ }, [matchSettings?.teamName, user?.id]);
+
+  // Player CRUD Handlers
+  const handlePlayerUpdate = async (id, updates) => {
+    try {
+      await axios.put(`${API_URL}/api/players/${id}`, updates);
+      await refreshBenchPlayers();
+    } catch (error) {
+      console.error("Error updating player:", error);
+      alert("Failed to update player.");
+    }
+  };
+
+  const handleDeletePlayer = async (id) => {
+    try {
+      await axios.delete(`${API_URL}/api/players/${id}`);
+      await refreshBenchPlayers();
+    } catch (error) {
+      console.error("Error deleting player:", error);
+      alert("Failed to delete player.");
+    }
+  };
+
+  const handlePlayerCreate = async (playerData) => {
+    if (!user?.id || !matchSettings?.teamName) {
+      alert("Cannot create player: User or Team Name missing.");
+      return;
+    }
+    try {
+      await axios.post(`${API_URL}/api/players`, {
+        ...playerData,
+        userId: user.id,
+        team: matchSettings.teamName
+      });
+      await refreshBenchPlayers();
+    } catch (error) {
+      console.error("Error creating player:", error);
+      alert("Failed to create player.");
+    }
+  };
+
+  // Bench Management
+  const onResetBench = async () => {
+    if (!matchSettings?.teamName) {
+      alert("Cannot reset bench: Team name not set.");
+      return;
+    }
+    const confirmReset = window.confirm(
+      `Are you sure you want to delete ALL players associated with team "${matchSettings.teamName}" from the database? This cannot be undone.`
+    );
+    if (confirmReset) {
+      try {
+        await axios.delete(`${API_URL}/api/players`, {
+          params: { userId: user.id, team: matchSettings.teamName }
+        });
+        setBenchPlayers([]);
+        clearCourt();
+        alert(`All players for team "${matchSettings.teamName}" deleted.`);
+      } catch (error) {
+        console.error("Error resetting bench:", error);
+        alert("Failed to reset bench.");
+      }
+    }
+  };
+
+  const onRecallBench = async (team) => {
+    if (!team) {
+      alert("Please provide a team name to recall.");
+      return;
+    }
+    if (!user?.id) {
+      alert("Cannot recall bench: User not logged in.");
+      return;
+    }
+    try {
+      const response = await axios.get(`${API_URL}/api/players`, {
+        params: { team: team }
+      });
+      
+      const currentCourtPlayerIds = new Set(
+        courtPlayers.map(p => p?._id).filter(id => id)
+      );
+      const fetchedBenchPlayers = response.data.filter(
+        player => !currentCourtPlayerIds.has(player._id)
+      );
+      setBenchPlayers(fetchedBenchPlayers);
+      alert(`Players for team "${team}" recalled to bench.`);
+    } catch (error) {
+      console.error("Error recalling bench:", error);
+      alert(`Failed to recall players for team "${team}".`);
+    }
+  };
+
+  // Court Management
+  const clearCourt = useCallback(async () => {
+    console.log("Clearing court");
+    setCourtPlayers(
+      Array.from({ length: 6 }, (_, i) => ({
+        id: `empty-${i}`,
+        name: "?",
+        number: "?",
+        isLibero: false
+      }))
+    );
+    await refreshBenchPlayers();
+  }, [refreshBenchPlayers]);
+
+  // Scoring
+  const onAddPoint = (team, amount = 1) => {
+    team === "our"
+      ? setOurScore(prev => prev + amount)
+      : setOpponentScore(prev => prev + amount);
+  };
+
+  const onRemovePoint = (team, amount = 1) => {
+    team === "our"
+      ? setOurScore(prev => Math.max(0, prev - amount))
+      : setOpponentScore(prev => Math.max(0, prev - amount));
+  };
+
+  const clearAllPlayersFromCourt = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/api/players/court`);
+      const courtPlayers = res.data;
+
+      await Promise.all(
+        courtPlayers.map((player) =>
+          axios.put(`${API_URL}/api/players/${player._id}`, { isOnCourt: false })
+        )
+      );
+      console.log("All players cleared from court.");
+    } catch (error) {
+      console.error("Error clearing players from court:", error);
+    }
+  };
+
+  // New Match Handling
+const handleNewMatch = async (settingsOverride = null) => {
+  if (currentMatchId || ourScore > 0 || opponentScore > 0 || actionLog.length > 0) {
+    const confirmSave = window.confirm(
+      "Do you want to save the current match progress before starting a new one?"
+    );
+    if (confirmSave) {
+      const savedId = await saveMatchData(true);
+      if (!savedId && currentMatchId) {
+        alert("Failed to save the current match. Cannot start a new match.");
+        return;
+      }
+    }
+  }
+
+  console.log("🆕 Starting new match setup...");
+
+  const settings = settingsOverride || matchSettings;
+  const teamNameToPreserve = settings?.teamName || "";
+  const existingPlayers = [...benchPlayers];
+
+  // Reset state
+  setIsStartingNewMatch(true);
+  setLoadingMatch(true);
+  setCurrentMatchId(null);
+  setCourtPlayers(
+    Array.from({ length: 6 }, (_, i) => ({
+      id: `empty-${i}`,
+      name: "?",
+      number: "?",
+      isLibero: false,
+    }))
+  );
+  setOurScore(0);
+  setOpponentScore(0);
+  setOurSetsWon(0);
+  setOpponentSetsWon(0);
+  setSubstitutionLog([]);
+  setActionLog([]);
+  setAllowedLiberoSubTarget(null);
+  setSlot5TargetId(null);
+
+  const newMatch = {
+    teamName: teamNameToPreserve,
+    opponentName: settings.opponentName || "Opponent",
+    eventName: settings.eventName || "",
+    location: settings.location || "",
+    maxSets: settings.maxSets || 3,
+    pointsNonDeciding: settings.pointsNonDeciding || 25,
+    pointsDeciding: settings.pointsDeciding || 15,
+    currentSet: 1,
+    timestamp: new Date().toISOString(),
+    userId: user?.id,
+  };
+
+  try {
+    const response = await axios.post(`${API_URL}/api/matches/save`, newMatch);
+    const savedMatch = response.data;
+
+    console.log("✅ Match created:", savedMatch);
+    setMatchSettings(savedMatch);
+    setCurrentMatchId(savedMatch._id);
+
+    if (existingPlayers.length > 0 && existingPlayers[0]?.name) {
+      console.log(`✅ Using bench from memory: ${existingPlayers.length} players`);
+      setBenchPlayers(existingPlayers);
+    } else if (teamNameToPreserve && user?.id) {
+      console.log("ℹ️ Bench missing names — fetching from DB...");
+      try {
+        const response = await axios.get(`${API_URL}/api/players`, {
+          params: { userId: user.id, team: teamNameToPreserve },
+        });
+        setBenchPlayers(response.data || []);
+        console.log(`✅ Fetched ${response.data.length} players`);
+      } catch (err) {
+        console.error("❌ Failed to fetch players:", err);
+        setBenchPlayers([]);
+      }
+    }
+
+    setIsStartingNewMatch(false);
+    setLoadingMatch(false);
+  } catch (err) {
+    console.error("❌ Failed to create match:", err);
+    alert("Failed to start match.");
+    setIsStartingNewMatch(false);
+    setLoadingMatch(false);
+  }
+};
+
+
+  // Load Match Data
+  useEffect(() => {
+    const loadMatch = async () => {
+      if (!currentMatchId) return;
+
+      console.log("🔁 Attempting to load match:", currentMatchId);
+      setLoadingMatch(true);
+
+      try {
+        const res = await axios.get(`${API_URL}/api/matches/${currentMatchId}`);
+        const match = res.data;
+		const teamNameFromSettings = match.matchSettings?.teamName?.trim();
+		const teamNameFallback = match.teamName?.trim();	
+		const resolvedTeamName = teamNameFromSettings || teamNameFallback;
+
+if (!resolvedTeamName) {
+  alert("⚠️ This match does not have a valid team name. Please go to Settings and select one.");
+  return;
+}
+
+const finalMatchSettings = {
+  teamName: resolvedTeamName,
+  opponentName: match.matchSettings?.opponentName || match.opponentName || "Opponent",
+          eventName: match.matchSettings?.eventName || "",
+          location: match.matchSettings?.location || "",
+          currentSet: match.matchSettings?.currentSet || 1,
+          totalSets: match.matchSettings?.totalSets || match.maxSets || 3,
+          pointsNonDeciding: match.matchSettings?.pointsNonDeciding || 25,
+          pointsDeciding: match.matchSettings?.pointsDeciding || 15,
+        };
+        setMatchSettings(finalMatchSettings);
+		await refreshBenchPlayers();
+
+        // Hydrate court player IDs → full objects from bench
+        const allPlayers = [...(match.benchPlayers || [])];
+        const hydratedCourtPlayers = (match.courtPlayers || []).map((id, i) => {
+          const found = allPlayers.find(p => p._id === id);
+          return found || {
+            id: `empty-${i}`,
+            name: "?",
+            number: "?",
+            isLibero: false,
+          };
+        });
+        setCourtPlayers(hydratedCourtPlayers);
+        setBenchPlayers(Array.isArray(match.benchPlayers) ? match.benchPlayers : []);
+        setOurScore(match.ourScore || 0);
+        setOpponentScore(match.opponentScore || 0);
+        setSubstitutionLog(match.substitutionLog || []);
+        setActionLog(match.actionLog || []);
+        setAllowedLiberoSubTarget(match.liberoSubTargets?.allowedLiberoSubTarget || null);
+        setSlot5TargetId(match.liberoSubTargets?.slot5TargetId || null);
+        setOurSetsWon(match.ourSetsWon || 0);
+        setOpponentSetsWon(match.opponentSetsWon || 0);
+
+        console.log("✅ Match loaded successfully:", match);
+      } catch (err) {
+        console.error("❌ Failed to load match:", err);
+        alert(`Failed to load match with ID: ${currentMatchId}. Starting new match setup.`);
+        setCurrentMatchId(null);
+      } finally {
+        setLoadingMatch(false);
+      }
+    };
+
+    loadMatch();
+  }, [currentMatchId, user?.defaultTeam]);
+
+  // Orientation Check
+  useEffect(() => {
+    const checkOrientation = () => setIsPortrait(window.innerHeight > window.innerWidth);
+    window.addEventListener("resize", checkOrientation);
+    checkOrientation(); // Initial check
+    return () => window.removeEventListener("resize", checkOrientation);
+  }, []);
+
+  // Set/Match End Logic
+  useEffect(() => {
+    if (!matchSettings || !matchSettings.totalSets || matchSettings.currentSet > matchSettings.totalSets) return;
+
+    const requiredPoints = matchSettings.currentSet === matchSettings.totalSets 
+      ? (matchSettings.pointsDeciding || 15) 
+      : (matchSettings.pointsNonDeciding || 25);
+    const pointDifference = Math.abs(ourScore - opponentScore);
+
+    if ((ourScore >= requiredPoints || opponentScore >= requiredPoints) && pointDifference >= 2) {
+      const winner = ourScore > opponentScore ? "our" : "opponent";
+      const loser = winner === "our" ? "opponent" : "our";
+      const winnerName = winner === "our" 
+        ? (matchSettings.teamName || "Our Team") 
+        : (matchSettings.opponentName || "Opponent");
+      const loserName = loser === "our" 
+        ? (matchSettings.teamName || "Our Team") 
+        : (matchSettings.opponentName || "Opponent");
+
+      // Use setTimeout to allow state update to render before confirm dialog
+      setTimeout(() => {
+        if (window.confirm(`${winnerName} wins set ${matchSettings.currentSet} (${ourScore}-${opponentScore}). Prepare for next set?`)) {
+          // Update sets won state before checking for match win
+          const newOurSets = ourSetsWon + (winner === "our" ? 1 : 0);
+          const newOpponentSets = opponentSetsWon + (winner === "opponent" ? 1 : 0);
+          setOurSetsWon(newOurSets);
+          setOpponentSetsWon(newOpponentSets);
+
+          // Check if match is over after updating set counts
+          const setsToWin = Math.ceil(matchSettings.totalSets / 2);
+          if (newOurSets >= setsToWin || newOpponentSets >= setsToWin) {
+            alert(`Match Over! ${winnerName} wins the match ${newOurSets}-${newOpponentSets}.`);
+            setMatchSettings(p => ({ ...p, currentSet: p.currentSet + 1 }));
+          } else {
+            // Match not over, prepare for next set
+            clearCourt();
+            setOurScore(0);
+            setOpponentScore(0);
+            setAllowedLiberoSubTarget(null);
+            setSlot5TargetId(null);
+            setActionLog(prev => [
+              ...prev, 
+              { 
+                type: 'set_end', 
+                winner: winnerName, 
+                score: `${ourScore}-${opponentScore}`, 
+                timestamp: new Date() 
+              }
+            ]);
+            setSubstitutionLog([]);
+            setMatchSettings(p => ({ ...p, currentSet: p.currentSet + 1 }));
+          }
+          // Save state after set ends
+          saveMatchData();
+        }
+      }, 0);
+    }
+  }, [ourScore, opponentScore, matchSettings, ourSetsWon, opponentSetsWon, clearCourt, saveMatchData]);
+
+  // Render
+  return (
+    <DndProvider backend={backend}>
+
+const handleNewMatch = async (settingsOverride = null) => {
+  ...
+  try {
+    const response = await axios.post(`${API_URL}/api/matches/save`, newMatch);
+    ...
+  } catch (err) {
+    ...
+  }
+};
+
+// Restore or fetch bench players
+if (existingPlayers.length > 0 && existingPlayers[0]?.name) {
+  ...
+  const response = await axios.get(`${API_URL}/api/players`, {   // ❌ invalid here
+    params: { team: teamNameToPreserve },
+  });
+  ...
+}
+
+// Restore or fetch bench players
+if (existingPlayers.length > 0 && existingPlayers[0]?.name) {
+  console.log(`✅ Using bench from memory: ${existingPlayers.length} players`);
+  setBenchPlayers(existingPlayers);
+} else if (teamNameToPreserve) {
+  console.log("ℹ️ Bench missing names — fetching from DB...");
+  try {
+    const response = await axios.get(`${API_URL}/api/players`, {
+      params: { team: teamNameToPreserve },
+    });
+    setBenchPlayers(response.data || []);
+    console.log(`✅ Fetched ${response.data.length} players`);
+  } catch (err) {
+    console.error("❌ Failed to fetch players:", err);
+    setBenchPlayers([]);
+  }
+}
+
+<header className="loggerhead-header">
+  <div className="logo-title">
+    <img src="/turtle.png" alt="Loggerhead Logo" className="logo-icon" />
+    <span className="app-title">Loggerhead</span>
+  </div>
+
+  <button
+    className="mobile-menu-toggle"
+    onClick={() => setShowMenu((prev) => !prev)}
+  >
+    ☰
+  </button>
+
+  <nav className={`nav-links ${showMenu ? "show" : ""}`}>
+    <a href="/profile">Profile</a>
+    <a href="/settings">Settings</a>
+    <a href="/match">Match</a>
+    <a href="/player-stats">Player Stats</a>
+  </nav>
+</header>
+
+
+<header className="ios-header-bar">
+  <div className="ios-header-content">
+    <div className="ios-logo-title">
+      <img src="/turtle.png" alt="Loggerhead Logo" className="ios-logo-icon" />
+      <span className="ios-app-title">Loggerhead</span>
+    </div>
+    <button className="ios-menu-toggle" onClick={() => setShowMenu((prev) => !prev)}>
+      ☰
+    </button>
+  </div>
+
+  <nav className={`ios-nav-links ${showMenu ? "visible" : ""}`}>
+    <a href="/profile">1. Profile</a>
+    <a href="/settings">2. Settings</a>
+    <a href="/match">3. Match</a>
+    <a href="/player-stats">4. Player Stats</a>
+  </nav>
+</header>
+
+
+{showHeader && location.pathname !== "/login" && location.pathname !== "/register" && (
+  <header className="ios-header-bar">
+    <div className="ios-header-content">
+      <div className="ios-logo-title">
+        <img
+          src={`${process.env.PUBLIC_URL}/favicon-96x96.png`}
+          alt="Loggerhead Logo"
+          className="ios-logo-icon"
+        />
+        <h1 className="ios-app-title">Loggerhead</h1>
+      </div>
+      <button className="ios-menu-toggle" onClick={() => setShowMobileMenu(prev => !prev)}>
+        ☰
+      </button>
+    </div>
+
+    <nav className={`ios-nav-links ${showMobileMenu ? "visible" : ""}`}>
+      <Link
+        to="/profile"
+        style={{
+          color: location.pathname === "/profile" ? "#34C759" : "#007aff",
+        }}
+      >
+        1. Profile
+      </Link>
+      <Link
+        to="/settings"
+        style={{
+          color: location.pathname === "/settings" ? "#34C759" : "#007aff",
+        }}
+      >
+        2. Settings
+      </Link>
+      <Link
+        to="/"
+        style={{
+          color: location.pathname === "/" ? "#34C759" : "#007aff",
+        }}
+      >
+        3. Match
+      </Link>
+      <Link
+        to="/stats"
+        style={{
+          color: location.pathname === "/stats" ? "#34C759" : "#007aff",
+        }}
+      >
+        4. Player Stats
+      </Link>
+    </nav>
+  </header>
+)}
+            
+            {(location.pathname === "/"  && (
+              <button 
+                onClick={() => saveMatchData(true)} 
+                style={{
+                  ...navLinkStyle, 
+                  background: '#007AFF', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: '5px', 
+                  cursor: 'pointer'
+                }}
+              >
+                💾 Save Match
+              </button>
+            )}
+          </nav>
+        </header>
+      )}
+
+      {location.pathname !== "/login" && location.pathname !== "/register" && (
+        <button 
+          onClick={toggleHeader} 
+          style={{
+            position: "fixed", 
+            top: showHeader ? "70px" : "10px",
+            right: "10px", 
+            zIndex: 1001, 
+            padding: "6px 10px", 
+            borderRadius: "6px", 
+            fontSize: "12px",
+            background: "#007AFF", 
+            color: "white", 
+            border: "none", 
+            boxShadow: "0 2px 4px rgba(0,0,0,0.2)", 
+            cursor: 'pointer'
+          }}
+        >
+          {showHeader ? "▲ Hide Header" : "▼ Show Header"}
+        </button>
+      )}
+
+      {isPortrait && location.pathname === "/" && (
+        <div style={{
+          position: "fixed", 
+          top: 0, 
+          left: 0, 
+          width: "100vw", 
+          height: "100vh", 
+          backgroundColor: "#fff", 
+          color: "#111",
+          display: "flex", 
+          flexDirection: "column", 
+          alignItems: "center", 
+          justifyContent: "center",
+          fontSize: "24px", 
+          padding: "1rem", 
+          zIndex: 9999, 
+          textAlign: "center"
+        }}>
+          <img 
+            src={`${process.env.PUBLIC_URL}/favicon-96x96.png`} 
+            alt="Flipped Loggerhead" 
+            style={{
+              width: "150px", 
+              height: "150px", 
+              transform: "rotate(210deg)", 
+              marginBottom: "20px", 
+              opacity: 0.8
+            }}
+          />
+          <p style={{ fontWeight: "bold", fontSize: "30px", marginBottom: "12px" }}>
+            Whoops!
+          </p>
+          <p>
+            Match logging works best in <strong>landscape</strong> mode.<br />
+            Please rotate your device.
+          </p>
+        </div>
+      )}
+
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route 
+          path="/profile" 
+          element={
+            <PrivateRoute>
+              <Profile setCurrentMatchId={setCurrentMatchId} />
+            </PrivateRoute>
+          } 
+        />
+
+        <Route
+          path="/"
+          element={
+            <PrivateRoute>
+              {loadingMatch ? (
+                <div style={{ padding: 40, textAlign: "center", fontSize: '20px' }}>
+                  Loading match data...
+                </div>
+              ) : !matchSettings ? (
+                <div style={{ padding: 40, textAlign: "center", fontSize: '20px' }}>
+                  Match settings not loaded. Go to <Link to="/settings">Settings</Link> to configure or load a match from <Link to="/profile">Profile</Link>.
+                </div>
+              ) : (
+                <VolleyballCourt
+                  courtPlayers={courtPlayers}
+                  benchPlayers={benchPlayers}
+                  matchSettings={matchSettings}
+                  currentMatchId={currentMatchId}
+                  setCourtPlayers={setCourtPlayers}
+                  setBenchPlayers={setBenchPlayers}
+				  serveSide={serveSide}
+                  actionLog={actionLog}
+                  setActionLog={setActionLog}
+                  substitutionLog={substitutionLog}
+                  setSubstitutionLog={setSubstitutionLog}
+                  allowedLiberoSubTarget={allowedLiberoSubTarget}
+                  setAllowedLiberoSubTarget={setAllowedLiberoSubTarget}
+                  slot5TargetId={slot5TargetId}
+                  setSlot5TargetId={setSlot5TargetId}
+                  ourScore={ourScore}
+                  setOurScore={setOurScore}
+                  opponentScore={opponentScore}
+                  setOpponentScore={setOpponentScore}
+                  ourSetsWon={ourSetsWon}
+                  opponentSetsWon={opponentSetsWon}
+                  onAddPoint={onAddPoint}
+                  onOurPoint={onOurPoint}
+                  onOpponentPoint={onOpponentPoint}
+                  onRemovePoint={onRemovePoint}
+                  refreshBenchPlayers={refreshBenchPlayers}
+                  updatePlayersOnCourt={updatePlayersOnCourt}
+                />
+              )}
+            </PrivateRoute>
+          }
+        />
+
+        <Route
+          path="/settings"
+          element={
+            <PrivateRoute>
+              <SettingsPanel
+                matchSettings={matchSettings}
+                setMatchSettings={setMatchSettings}
+                benchPlayers={benchPlayers}
+                setBenchPlayers={setBenchPlayers}
+                setCourtPlayers={setCourtPlayers}
+                setCurrentMatchId={setCurrentMatchId}
+                onCreatePlayer={handlePlayerCreate}
+                onDeletePlayer={handleDeletePlayer}
+                onUpdatePlayer={handlePlayerUpdate}
+                onResetBench={onResetBench}
+                currentMatchId={currentMatchId}
+                refreshBenchPlayers={refreshBenchPlayers}
+                onRecallBench={onRecallBench}
+                handleNewMatch={handleNewMatch}
+                saveMatchData={() => saveMatchData(true)}
+                setOurScore={setOurScore}
+                setOpponentScore={setOpponentScore}
+                setSubstitutionLog={setSubstitutionLog}
+                setActionLog={setActionLog}
+                setAllowedLiberoSubTarget={setAllowedLiberoSubTarget}
+				setSlot5TargetId={setSlot5TargetId}
+				handleDeletePlayer={handleDeletePlayer}
+                ourScore={ourScore}
+                opponentScore={opponentScore}
+                ourSetsWon={ourSetsWon}
+                opponentSetsWon={opponentSetsWon}
+              />
+            </PrivateRoute>
+          }
+        />
+
+        <Route
+          path="/stats"
+          element={
+            <PrivateRoute>
+              <PlayerStatsPage
+                currentMatchId={currentMatchId}
+                // playerStats prop removed - let the component fetch its own data
+              />
+            </PrivateRoute>
+          }
+        />
+         {/* Optional: Add a default route for unknown paths */}
+         <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </DndProvider>
+  );
+}
+
+export default App;

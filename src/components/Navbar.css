@@ -1,0 +1,363 @@
+/* NavBar.css - Loggerhead Navigation Bar */
+
+:root {
+  --navbar-bg: #ffffff;
+  --navbar-border: #e0e0e0;
+  --navbar-text: #333333;
+  --navbar-hover: #f5f5f5;
+  --navbar-active: #007AFF;
+  --navbar-active-bg: #f0f8ff;
+  --navbar-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+  --loggerhead-green: #2ecc71;
+}
+
+/* Main Navbar */
+.navbar {
+  background-color: var(--navbar-bg);
+  border-bottom: 1px solid var(--navbar-border);
+  box-shadow: var(--navbar-shadow);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+}
+
+.navbar-container {
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  flex-wrap: wrap;
+}
+
+/* Brand/Logo Section */
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+  min-width: fit-content;
+  margin-right: 24px;
+  flex-shrink: 0;
+}
+
+.navbar-brand:hover {
+  opacity: 0.8;
+}
+
+.navbar-logo {
+  font-size: 24px;
+  display: inline-block;
+  line-height: 1;
+}
+
+.brand-text {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--navbar-text);
+  letter-spacing: -0.5px;
+}
+
+/* Hamburger Menu Button */
+.hamburger {
+  display: none;
+  flex-direction: column;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.hamburger span {
+  width: 24px;
+  height: 2.5px;
+  background-color: var(--navbar-text);
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+.hamburger.active span:nth-child(1) {
+  transform: rotate(45deg) translate(8px, 8px);
+}
+
+.hamburger.active span:nth-child(2) {
+  opacity: 0;
+}
+
+.hamburger.active span:nth-child(3) {
+  transform: rotate(-45deg) translate(7px, -7px);
+}
+
+/* Navigation Menu */
+.navbar-menu {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.navbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+/* Navigation Links */
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 8px 12px;
+  color: var(--navbar-text);
+  text-decoration: none;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.nav-link:hover {
+  background-color: var(--navbar-hover);
+  color: var(--navbar-active);
+}
+
+.nav-link.active {
+  color: var(--navbar-active);
+  background-color: var(--navbar-active-bg);
+  font-weight: 600;
+}
+
+/* User Section */
+.navbar-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  padding-left: 16px;
+  border-left: 1px solid var(--navbar-border);
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-email {
+  font-size: 12px;
+  color: #999;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logout-btn {
+  color: #dc3545;
+  font-weight: 600;
+}
+
+.logout-btn:hover {
+  color: #c82333;
+  background-color: rgba(220, 53, 69, 0.1);
+}
+
+/* Guest Navbar */
+.navbar-guest .navbar-menu {
+  margin-left: 0;
+  border-left: none;
+  padding-left: 0;
+}
+
+.navbar-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.nav-link-primary {
+  background-color: var(--navbar-active);
+  color: white !important;
+  padding: 8px 16px;
+  font-weight: 600;
+  border-radius: 6px;
+}
+
+.nav-link-primary:hover {
+  background-color: #0056b3;
+  color: white !important;
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.2);
+}
+
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+  .hamburger {
+    display: flex;
+  }
+
+  .navbar-container {
+    height: 56px;
+    padding: 0 12px;
+  }
+
+  .navbar-brand {
+    margin-right: 0;
+  }
+
+  .brand-text {
+    font-size: 16px;
+  }
+
+  .navbar-menu {
+    position: absolute;
+    top: 56px;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    background-color: var(--navbar-bg);
+    border-bottom: 1px solid var(--navbar-border);
+    margin: 0;
+    gap: 0;
+    padding: 0;
+    box-shadow: var(--navbar-shadow);
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+  }
+
+  .navbar-menu.active {
+    max-height: 600px;
+  }
+
+  .navbar-nav {
+    flex-direction: column;
+    width: 100%;
+    gap: 0;
+  }
+
+  .nav-link {
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 0;
+    gap: 12px;
+  }
+
+  .nav-link.active {
+    background-color: var(--navbar-active-bg);
+    border-left: 4px solid var(--navbar-active);
+    padding-left: 12px;
+  }
+
+  .navbar-user {
+    border-left: none;
+    border-top: 1px solid var(--navbar-border);
+    width: 100%;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 0;
+    margin: 0;
+  }
+
+  .navbar-user .nav-link {
+    width: 100%;
+  }
+
+  .user-email {
+    display: none;
+  }
+
+  .nav-text {
+    display: inline;
+  }
+
+  .navbar-actions {
+    gap: 8px;
+  }
+}
+
+/* Tablet Responsive Styles */
+@media (max-width: 1024px) {
+  .navbar-container {
+    padding: 0 12px;
+  }
+
+  .navbar-menu {
+    margin-left: 8px;
+    gap: 2px;
+  }
+
+  .nav-link {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+
+  .navbar-user {
+    margin-left: 8px;
+    padding-left: 12px;
+    gap: 8px;
+  }
+
+  .user-email {
+    display: none;
+  }
+}
+
+/* Dark mode support (optional) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --navbar-bg: #1e1e1e;
+    --navbar-border: #3a3a3a;
+    --navbar-text: #e0e0e0;
+    --navbar-hover: #2d2d2d;
+    --navbar-active-bg: #0a2e5e;
+  }
+
+  .brand-text {
+    color: var(--navbar-text);
+  }
+
+  .user-email {
+    color: #999;
+  }
+}
+
+/* Accessibility */
+.nav-link:focus-visible {
+  outline: 2px solid var(--navbar-active);
+  outline-offset: -2px;
+}
+
+.hamburger:focus-visible {
+  outline: 2px solid var(--navbar-active);
+  outline-offset: 4px;
+}
+
+/* Animation for smooth transitions */
+.navbar {
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.nav-link {
+  transition: all 0.2s ease;
+}
+
+/* Print styles */
+@media print {
+  .navbar {
+    display: none;
+  }
+}

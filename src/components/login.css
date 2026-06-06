@@ -1,0 +1,337 @@
+/* Login.css */
+.login-logo {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 1rem;
+  display: block;
+}
+
+/* Branding colors from turtle shell */
+:root {
+  --brand-green: #2e7d32;   /* dark shell green */
+  --brand-light: #a5d6a7;   /* light green (limbs) */
+  --brand-bg: #f1fdf1;      /* soft background */
+}
+
+
+.primary-button:hover {
+  background-color: #256427;
+}
+/* Trusted Clubs marquee */
+.trusted-clubs {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(0,0,0,0.08);
+}
+
+.trusted-clubs-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1C1C1E;
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.logo-marquee {
+  width: 100%;
+  overflow: hidden;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.03);
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+.logo-track {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  width: max-content;
+  animation: logoMarquee 28s linear infinite;
+}
+
+.logo-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 6px 10px;
+  background: rgba(255,255,255,0.9);
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+.logo-item img {
+  height: 50px;
+  width: auto;
+  max-width: 120px;
+  object-fit: contain;
+  display: block;
+}
+
+@keyframes logoMarquee {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-track { animation: none; }
+}
+
+.login-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 0 16px;
+   background-color: var(--brand-bg);
+}
+
+.login-box {
+  width: 100%;
+  max-width: 420px;
+  border: 2px solid var(--brand-green);
+  background-color: var(--white);
+  padding: 24px;
+  border-radius: var(--card-radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.login-header {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+.login-error {
+  color: var(--danger-color);
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.login-form label {
+  text-align: left;
+  font-size: 14px;
+  color: var(--text-dark);
+}
+
+.login-form input {
+  padding: 14px;
+  font-size: 16px;
+  border: 1px solid #ccc;
+  border-radius: var(--input-radius);
+  background-color: #fefefe;
+}
+
+
+
+.primary-button {
+  background-color: var(--brand-light);
+  color: white;
+  border: none;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 14px;
+  font-size: 17px;
+  border-radius: var(--input-radius);
+  width: 100%;
+}
+
+.google-button {
+  display: block;
+  margin-top: 12px;
+  padding: 14px;
+  background-color: #db4437;
+  color: white;
+  border-radius: var(--input-radius);
+  font-weight: 600;
+}
+
+.login-footer {
+  font-size: 14px;
+  color: var(--text-light);
+  margin-top: 20px;
+}
+/* ✅ Mobile optimizations */
+@media (max-width: 900px) {
+  .login-box {
+    width: 90%;
+    padding: 1.5rem;
+    border-radius: 8px;
+	border: white;
+  }
+
+  .login-logo {
+    width: 64px;
+    height: 64px;
+  }
+
+  .login-header {
+    font-size: 1.25rem;
+  }
+
+  .primary-button,
+  .google-button {
+    font-size: 1rem;
+    padding: 0.7rem;
+  }
+
+  .login-footer {
+    font-size: 0.85rem;
+  }
+}
+/* Add these styles to your existing login.css file */
+
+
+/* =================================
+   FORGOT PASSWORD STYLES (SIMPLIFIED)
+   Replace the password strength section in login.css with this
+   ================================= */
+
+/* Forgot Password Specific Styles */
+.forgot-password-description {
+  text-align: center;
+  color: var(--text-light);
+  margin-bottom: 24px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #f3f3f3;
+  border-top: 2px solid var(--brand-green);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-right: 8px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-container {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.loading-container p {
+  margin-top: 16px;
+  color: var(--text-light);
+}
+
+/* Button States */
+.primary-button.loading {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.primary-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background-color: #ccc;
+}
+
+/* Success Message */
+.success-message {
+  text-align: center;
+  padding: 20px;
+}
+
+.success-icon {
+  width: 60px;
+  height: 60px;
+  background-color: var(--brand-green);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: bold;
+  margin: 0 auto 20px auto;
+}
+
+.success-message h2 {
+  color: var(--brand-green);
+  margin-bottom: 16px;
+}
+
+.success-message p {
+  color: var(--text-light);
+  margin-bottom: 12px;
+}
+
+/* Help Text */
+.help-text {
+  font-size: 14px;
+  color: var(--text-light);
+  margin-top: 16px;
+}
+
+/* Link Button */
+.link-button {
+  background: none;
+  border: none;
+  color: var(--brand-green);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+  margin: 0;
+}
+
+.link-button:hover {
+  color: #256427;
+}
+
+/* Back to Login Link */
+.back-to-login {
+  color: var(--brand-green);
+  text-decoration: none;
+  font-size: 14px;
+  display: inline-block;
+  margin-top: 16px;
+}
+
+.back-to-login:hover {
+  text-decoration: underline;
+}
+
+/* Success Message for Login Page */
+.login-success {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+/* Forgot Password Link */
+.forgot-password-link {
+  text-align: center;
+  margin-top: 16px;
+}
+
+.forgot-password-link a {
+  color: var(--brand-green);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.forgot-password-link a:hover {
+  text-decoration: underline;
+}

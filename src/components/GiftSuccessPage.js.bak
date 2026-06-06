@@ -1,0 +1,28 @@
+import React, { useEffect, useState } from "react";
+import axios from "axios";
+import { useSearchParams } from "react-router-dom";
+
+export default function GiftSuccessPage() {
+  const [params] = useSearchParams();
+  const [gift, setGift] = useState(null);
+
+  useEffect(() => {
+    const giftId = params.get("giftId");
+    if (!giftId) return;
+
+    axios.get(`/api/gifts/success/${giftId}`)
+      .then(res => setGift(res.data))
+      .catch(() => alert("Could not load gift code."));
+  }, [params]);
+
+  if (!gift) return <p>Loading gift...</p>;
+
+  return (
+    <div style={{ maxWidth: 520, margin: "0 auto", padding: 20 }}>
+      <h1>Gift Purchased</h1>
+      <p>Send this code to the recipient:</p>
+      <h2>{gift.code}</h2>
+      <p>They can redeem it from their Profile page.</p>
+    </div>
+  );
+}

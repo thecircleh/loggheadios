@@ -1,0 +1,626 @@
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
+import { useAuth } from './AuthContext';
+
+const BlogApprovalDashboard = () => {
+  const { token } = useAuth();
+  const [posts, setPosts] = useState([]);
+  const [activeTab, setActiveTab] = useState('pending');
+  const [expandedPostIds, setExpandedPostIds] = useState([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  const API_URL = window.location.hostname.startsWith("10.")
+    ? `http://${window.location.hostname}:3000`
+    : process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
+
+  useEffect(() => {
+    axios
+      .get(`${API_URL}/api/blogs/all`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then((res) => setPosts(res.data))
+      .catch((err) => console.error('Error fetching posts:', err));
+  }, [token, API_URL]);
+
+  const toggleExpand = (id) => {
+    setExpandedPostIds((prev) =>
+      prev.includes(id) ? prev.filter((pid) => pid !== id) : [...prev, id]
+    );
+  };
+
+  const approvePost = async (id) => {
+    try {
+      await axios.put(`${API_URL}/api/blogs/${id}/approve`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setPosts(posts.map((p) => (p._id === id ? { ...p, approved: true } : p)));
+    } catch (err) {
+      alert('Failed to approve post');
+    }
+  };
+
+  const rejectPost = async (id) => {
+    if (!window.confirm("Reject this blog post? It will be permanently removed.")) return;
+    try {
+      await axios.delete(`${API_URL}/api/blogs/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setPosts(posts.filter((p) => p._id !== id));
+    } catch (err) {
+      alert('Failed to reject post');
+    }
+  };
+
+  const deletePost = async (id) => {
+    if (!window.confirm("Delete this approved blog post?")) return;
+    try {
+      await axios.delete(`${API_URL}/api/blogs/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setPosts(posts.filter((p) => p._id !== id));
+    } catch (err) {
+      alert('Failed to delete post');
+    }
+  };
+
+  // Helper function to create slug from title
+  const createSlug = (title) => {
+    return title
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '') // Remove special characters
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .replace(/-+/g, '-') // Replace multiple hyphens with single
+      .trim();
+  };
+
+  // Helper function to format date
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  // Helper function to estimate reading time
+  const estimateReadingTime = (content) => {
+    const wordsPerMinute = 200;
+    const words = content.replace(/<[^>]*>/g, '').split(/\s+/).length;
+    return Math.ceil(words / wordsPerMinute);
+  };
+
+  // Helper function to create excerpt
+  const createExcerpt = (content, maxLength = 200) => {
+    const text = content.replace(/<[^>]*>/g, ''); // Strip HTML tags
+    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+  };
+
+  // Generate static HTML for individual blog post
+  const generatePostHTML = (post) => {
+    const slug = createSlug(post.title);
+    const readingTime = estimateReadingTime(post.contentHtml);
+    const publishDate = formatDate(post.createdAt);
+    
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>${post.title} - Loggerhead.app</title>
+    <meta name="description" content="${createExcerpt(post.contentHtml, 160)}" />
+    <meta name="keywords" content="volleyball, ${post.title.toLowerCase()}, volleyball stats, volleyball coaching, volleyball tips" />
+    <meta name="author" content="Loggerhead.app" />
+    <meta name="robots" content="index, follow" />
+    
+    <!-- Open Graph -->
+    <meta property="og:title" content="${post.title} - Loggerhead.app" />
+    <meta property="og:description" content="${createExcerpt(post.contentHtml, 160)}" />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://ui.loggerhead.app/blog/${slug}.html" />
+    <meta property="article:published_time" content="${post.createdAt}" />
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="${post.title}" />
+    <meta name="twitter:description" content="${createExcerpt(post.contentHtml, 160)}" />
+    
+    <!-- AdSense Script -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3584274514330714" crossorigin="anonymous"></script>
+    
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #1C1C1E;
+            background: #F9F9F9;
+        }
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .nav {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .nav a {
+            color: #007AFF;
+            text-decoration: none;
+            margin: 0 15px;
+            font-weight: 500;
+        }
+        .article {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: #1a1a1a;
+        }
+        h2 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            color: #2C3E50;
+        }
+        h3 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-top: 25px;
+            margin-bottom: 10px;
+        }
+        .meta {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        .content {
+            line-height: 1.7;
+        }
+        .content p {
+            margin-bottom: 16px;
+        }
+        .content ul, .content ol {
+            margin-bottom: 16px;
+            padding-left: 30px;
+        }
+        .content li {
+            margin-bottom: 8px;
+        }
+        .content blockquote {
+            border-left: 4px solid #007AFF;
+            padding-left: 20px;
+            margin: 20px 0;
+            font-style: italic;
+            color: #555;
+        }
+        .content code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Courier New', monospace;
+        }
+        .content pre {
+            background: #f4f4f4;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #007AFF;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding: 20px;
+            border-top: 1px solid #eee;
+        }
+        .footer a {
+            color: #007AFF;
+            text-decoration: none;
+            margin: 0 10px;
+        }
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            .article {
+                padding: 20px;
+            }
+            h1 {
+                font-size: 28px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div style="text-align: center;">
+            <h1 style="margin: 0; color: #1a1a1a; font-size: 24px;">Loggerhead.app</h1>
+            <p style="margin: 5px 0 0 0; color: #666;">Volleyball Stat Tracking Made Simple</p>
+        </div>
+        <nav class="nav">
+            <a href="/">Home</a>
+            <a href="/blog/">Blog</a>
+            <a href="/register">Register</a>
+            <a href="/faq">FAQ</a>
+            <a href="/how-to">Getting Started</a>
+            <a href="/about">About</a>
+        </nav>
+    </header>
+
+    <article class="article">
+        <a href="/blog/" class="back-link">← Back to Blog</a>
+        
+        <h1>${post.title}</h1>
+        <div class="meta">
+            Published on ${publishDate} | ${readingTime} min read
+        </div>
+        
+        <div class="content">
+            ${post.contentHtml}
+        </div>
+        
+        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee;">
+            <p><strong>Ready to start tracking volleyball stats?</strong> <a href="/register" style="color: #007AFF; font-weight: 600;">Sign up for Loggerhead.app</a> and experience the easiest way to capture volleyball statistics in real-time.</p>
+        </div>
+    </article>
+
+    <footer class="footer">
+        <a href="/">Home</a>
+        <a href="/register">Register</a>
+        <a href="/faq">FAQ</a>
+        <a href="/how-to">Getting Started</a>
+        <a href="/about">About</a>
+        <a href="/contact">Contact</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a href="/blog/">Blog</a>
+    </footer>
+</body>
+</html>`;
+  };
+
+  // Generate static HTML for blog index page
+  const generateBlogIndexHTML = (approvedPosts) => {
+    const postCards = approvedPosts.map(post => {
+      const slug = createSlug(post.title);
+      const readingTime = estimateReadingTime(post.contentHtml);
+      const publishDate = formatDate(post.createdAt);
+      const excerpt = createExcerpt(post.contentHtml, 150);
+      
+      return `
+        <article class="post-card">
+            <h2 class="post-title">
+                <a href="/blog/${slug}.html">${post.title}</a>
+            </h2>
+            <div class="post-meta">${publishDate} | ${readingTime} min read</div>
+            <p class="post-excerpt">${excerpt}</p>
+            <a href="/blog/${slug}.html" class="read-more">Read More →</a>
+        </article>`;
+    }).join('');
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Volleyball Blog - Tips, Guides & Strategies | Loggerhead.app</title>
+    <meta name="description" content="Expert volleyball content for coaches, parents, and players. Learn about statistics, strategies, coaching tips, and player development." />
+    <meta name="keywords" content="volleyball blog, volleyball coaching, volleyball statistics, volleyball tips, volleyball strategies" />
+    
+    <!-- Open Graph -->
+    <meta property="og:title" content="Volleyball Blog - Tips, Guides & Strategies" />
+    <meta property="og:description" content="Expert volleyball content for coaches, parents, and players." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://ui.loggerhead.app/blog/" />
+    
+    <!-- AdSense Script -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3584274514330714" crossorigin="anonymous"></script>
+    
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.6;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #1C1C1E;
+            background: #F9F9F9;
+        }
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .nav {
+            margin-top: 15px;
+        }
+        .nav a {
+            color: #007AFF;
+            text-decoration: none;
+            margin: 0 15px;
+            font-weight: 500;
+        }
+        .blog-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        .post-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        .post-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+        }
+        .post-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        .post-title a {
+            color: #1C1C1E;
+            text-decoration: none;
+        }
+        .post-title a:hover {
+            color: #007AFF;
+        }
+        .post-excerpt {
+            color: #666;
+            margin-bottom: 15px;
+            line-height: 1.5;
+        }
+        .post-meta {
+            color: #999;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+        .read-more {
+            color: #007AFF;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding: 20px;
+            border-top: 1px solid #eee;
+        }
+        .footer a {
+            color: #007AFF;
+            text-decoration: none;
+            margin: 0 10px;
+        }
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            .blog-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1 style="margin: 0; color: #1a1a1a;">Loggerhead Volleyball Blog</h1>
+        <p style="margin: 10px 0 0 0; color: #666;">Expert tips, strategies, and guides for volleyball coaches, parents, and players</p>
+        <nav class="nav">
+            <a href="/">Home</a>
+            <a href="/register">Register</a>
+            <a href="/faq">FAQ</a>
+            <a href="/how-to">Getting Started</a>
+            <a href="/about">About</a>
+        </nav>
+    </header>
+
+    <main class="blog-grid">
+        ${postCards}
+    </main>
+
+    <footer class="footer">
+        <a href="/">Home</a>
+        <a href="/register">Register</a>
+        <a href="/faq">FAQ</a>
+        <a href="/how-to">Getting Started</a>
+        <a href="/about">About</a>
+        <a href="/contact">Contact</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+    </footer>
+</body>
+</html>`;
+  };
+
+  const generateStaticBlog = async () => {
+    setIsGenerating(true);
+    try {
+      const approvedPosts = posts.filter(post => post.approved);
+      
+      if (approvedPosts.length === 0) {
+        alert('No approved posts to generate static files for.');
+        setIsGenerating(false);
+        return;
+      }
+
+      const response = await axios.post(`${API_URL}/api/blogs/generate-static`, {
+        posts: approvedPosts.map(post => ({
+          title: post.title,
+          contentHtml: post.contentHtml,
+          createdAt: post.createdAt,
+          slug: createSlug(post.title)
+        })),
+        indexHtml: generateBlogIndexHTML(approvedPosts)
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (response.data.success) {
+        alert(`Successfully generated static blog! Created ${approvedPosts.length} blog posts and index page.`);
+      } else {
+        alert('Failed to generate static blog files.');
+      }
+    } catch (err) {
+      console.error('Error generating static blog:', err);
+      alert('Error generating static blog files.');
+    }
+    setIsGenerating(false);
+  };
+
+  const filteredPosts = posts.filter((post) =>
+    activeTab === 'approved' ? post.approved : !post.approved
+  );
+
+  const approvedPostsCount = posts.filter(post => post.approved).length;
+
+  return (
+    <div style={{ padding: '1rem' }}>
+      <h2>Blog Approval Dashboard</h2>
+
+      <div style={{ display: 'flex', marginBottom: '1rem', alignItems: 'center', gap: '10px' }}>
+        <button
+          onClick={() => setActiveTab('pending')}
+          style={{
+            padding: '10px',
+            backgroundColor: activeTab === 'pending' ? '#007AFF' : '#ccc',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '6px',
+          }}
+        >
+          Pending Posts
+        </button>
+        <button
+          onClick={() => setActiveTab('approved')}
+          style={{
+            padding: '10px',
+            backgroundColor: activeTab === 'approved' ? '#34C759' : '#ccc',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '6px',
+          }}
+        >
+          Approved Posts ({approvedPostsCount})
+        </button>
+        
+        {activeTab === 'approved' && approvedPostsCount > 0 && (
+          <button
+            onClick={generateStaticBlog}
+            disabled={isGenerating}
+            style={{
+              padding: '10px 15px',
+              backgroundColor: isGenerating ? '#999' : '#FF9500',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '6px',
+              fontWeight: 'bold',
+              cursor: isGenerating ? 'not-allowed' : 'pointer',
+              marginLeft: '10px'
+            }}
+          >
+            {isGenerating ? 'Generating...' : '🚀 Generate Static Blog'}
+          </button>
+        )}
+      </div>
+
+      {activeTab === 'approved' && approvedPostsCount > 0 && (
+        <div style={{ 
+          background: '#e8f5e8', 
+          padding: '15px', 
+          borderRadius: '8px', 
+          marginBottom: '20px',
+          border: '1px solid #c3e6c3'
+        }}>
+          <p style={{ margin: 0, color: '#2d5a2d' }}>
+            <strong>Generate Static Blog:</strong> This will create crawlable HTML files for AdSense approval. 
+            Files will be saved to <code>/public/blog/</code> and can be accessed at <code>/blog/</code>.
+          </p>
+        </div>
+      )}
+
+      {filteredPosts.map((post) => {
+        const isExpanded = expandedPostIds.includes(post._id);
+        const content = isExpanded
+          ? post.contentHtml
+          : post.contentHtml.slice(0, 300) + (post.contentHtml.length > 300 ? '...' : '');
+
+        return (
+          <div key={post._id} style={{ border: '1px solid #ccc', padding: '1rem', marginBottom: '1rem' }}>
+            <h3>{post.title}</h3>
+            <div
+              dangerouslySetInnerHTML={{ __html: content }}
+              style={{ marginBottom: '0.5rem' }}
+            />
+            {post.contentHtml.length > 300 && (
+              <button
+                onClick={() => toggleExpand(post._id)}
+                style={{
+                  marginBottom: '1rem',
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#007AFF',
+                  cursor: 'pointer',
+                  fontWeight: 'bold',
+                }}
+              >
+                {isExpanded ? 'Show Less' : 'Expand'}
+              </button>
+            )}
+            <p><strong>Author:</strong> {post.authorId?.email || 'Unknown'}</p>
+            <p><strong>Status:</strong> {post.approved ? 'Approved' : 'Pending'}</p>
+
+            {!post.approved ? (
+              <>
+                <button onClick={() => approvePost(post._id)} style={{ marginRight: '8px' }}>
+                  Approve
+                </button>
+                <button
+                  onClick={() => rejectPost(post._id)}
+                  style={{ backgroundColor: '#FF3B30', color: 'white', border: 'none', padding: '6px 10px' }}
+                >
+                  Reject
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => deletePost(post._id)}
+                style={{ backgroundColor: '#aaa', color: 'white', border: 'none', padding: '6px 10px' }}
+              >
+                Delete
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+export default BlogApprovalDashboard;

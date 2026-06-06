@@ -1,0 +1,299 @@
+/* Profile.css */
+
+.page-wrapper {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.page-header {
+  font-size: clamp(20px, 5vw, 28px);
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 24px;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+  align-items: center;
+}
+
+.segmented-item {
+  height: 44px;
+  padding: 0;
+  position: relative;
+  border-radius: 12px;
+  border: 1px solid #ccc;
+  background: #fafafa;
+  padding: 10px 6px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.segmented-item input {
+  position: absolute;
+  opacity: 0;
+}
+
+.segmented-item:has(input:checked) {
+  background: #e8f0ff;
+  border-color: #2563eb;
+  outline: 2px solid rgba(37, 99, 235, 0.25);
+}
+
+.section-label {
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 4px;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+
+.profile-message {
+  text-align: center;
+  font-size: 13px;
+  color: #2563eb;
+  margin-bottom: 16px;
+}
+
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+
+
+.profile-form label {
+  font-size: 16px;
+  color: var(--text-dark);
+   display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.profile-form input,
+.profile-form select {
+  padding: 12px;
+  font-size: 16px;
+  border: 1px solid #ccc;
+  border-radius: var(--input-radius);
+  background-color: #fff;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.profile-form input[disabled] {
+  background-color: #f0f0f5;
+}
+
+.checkbox-wrapper input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+  vertical-align: middle;
+  margin: 0;
+}
+
+.primary-button {
+  padding: 14px;
+  font-size: 17px;
+  font-weight: 600;
+  background-color: blue;
+  color: white;
+  border: none;
+  border-radius: var(--input-radius);
+  cursor: pointer;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
+}
+
+.logout-button {
+  margin-top: 32px;
+  background: #dc2626;
+  box-shadow: 0 6px 16px rgba(220, 38, 38, 0.25);
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  background-color: red;
+  color: white;
+  border: none;
+  border-radius: var(--input-radius);
+  cursor: pointer;
+  width: 100%;
+}
+
+.change-password-button {
+  padding: 10px 14px;
+  font-size: 16px;
+  background-color: #555;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  cursor: pointer;
+  width: 100%;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.modal-input {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 10px;
+  font-size: 16px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+}
+
+.modal-button-group {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.modal-cancel {
+  background-color: #aaa;
+  color: white;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.modal-submit {
+  background-color: #007aff;
+  color: white;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.team-input-wrapper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  border: 1px solid #ccc;
+  padding: 4px;
+}
+
+.team-chip {
+  background: #e0e0e0;
+  padding: 4px 8px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+}
+
+.team-chip button {
+  margin-left: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-weight: bold;
+  color: #333;
+}
+
+.suggestions-dropdown {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  background: white;
+  border: 1px solid #ccc;
+  max-height: 150px;
+  overflow-y: auto;
+  z-index: 1000;
+  position: variable;
+  width: 100%;
+}
+
+.suggestions-dropdown li {
+  padding: 8px;
+  cursor: pointer;
+}
+
+.suggestions-dropdown li:hover {
+  background: #eee;
+}
+
+/* ===== TeamNameBuilder form layout ===== */
+
+.team-builder-form label {
+  display: block;
+  margin: 10px 0 6px;
+  font-weight: 600;
+}
+
+.team-builder-form label:first-child {
+  margin-top: 0;
+}
+
+.team-builder-form input,
+.team-builder-form select {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Optional helpers */
+.team-builder-form .section-label {
+  margin-top: 14px;
+}
+
+.team-builder-form .segmented {
+  margin-top: 6px;
+}
+.team-builder-form .segmented.segmented-2 {
+  margin-top: 6px;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.team-builder-form .segmented-item {
+  height: 44px !important;
+  padding: 0 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  line-height: 1 !important;
+}
+
+.team-builder-form .segmented-item span {
+  line-height: 1 !important;
+}

@@ -1,0 +1,1172 @@
+import { useEffect, useRef, useState } from "react";
+
+const useEnhancedVoiceCommands = (handleCommand, courtPlayers, ballState, currentServeSide, voiceEnabled, modalStates = {}) => {
+  const [isListening, setIsListening] = useState(false);
+  const [lastCommand, setLastCommand] = useState("");
+  const [connectionStatus, setConnectionStatus] = useState("connected");
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [pushToTalkMode, setPushToTalkMode] = useState(false);
+  const [isPushToTalkActive, setIsPushToTalkActive] = useState(false);
+  const [useWakeWord, setUseWakeWord] = useState(false);
+  const [awaitingCommand, setAwaitingCommand] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  
+  // FIXED: Separate refs for duplicate detection vs UI display
+  const lastProcessedCommandRef = useRef("");
+  const recognitionRef = useRef(null);
+  const timeoutRef = useRef(null);
+  const isStartingRef = useRef(false);
+  const retryCountRef = useRef(0);
+  const maxRetries = 10;
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const microphoneRef = useRef(null);
+  const noiseThresholdRef = useRef(15);
+  const healthCheckRef = useRef(null);
+  const lastRecognitionTime = useRef(0);
+  
+  // Store refs for dependencies
+  const handleCommandRef = useRef(handleCommand);
+  const courtPlayersRef = useRef(courtPlayers);
+  const ballStateRef = useRef(ballState);
+  const currentServeSideRef = useRef(currentServeSide);
+  const modalStatesRef = useRef(modalStates);
+
+  // Create player name mappings for better recognition
+  const createPlayerMappings = () => {
+    const mappings = new Map();
+    const currentCourtPlayers = courtPlayersRef.current;
+    currentCourtPlayers.forEach((player, index) => {
+      if (player && player.name && player.name !== "?") {
+        const name = player.name.toLowerCase();
+        const number = player.number?.toString();
+        
+        // Map various ways to reference a player
+        mappings.set(name, { slotIndex: index, player });
+        mappings.set(number, { slotIndex: index, player });
+        mappings.set(`player ${number}`, { slotIndex: index, player });
+        mappings.set(`number ${number}`, { slotIndex: index, player });
+        
+        // Handle common name variations
+        const firstWord = name.split(' ')[0];
+        if (firstWord.length > 2) {
+          mappings.set(firstWord, { slotIndex: index, player });
+        }
+        
+        // Handle last names
+        const nameParts = name.split(' ');
+        if (nameParts.length > 1) {
+          const lastName = nameParts[nameParts.length - 1];
+          if (lastName.length > 2) {
+            mappings.set(lastName, { slotIndex: index, player });
+          }
+        }
+      }
+    });
+    return mappings;
+  };
+
+  // Fix commonly misheard volleyball terms
+  const fixVolleyballMishears = (transcript) => {
+    const fixes = {
+      // "in play" is commonly misheard as these
+      "imply": "in play",
+      "and play": "in play", 
+      "employ": "in play",
+      "import": "in play",
+      "apply": "in play",
+      
+      // Other common volleyball mishears
+      "is": "ace",        // "ace" heard as "is"
+      "kids": "kill",     // "kill" heard as "kids"
+      "killed": "kill",
+	  "chill": "kill" ,// normalize to base form
+      "aced": "ace",      // normalize to base form
+      "set it": "set",    // "set" with extra words
+      "that": "attack",   // sometimes "attack" gets shortened
+      "black": "block",   // "block" misheard as "black"
+      "back": "block",    // "block" misheard as "back"
+      "era": "error",     // "error" misheard as "era"
+      "air": "error",     // "error" misheard as "air"
+      "out of": "out",    // "out" with extra words
+      "net ball": "net",  // "net" with extra words
+      "serve ace": "ace", // normalize serve ace to just ace
+      "service ace": "ace",
+	  "down" : "zone",
+	  "zen" : "zone"// normalize service ace to just ace
+    };
+    
+    let fixedTranscript = transcript.toLowerCase().trim();
+    
+    // Apply fixes
+    for (const [mishear, correct] of Object.entries(fixes)) {
+      if (fixedTranscript.includes(mishear)) {
+        const oldTranscript = fixedTranscript;
+        fixedTranscript = fixedTranscript.replace(new RegExp(mishear, 'gi'), correct);
+        if (fixedTranscript !== oldTranscript) {
+          console.log(`🔧 Fixed mishear: "${mishear}" → "${correct}" in "${transcript}"`);
+        }
+      }
+    }
+    
+    return fixedTranscript;
+  };
+
+  // Wake word and command validation for noisy environments
+  const validateCommand = (transcript, confidence) => {
+    const lowerTranscript = transcript.toLowerCase().trim();
+    
+    // Check if audio level is above noise threshold (but only if audio monitoring is working)
+    if (audioLevel > 0 && audioLevel < noiseThresholdRef.current) {
+      console.log(`🔇 Audio too quiet (${audioLevel} < ${noiseThresholdRef.current}), ignoring`);
+      return { isValid: false, reason: "too_quiet" };
+    }
+    
+    // Require higher confidence in noisy environments
+    const minConfidence = audioLevel > 50 ? 0.8 : 0.6;
+    if (confidence && confidence < minConfidence) {
+      console.log(`🔇 Confidence too low (${confidence.toFixed(2)} < ${minConfidence}), ignoring`);
+      return { isValid: false, reason: "low_confidence" };
+    }
+    
+    // Filter out obvious non-commands (common background phrases)
+    const backgroundFilters = [
+      /^(yeah|yes|okay|oh|ah|um|uh|hey|hi|hello)$/,
+      /^(what|where|when|how|why)\b/,
+      /\b(referee|ref)\b.*\b(call|called|timeout)\b/,
+      /\b(good|nice|great|awesome|wow)\b/,
+      /\b(come on|let's go|you got it)\b/,
+      /\b(huddle|break|time)\b/
+    ];
+    
+    for (const filter of backgroundFilters) {
+      if (filter.test(lowerTranscript)) {
+        console.log(`🔇 Filtered background phrase: "${transcript}"`);
+        return { isValid: false, reason: "background_chatter" };
+      }
+    }
+    
+    // Check for wake word
+    const wakeWords = ["logger", "log", "loggerhead"];
+    const hasWakeWord = wakeWords.some(wake => lowerTranscript.includes(wake));
+    
+    if (hasWakeWord) {
+      console.log(`🎯 Wake word detected: "${transcript}"`);
+      
+      if (useWakeWord && !awaitingCommand) {
+        setAwaitingCommand(true);
+        speak("Ready");
+        setTimeout(() => setAwaitingCommand(false), 5000);
+        return { isValid: false, reason: "wake_word_only" };
+      } else {
+        console.log(`🎯 Wake word bypasses volleyball validation`);
+        return { isValid: true };
+      }
+    }
+    
+    // If wake word mode is enabled but no wake word found, reject
+    if (useWakeWord && !awaitingCommand) {
+      console.log(`🔇 Wake word mode active but no wake word found in: "${transcript}"`);
+      return { isValid: false, reason: "no_wake_word" };
+    }
+    
+    // Check if transcript contains player names/numbers
+    const currentCourtPlayers = courtPlayersRef.current;
+    const playerMappings = createPlayerMappings();
+    const words = lowerTranscript.split(/\s+/);
+    
+    // Check for player references
+    let hasPlayerReference = false;
+    for (const word of words) {
+      if (/^\d+$/.test(word)) {
+        hasPlayerReference = true;
+        break;
+      }
+      if (playerMappings.has(word)) {
+        hasPlayerReference = true;
+        break;
+      }
+    }
+    
+    // Check for sequences of concatenated numbers (like "589")
+    if (/^\d{2,}$/.test(lowerTranscript)) {
+      console.log(`🎯 Detected concatenated number sequence: "${transcript}"`);
+      hasPlayerReference = true;
+    }
+    
+    // If we have player references, this is valid
+    if (hasPlayerReference) {
+      console.log(`🎯 Contains player references, valid volleyball command: "${transcript}"`);
+      return { isValid: true };
+    }
+    
+    // Validate that it contains volleyball-related terms
+    const validPatterns = [
+      /\b(ace|aced|kill|killed|error|out|net|fault|serve|service|attack|spike|block|dig|set|rotate|switch|undo|free ball|in play)\b/,
+      /\b(receiving|setting|attacking|referee|ref|opponent|zone)\b/
+    ];
+    
+    const hasValidPattern = validPatterns.some(pattern => pattern.test(lowerTranscript));
+    if (!hasValidPattern) {
+      console.log(`🔇 No valid volleyball terms or player references in: "${transcript}"`);
+      return { isValid: false, reason: "not_volleyball_command" };
+    }
+    
+    return { isValid: true };
+  };
+
+  // Enhanced command vocabulary
+  const commandPatterns = {
+    // Serve actions
+    serveError: [
+      /(?:serve|service)\s+(?:error|out|net|fault)/,
+      /(?:ace|aced)\s+(?:error|out)/,
+      /server\s+(?:error|out|fault)/,
+      /(?:opponent|their|they)\s+(?:serve|service)\s+(?:error|fault|out)/,
+      /(?:opponent|other\s+team)\s+(?:error|fault)/
+    ],
+    serveAce: [
+      /(?:serve|service)\s+ace/,
+      /(?:ace|aced)\s+(?:them|it)/,
+      /server\s+ace/,
+      /(?:our|we|team)\s+(?:ace|aced)/,
+      /(?:service|serve)\s+(?:ace|aced)/
+    ],
+    opponentAce: [
+      /(?:opponent|their|they)\s+(?:ace|aced)/,
+      /(?:opponent|their)\s+(?:serve|service)\s+ace/,
+      /(?:they|their)\s+(?:serve|service)\s+(?:ace|aced)/,
+      /(?:opponent|other\s+team)\s+(?:service|serve)\s+ace/,
+      /(?:team|opponent)\s+ace/,
+      /(?:other\s+team|opposing\s+team)\s+(?:ace|aced)/
+    ],
+    serveInPlay: [
+      /serve\s+(?:in\s+play|good|over)/,
+      /service\s+(?:in\s+play|good|over)/,
+      /serve\s+is\s+in/
+    ],
+    // Rally actions
+    kill: [
+      /(?:kill|killed|winner|put\s+it\s+away)/,
+      /(?:spike|attack)\s+(?:kill|down)/,
+      /(?:terminated|finished)/
+    ],
+    error: [
+      /(?:error|out|net|fault)/,
+      /(?:attack|spike)\s+(?:error|out|net)/,
+      /(?:hitting|attacking)\s+(?:error|out)/
+    ],
+    inPlay: [
+      /(?:in\s+play|keep\s+it\s+going|continue)/,
+      /(?:dig|dug)\s+(?:it|up)/,
+      /(?:ball\s+is\s+up|still\s+in\s+play)/
+    ],
+    // Block actions
+    blockKill: [
+      /block\s+(?:kill|down|stuff)/,
+      /(?:blocked|stuffed)\s+(?:it|them)/,
+      /(?:roof|roofed)/
+    ],
+    blockError: [
+      /block\s+(?:error|net|touch)/,
+      /(?:blocking|blocker)\s+(?:error|fault)/
+    ],
+    blockInPlay: [
+      /block\s+(?:in\s+play|touch|deflection)/,
+      /(?:blocked|deflected)\s+(?:but|still)\s+(?:in|up)/
+    ],
+    // Court management
+    rotate: [
+      /rotate/,
+      /(?:rotation|switch\s+positions)/,
+      /(?:move\s+players|shift)/
+    ],
+    clearCourt: [
+      /(?:clear|empty)\s+(?:court|players)/,
+      /(?:take\s+everyone\s+off|reset\s+court)/
+    ],
+    switchServe: [
+      /(?:switch|change|flip)\s+serve/,
+      /(?:other\s+team|opponent)\s+(?:serves|serving)/
+    ],
+    freeBall: [
+      /free\s+ball/,
+      /(?:easy|simple)\s+ball/,
+      /(?:send|sending)\s+(?:it|ball)\s+back/
+    ],
+    undo: [
+      /undo/,
+      /(?:take\s+back|reverse)\s+(?:that|last)/,
+      /(?:mistake|wrong|oops)/
+    ],
+    serveZone: [
+      /zone\s+(\d+)/,
+      /zone\s+(\d+-\d+)/,
+      /(\d+)\s+zone/,
+      /(\d+-\d+)\s+zone/
+    ],
+    zoneUnsure: [
+      /unsure/,
+      /not\s+sure/,
+      /don't\s+know/,
+      /unclear/
+    ],
+    serveErrorTypes: [
+      /out/,
+      /net/,
+      /foot\s+fault/,
+      /footfault/,
+      /service\s+fault/
+    ]
+  };
+
+  // Extract player references from transcript
+  const extractPlayerFromTranscript = (transcript, playerMappings) => {
+    const words = transcript.toLowerCase().split(' ');
+    
+    // Look for direct player references
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      const nextWord = words[i + 1];
+      
+      // Check single word matches
+      if (playerMappings.has(word)) {
+        return playerMappings.get(word);
+      }
+      
+      // Check two-word combinations
+      if (nextWord && playerMappings.has(`${word} ${nextWord}`)) {
+        return playerMappings.get(`${word} ${nextWord}`);
+      }
+    }
+    
+    // Look for position references
+    const positionMap = {
+      'setter': 'Set',
+      'middle': 'MB',
+      'outside': 'OH',
+      'opposite': 'OPP',
+      'libero': 'L',
+      'server': 5 // Position 1 is index 5
+    };
+    
+    const currentCourtPlayers = courtPlayersRef.current;
+    
+    for (const [key, position] of Object.entries(positionMap)) {
+      if (transcript.includes(key)) {
+        if (typeof position === 'number') {
+          return { slotIndex: position, player: currentCourtPlayers[position] };
+        } else {
+          const player = currentCourtPlayers.find(p => p.position === position);
+          if (player) {
+            const slotIndex = currentCourtPlayers.findIndex(p => p === player);
+            return { slotIndex, player };
+          }
+        }
+      }
+    }
+    
+    return null;
+  };
+
+  // Complex command parsing with enhanced player sequence support
+  const parseCommand = (transcript) => {
+    const playerMappings = createPlayerMappings();
+    const lowerTranscript = transcript.toLowerCase().trim();
+    
+    // Use refs to get current values
+    const currentBallState = ballStateRef.current;
+    const currentServeTeam = currentServeSideRef.current;
+    const currentCourtPlayers = courtPlayersRef.current;
+    
+    console.log("🎙️ Parsing command:", lowerTranscript, "Ball state:", currentBallState, "Serve side:", currentServeTeam);
+    
+    // Handle concatenated numbers (like "589")
+    const concatenatedMatch = lowerTranscript.match(/^(\d{2,})$/);
+    if (concatenatedMatch) {
+      const numberStr = concatenatedMatch[1];
+      const numbers = numberStr.split('').map(n => parseInt(n));
+      console.log("🎯 Found concatenated number sequence:", numbers);
+      
+      const playerTouches = [];
+      const roles = ["Dig", "Set", "Attack"];
+      
+      for (let i = 0; i < numbers.length && i < roles.length; i++) {
+        const playerNumber = numbers[i];
+        const player = currentCourtPlayers.find(p => parseInt(p.number) === playerNumber);
+        if (player) {
+          const slotIndex = currentCourtPlayers.findIndex(p => p === player);
+          playerTouches.push({
+            slotIndex,
+            player,
+            role: roles[i]
+          });
+        }
+      }
+      
+      if (playerTouches.length > 0) {
+        return {
+          type: "player_sequence",
+          touches: playerTouches,
+          confidence: "high"
+        };
+      }
+    }
+    
+    // Handle spaced number sequences (like "5 8 9")
+    const spacedNumberMatch = lowerTranscript.match(/^(\d+(?:\s+\d+)+)$/);
+    if (spacedNumberMatch) {
+      const numbers = spacedNumberMatch[1].split(/\s+/).map(n => parseInt(n));
+      console.log("🎯 Found spaced number sequence:", numbers);
+      
+      const playerTouches = [];
+      const roles = ["Dig", "Set", "Attack"];
+      
+      for (let i = 0; i < numbers.length && i < roles.length; i++) {
+        const playerNumber = numbers[i];
+        const player = currentCourtPlayers.find(p => parseInt(p.number) === playerNumber);
+        if (player) {
+          const slotIndex = currentCourtPlayers.findIndex(p => p === player);
+          playerTouches.push({
+            slotIndex,
+            player,
+            role: roles[i]
+          });
+        }
+      }
+      
+      if (playerTouches.length > 0) {
+        return {
+          type: "player_sequence",
+          touches: playerTouches,
+          confidence: "high"
+        };
+      }
+    }
+    
+    // Check for number sequences with results
+    const resultWords = ["kill", "error", "ace", "in play", "point", "out"];
+    const numbers = transcript.match(/\d+/g)?.map(Number) || [];
+    const result = resultWords.find((word) => transcript.includes(word));
+    
+    if (numbers.length >= 2 && result) {
+      console.log("🎯 Found number sequence with result:", numbers, result);
+      return {
+        type: "sequence",
+        numbers,
+        result,
+        transcript,
+        confidence: "high"
+      };
+    }
+    
+    // Check for individual player numbers/names
+    const singleNumberMatch = lowerTranscript.match(/^(\d+)$/);
+    if (singleNumberMatch) {
+      const playerNumber = parseInt(singleNumberMatch[1]);
+      const player = currentCourtPlayers.find(p => parseInt(p.number) === playerNumber);
+      if (player) {
+        const slotIndex = currentCourtPlayers.findIndex(p => p === player);
+        console.log("🎯 Found player by number:", playerNumber, "at slot:", slotIndex);
+        return {
+          type: "player_touch",
+          slotIndex,
+          player,
+          confidence: "high"
+        };
+      }
+    }
+
+    // Check for standalone player names
+    const playerRef = extractPlayerFromTranscript(lowerTranscript, playerMappings);
+    if (playerRef && playerRef.player) {
+      const words = lowerTranscript.split(' ').filter(word => word.length > 1);
+      const playerWords = playerRef.player.name.toLowerCase().split(' ').filter(word => word.length > 1);
+      
+      if (words.length <= 3 && playerWords.some(pWord => words.some(tWord => tWord.includes(pWord) || pWord.includes(tWord)))) {
+        console.log("🎯 Found standalone player name:", playerRef.player.name, "at slot:", playerRef.slotIndex);
+        return {
+          type: "player_touch",
+          slotIndex: playerRef.slotIndex,
+          player: playerRef.player,
+          confidence: "high"
+        };
+      }
+    }
+    
+    // Check for standalone result words
+    const resultMatch = resultWords.find(word => lowerTranscript.includes(word));
+    if (resultMatch) {
+      console.log("🎯 Found result word:", resultMatch);
+      if (numbers.length === 0 && (lowerTranscript === resultMatch || lowerTranscript === `${resultMatch}ed` || lowerTranscript === `${resultMatch}s`)) {
+        return {
+          type: "result_only",
+          result: resultMatch,
+          confidence: "high"
+        };
+      }
+    }
+    
+    // Serve phase commands
+    if (currentBallState === "serve") {
+      if (currentServeTeam === "our") {
+        if (numbers.length === 0) {
+          for (const pattern of commandPatterns.serveError) {
+            if (pattern.test(lowerTranscript)) {
+              return { 
+                type: "serve_action", 
+                action: "Error",
+                confidence: "high",
+                player: currentCourtPlayers[5]
+              };
+            }
+          }
+          
+          for (const pattern of commandPatterns.serveAce) {
+            if (pattern.test(lowerTranscript)) {
+              console.log("🎯 Matched our ace pattern:", pattern, "for transcript:", lowerTranscript);
+              return { 
+                type: "serve_action", 
+                action: "Ace",
+                confidence: "high",
+                player: currentCourtPlayers[5]
+              };
+            }
+          }
+          
+          for (const pattern of commandPatterns.serveInPlay) {
+            if (pattern.test(lowerTranscript)) {
+              return { 
+                type: "serve_action", 
+                action: "InPlay",
+                confidence: "high",
+                player: currentCourtPlayers[5]
+              };
+            }
+          }
+        }
+      }
+      
+      // Serve zone commands
+      if (currentBallState === "serve" && currentServeTeam === "our") {
+        for (const pattern of commandPatterns.serveZone) {
+          const match = pattern.exec(lowerTranscript);
+          if (match) {
+            const zoneNumber = match[1] || match[2];
+            console.log("🎯 Zone selection command:", zoneNumber);
+            return {
+              type: "serve_zone",
+              action: "select_zone",
+              zone: zoneNumber,
+              confidence: "high"
+            };
+          }
+        }
+        
+        for (const pattern of commandPatterns.zoneUnsure) {
+          if (pattern.test(lowerTranscript)) {
+            console.log("🎯 Zone unsure command");
+            return {
+              type: "serve_zone", 
+              action: "unsure",
+              confidence: "high"
+            };
+          }
+        }
+        
+        for (const pattern of commandPatterns.serveErrorTypes) {
+          if (pattern.test(lowerTranscript)) {
+            const errorType = lowerTranscript.includes("net") ? "In Net" :
+                             lowerTranscript.includes("foot") ? "Foot Fault" : "Out";
+            console.log("🎯 Service error during zone overlay:", errorType);
+            return {
+              type: "serve_zone",
+              action: "service_error", 
+              errorType: errorType,
+              confidence: "high"
+            };
+          }
+        }
+      } 
+      else if (currentServeTeam === "opponent") {
+        if (numbers.length === 0) {
+          for (const pattern of commandPatterns.serveError) {
+            if (pattern.test(lowerTranscript)) {
+              return { 
+                type: "serve_action", 
+                action: "Error",
+                confidence: "high",
+                isOpponent: true
+              };
+            }
+          }
+          
+          for (const pattern of commandPatterns.opponentAce) {
+            if (pattern.test(lowerTranscript)) {
+              console.log("🎯 Matched opponent ace pattern:", pattern, "for transcript:", lowerTranscript);
+              return { 
+                type: "serve_action", 
+                action: "Ace",
+                confidence: "high",
+                isOpponent: true
+              };
+            }
+          }
+          
+          for (const pattern of commandPatterns.serveAce) {
+            if (pattern.test(lowerTranscript)) {
+              console.log("🎯 Matched generic ace pattern for opponent:", pattern, "for transcript:", lowerTranscript);
+              return { 
+                type: "serve_action", 
+                action: "Ace",
+                confidence: "high",
+                isOpponent: true
+              };
+            }
+          }
+        }
+      }
+    }
+    
+    // Rally phase commands
+    if (currentBallState === "inplay") {
+      if (numbers.length === 0) {
+        for (const pattern of commandPatterns.kill) {
+          if (pattern.test(lowerTranscript)) {
+            return { 
+              type: "rally_action", 
+              action: "Kill",
+              confidence: "high",
+              player: playerRef?.player
+            };
+          }
+        }
+        
+        for (const pattern of commandPatterns.error) {
+          if (pattern.test(lowerTranscript)) {
+            return { 
+              type: "rally_action", 
+              action: "Error",
+              confidence: "high",
+              player: playerRef?.player
+            };
+          }
+        }
+        
+        for (const pattern of commandPatterns.blockKill) {
+          if (pattern.test(lowerTranscript)) {
+            return { 
+              type: "block_action", 
+              action: "Kill",
+              confidence: "high"
+            };
+          }
+        }
+      }
+    }
+    
+    // Court management commands
+    for (const pattern of commandPatterns.rotate) {
+      if (pattern.test(lowerTranscript)) {
+        return { type: "court_action", action: "rotate", confidence: "high" };
+      }
+    }
+    
+    for (const pattern of commandPatterns.clearCourt) {
+      if (pattern.test(lowerTranscript)) {
+        return { type: "court_action", action: "clear", confidence: "medium" };
+      }
+    }
+    
+    for (const pattern of commandPatterns.switchServe) {
+      if (pattern.test(lowerTranscript)) {
+        return { type: "court_action", action: "switch_serve", confidence: "high" };
+      }
+    }
+    
+    for (const pattern of commandPatterns.freeBall) {
+      if (pattern.test(lowerTranscript)) {
+        return { type: "court_action", action: "free_ball", confidence: "high" };
+      }
+    }
+    
+    for (const pattern of commandPatterns.undo) {
+      if (pattern.test(lowerTranscript)) {
+        return { type: "court_action", action: "undo", confidence: "high" };
+      }
+    }
+    
+    return { type: "unknown", transcript, confidence: "low" };
+  };
+
+  // Initialize audio monitoring
+  const initializeAudioMonitoring = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 16000,
+          channelCount: 1,
+        } 
+      });
+      
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      microphoneRef.current = audioContextRef.current.createMediaStreamSource(stream);
+      
+      analyserRef.current.fftSize = 256;
+      analyserRef.current.smoothingTimeConstant = 0.8;
+      microphoneRef.current.connect(analyserRef.current);
+      
+      const monitorAudio = () => {
+        if (analyserRef.current && voiceEnabled) {
+          const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+          analyserRef.current.getByteFrequencyData(dataArray);
+          const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+          
+          const adjustedLevel = Math.max(average, 31);
+          setAudioLevel(adjustedLevel);
+          
+          requestAnimationFrame(monitorAudio);
+        }
+      };
+      
+      monitorAudio();
+      console.log("🎙️ Audio monitoring initialized successfully");
+    } catch (error) {
+      console.error("🎙️ Failed to initialize audio monitoring:", error);
+      setAudioLevel(35);
+    }
+  };
+
+  // Speech synthesis with feedback prevention
+  const speak = (text) => {
+    if ('speechSynthesis' in window && !isSpeaking) {
+      setIsSpeaking(true);
+      
+      const wasListening = isListening;
+      if (recognitionRef.current && wasListening) {
+        try {
+          console.log("Aborting recognition for speech feedback");
+          recognitionRef.current.abort();
+        } catch (error) {
+          console.log("🔇 Recognition already stopped");
+        }
+      }
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.2;
+      utterance.volume = 0.7;
+      
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        console.log("🔇 Speech finished, resuming recognition...");
+        
+        if (voiceEnabled && wasListening) {
+          setTimeout(() => {
+            if (voiceEnabled && recognitionRef.current && !isListening && !isStartingRef.current) {
+              startRecognition();
+            }
+          }, 500);
+		  setLastCommand(null);
+        }
+      };
+      
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        console.log("🔇 Speech error, resuming recognition...");
+        if (voiceEnabled && wasListening) {
+          setTimeout(() => {
+            if (voiceEnabled && recognitionRef.current && !isListening && !isStartingRef.current) {
+              startRecognition();
+            }
+          }, 300);
+        }
+      };
+      
+      speechSynthesis.speak(utterance);
+    }
+  };
+
+  // Safe start function with overlap prevention
+  const startRecognition = () => {
+    const now = Date.now();
+    
+    if (now - lastRecognitionTime.current < 500) {
+      console.log("🎙️ Preventing rapid restart, waiting...");
+      return;
+    }
+    
+    if (!recognitionRef.current || isStartingRef.current || isSpeaking) {
+      console.log("🎙️ Cannot start: no recognition, already starting, or speaking");
+      return;
+    }
+    
+    if (isListening) {
+      console.log("🎙️ Recognition already listening, skipping start");
+      return;
+    }
+
+    try {
+      isStartingRef.current = true;
+      lastRecognitionTime.current = now;
+      console.log("🎙️ Starting voice recognition...");
+      
+      setTimeout(() => {
+        if (recognitionRef.current && isStartingRef.current && !isListening && !isSpeaking) {
+          try {
+            recognitionRef.current.start();
+          } catch (startError) {
+            console.log("🎙️ Start error:", startError.message);
+            isStartingRef.current = false;
+            
+            if (startError.message?.includes('already started')) {
+              setIsListening(true);
+            }
+          }
+        } else {
+          isStartingRef.current = false;
+          console.log("🎙️ Cancelled start due to state change");
+        }
+      }, 200);
+      
+    } catch (error) {
+      console.error("🎙️ Failed to start recognition:", error);
+      isStartingRef.current = false;
+    }
+  };
+
+  // Update refs
+  useEffect(() => {
+    const playersChanged = JSON.stringify(courtPlayersRef.current) !== JSON.stringify(courtPlayers);
+    
+    handleCommandRef.current = handleCommand;
+    courtPlayersRef.current = courtPlayers;
+    ballStateRef.current = ballState;
+    currentServeSideRef.current = currentServeSide;
+    modalStatesRef.current = modalStates;
+    
+    if (playersChanged && voiceEnabled && recognitionRef.current && isListening) {
+      console.log("🎙️ Court players changed, restarting recognition with updated vocabulary...");
+      try {
+        recognitionRef.current.stop();
+        setTimeout(() => {
+          if (voiceEnabled && recognitionRef.current) {
+            startRecognition();
+          }
+        }, 200);
+      } catch (error) {
+        console.log("🎙️ Error restarting recognition:", error.message);
+      }
+    }
+  }, [handleCommand, courtPlayers, ballState, currentServeSide, voiceEnabled, isListening, modalStates]);
+
+  // Main effect
+  useEffect(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
+    if (!voiceEnabled) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        setIsListening(false);
+        setConnectionStatus("disabled");
+        isStartingRef.current = false;
+        retryCountRef.current = 0;
+      }
+      // FIXED: Clear caches when disabled
+      lastProcessedCommandRef.current = "";
+      setLastCommand("");
+      return;
+    }
+
+    setConnectionStatus("connecting");
+    retryCountRef.current = 0;
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      console.warn("SpeechRecognition not supported.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
+
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+    recognition.maxAlternatives = 1;
+
+    initializeAudioMonitoring();
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setConnectionStatus("connected");
+      isStartingRef.current = false;
+      retryCountRef.current = 0;
+      console.log("🎙️ Voice recognition started");
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      isStartingRef.current = false;
+      console.log("🎙️ Voice recognition ended");
+      
+      if (voiceEnabled && !isStartingRef.current && !isSpeaking) {
+        console.log("🎙️ Scheduling recognition restart...");
+        
+        setTimeout(() => {
+          if (voiceEnabled && recognitionRef.current && !isListening && !isStartingRef.current && !isSpeaking) {
+            startRecognition();
+          } else {
+            console.log("🎙️ Restart cancelled - state changed");
+          }
+        }, 800);
+      }
+    };
+
+    // FIXED: Proper duplicate detection using separate ref
+    recognition.onresult = (event) => {
+      const result = event.results[0][0];
+      const rawTranscript = result.transcript.toLowerCase().trim();
+      const confidence = result.confidence;
+      const now = Date.now();
+
+      // FIXED: Use separate ref for duplicate detection with shorter window
+      const timeSinceLastRecognition = now - lastRecognitionTime.current;
+      if (rawTranscript === lastProcessedCommandRef.current && timeSinceLastRecognition < 500) {
+        console.log(`🔄 Ignoring rapid duplicate: "${rawTranscript}" (${timeSinceLastRecognition}ms ago)`);
+        return;
+      }
+      
+      // Fix volleyball mishears
+      const transcript = fixVolleyballMishears(rawTranscript);
+      if (transcript !== rawTranscript) {
+        console.log(`🔧 Corrected to: "${transcript}"`);
+      }
+      
+      // Update UI display (clears after 3 seconds)
+      setLastCommand(transcript);
+      
+      // FIXED: Update processing ref for duplicate detection
+      lastProcessedCommandRef.current = transcript;
+      lastRecognitionTime.current = now;
+
+      // Validate command
+      const validation = validateCommand(transcript, confidence);
+	  setLastCommand(null);
+      if (!validation.isValid) {
+        console.log(`🔇 Command rejected: ${validation.reason}`);
+        
+        if (validation.reason === "low_confidence") {
+          speak("Unclear");
+		  setLastCommand(null);
+        }
+        return;
+      }
+
+      if (awaitingCommand) {
+        setAwaitingCommand(false);
+      }
+
+      const parsedCommand = parseCommand(transcript);
+      console.log("🧠 Parsed command:", parsedCommand);
+	  setLastCommand(null);
+
+      if (parsedCommand.confidence === "low") {
+        speak("Command not recognized");
+        return;
+      }
+
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+
+      // Process the command
+      handleCommandRef.current(parsedCommand);
+
+      // Provide audio feedback
+      switch (parsedCommand.type) {
+        case "serve_action":
+          if (parsedCommand.isOpponent) {
+            speak(`Opponent ${parsedCommand.action.toLowerCase()}`);
+          } else {
+            speak(`${parsedCommand.action}`);
+          }
+          break;
+        case "rally_action":
+          speak(`${parsedCommand.action}`);
+          break;
+        case "player_touch":
+          speak(`${parsedCommand.player?.name || parsedCommand.player?.number || "Player"}`);
+          break;
+        case "player_sequence":
+          const touchCount = parsedCommand.touches?.length || 0;
+          speak(`${touchCount} touches`);
+          break;
+        case "sequence":
+          const sequenceCount = parsedCommand.numbers?.length || 0;
+          speak(`${sequenceCount} players ${parsedCommand.result}`);
+          break;
+        case "result_only":
+          speak(`${parsedCommand.result}`);
+          break;
+        case "court_action":
+          if (parsedCommand.action === "rotate") speak("Rotating");
+          else if (parsedCommand.action === "switch_serve") speak("Switching serve");
+          else if (parsedCommand.action === "free_ball") speak("Free ball");
+          break;
+      }
+
+      // Clear display command after 3 seconds
+      timeoutRef.current = setTimeout(() => {
+        setLastCommand("");
+      }, 3000);
+    };
+
+    recognition.onerror = (event) => {
+      console.error("🎙️ Voice recognition error:", event.error);
+      isStartingRef.current = false;
+      
+      if (event.error === 'no-speech') {
+        console.log("🎙️ No speech detected, continuing volleyball listening...");
+        return;
+      } else if (['audio-capture', 'not-allowed'].includes(event.error)) {
+        speak("Microphone access denied");
+        setIsListening(false);
+        setConnectionStatus("mic-denied");
+        return;
+      } else if (event.error === 'network') {
+        console.log("🎙️ Network error, retrying...");
+        setIsListening(false);
+        retryCountRef.current++;
+        
+        if (retryCountRef.current <= maxRetries) {
+          setConnectionStatus("connecting");
+          setTimeout(() => {
+            if (voiceEnabled && recognitionRef.current) {
+              startRecognition();
+            }
+          }, 1000);
+        } else {
+          setConnectionStatus("failed");
+          speak("Voice recognition offline. Check internet connection.");
+        }
+      } else {
+        console.log(`🎙️ Error ${event.error}, restarting for volleyball...`);
+        setIsListening(false);
+        retryCountRef.current++;
+        
+        if (retryCountRef.current <= maxRetries) {
+          setTimeout(() => {
+            if (voiceEnabled && recognitionRef.current && !isListening) {
+              startRecognition();
+            }
+          }, 200);
+        } else {
+          console.log("🎙️ Too many errors, stopping auto-restart");
+          setConnectionStatus("failed");
+        }
+      }
+    };
+
+    startRecognition();
+
+    // Cleanup
+    return () => {
+      console.log("🎙️ Cleaning up voice recognition");
+      
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      
+      if (healthCheckRef.current) {
+        clearInterval(healthCheckRef.current);
+        healthCheckRef.current = null;
+      }
+      
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (error) {
+          console.log("🎙️ Recognition already stopped");
+        }
+        recognitionRef.current = null;
+      }
+      
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
+      }
+      
+      setIsListening(false);
+      setConnectionStatus("disconnected");
+      isStartingRef.current = false;
+      retryCountRef.current = 0;
+      
+      // FIXED: Clear caches on cleanup
+      lastProcessedCommandRef.current = "";
+      setLastCommand("");
+    };
+  }, [voiceEnabled]);
+
+  // Manual restart function
+  const manualRestart = () => {
+    console.log("🎙️ Manual restart requested - resetting for volleyball");
+    retryCountRef.current = 0;
+    lastRecognitionTime.current = 0;
+    
+    // FIXED: Clear all caches on manual restart
+    lastProcessedCommandRef.current = "";
+    setLastCommand("");
+    setConnectionStatus("connecting");
+    
+    if (recognitionRef.current) {
+      try {
+        if (isListening || isStartingRef.current) {
+          recognitionRef.current.stop();
+          isStartingRef.current = false;
+        }
+        
+        const tryRestart = () => {
+          if (!isSpeaking && voiceEnabled && recognitionRef.current && !isListening && !isStartingRef.current) {
+            startRecognition();
+          } else if (isSpeaking) {
+            setTimeout(tryRestart, 200);
+          }
+        };
+        
+        setTimeout(tryRestart, 300);
+        
+      } catch (error) {
+        console.log("🎙️ Manual restart failed:", error.message);
+        setConnectionStatus("failed");
+        isStartingRef.current = false;
+      }
+    }
+  };
+
+  return { 
+    isListening, 
+    lastCommand, 
+    connectionStatus, 
+    manualRestart,
+    audioLevel,
+    isSpeaking,
+    pushToTalkMode,
+    setPushToTalkMode,
+    isPushToTalkActive,
+    useWakeWord,
+    setUseWakeWord,
+    awaitingCommand,
+    noiseThreshold: noiseThresholdRef.current
+  };
+};
+
+export default useEnhancedVoiceCommands;

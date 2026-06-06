@@ -1,0 +1,220 @@
+/* index.css */
+body {
+  font-family: Verdana, Geneva, sans-serif;
+}
+
+
+
+/* Brand area */
+.ios-logo-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  /* if your brand is wrapped in a Link/a tag */
+  text-decoration: none;
+  color: #111111;
+}
+
+
+
+.ios-logo-icon {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+}
+
+
+.ios-app-title {
+  font-size: 30px;
+  font-weight: 800;
+  margin: 0;
+  line-height: 30px;
+  color: #111111;
+}
+
+.ios-app-version {
+  font-size: 14px;
+  font-weight: 600;
+  color: #9ca3af;
+  margin-left: 6px;
+}
+
+/* Nav */
+/* index.css */
+
+/* Modern Green Sticky Header */
+.ios-header-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background-color: rgba(255, 255, 255, 0.8);
+  border-bottom: 1px solid rgba(52, 199, 89, 0.2); /* Soft green border */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+}
+
+.ios-header-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  height: 70px; /* Slightly taller for modern feel */
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Brand area */
+.ios-logo-title {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  transition: opacity 0.2s;
+  color: "black";
+}
+
+.ios-logo-title:hover {
+  opacity: 0.8;
+}
+
+.ios-app-title {
+  font-size: 24px;
+  font-weight: 1000;
+  letter-spacing: -0.5px;
+  margin: 0;
+  /* Modern Green Gradient */
+  background: linear-gradient(135deg, #34C759 0%, #28A745 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Navigation Links - Cleaning up the | delimiters */
+.ios-nav-links {
+  display: flex;
+  justify-content: center; /* 🔑 This centers the entire bar */
+  align-items: center;
+  gap: 12px;               /* 🔑 Handles spacing instead of | */
+  width: 100%;
+  margin: 0 auto;
+}
+
+.ios-nav-link, 
+.ios-nav-links a, 
+.ios-nav-dropdown-wrapper button { 
+  text-decoration: none !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #4b5563 !important; /* Neutral dark grey */
+  padding: 8px 12px !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  border: none !important;
+  transition: all 0.2s ease !important;
+  white-space: nowrap;
+}
+.ios-nav-dropdown-wrapper button::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  margin-left: 4px;
+  margin-top: -4px;
+  display: inline-block;
+}
+
+
+.ios-nav-link:hover, 
+.ios-nav-links a:hover,
+.ios-nav-dropdown-wrapper button:hover {
+  color: #34C759 !important; /* Loggerhead Green */
+  background-color: rgba(52, 199, 89, 0.1) !important;
+}
+
+
+.ios-logout-btn {
+  background: transparent !important;
+  border: 1px solid rgba(255, 59, 48, 0.3) !important;
+  color: #ff3b30 !important;
+  font-weight: 600 !important;
+  padding: 6px 14px !important;
+  border-radius: 8px !important;
+  cursor: pointer;
+}
+
+.ios-logout-btn:hover {
+  background-color: #ff3b30 !important;
+  color: white !important;
+}
+
+
+/* Active Link Style */
+.ios-nav-link.active {
+  color: #34C759;
+  background-color: rgba(52, 199, 89, 0.05);
+}
+
+/* Mobile menu */
+.ios-menu-toggle {
+  display: none;
+  font-size: 26px;
+  background: none;
+  border: none;
+  color: #007aff;
+  cursor: pointer;
+}
+
+@media (max-width: 1024px) {
+  .ios-nav-links {
+    gap: 4px;
+  }
+  .ios-nav-link, .ios-nav-links a {
+    padding: 6px 8px !important;
+    font-size: 12px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .ios-menu-toggle {
+    display: block;
+  }
+
+  .ios-nav-links {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 10px;
+    margin-top: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  }
+
+  .ios-nav-links.visible {
+    display: flex;
+  }
+}
+
+/* Voice commands animation */
+@keyframes fadeInOut {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}

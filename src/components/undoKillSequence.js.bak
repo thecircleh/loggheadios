@@ -1,0 +1,102 @@
+export const undoKillSequence = ({
+  actionLog,
+  courtPlayers,
+  undoPlayerStats,
+  setPlayerStats,
+  currentMatchId
+}) => {
+  const updatedLog = [...actionLog];
+
+  // 1️⃣ Identify entries
+  const assistIdx = updatedLog.findIndex(entry =>
+    entry.action?.toLowerCase().includes("assist credited")
+  );
+
+  const attackTouchIdx = updatedLog.findIndex(entry =>
+    entry.action?.toLowerCase().includes("touched ball (attack)")
+  );
+
+  const setTouchEntry = [...updatedLog]
+    .reverse()
+    .find(entry =>
+      entry.action?.toLowerCase().includes("touched ball (set)")
+    );
+
+  // 2️⃣ Undo stats
+  if (assistIdx !== -1) {
+    const assistAction = updatedLog[assistIdx];
+    const assistMatch = assistAction.action.match(/^assist credited to (.+?) \(#(\d+)\)/i);
+    if (assistMatch) {
+      const [_, name, number] = assistMatch;
+      const player = courtPlayers.find(
+        p =>
+          p.name?.trim().toLowerCase() === name.trim().toLowerCase() &&
+          String(p.number) === number
+      );
+      if (player) {
+        console.log("↩️ Undoing assist stat for", player.name);
+        undoPlayerStats({
+          playerId: player._id,
+          playerName: player.name,
+          statKeys: ["assists"],
+          teamId: player.teamId,
+          setPlayerStats,
+          currentMatchId
+        });
+      }
+    }
+    updatedLog.splice(assistIdx, 1);
+  }
+
+  if (attackTouchIdx !== -1) {
+    const attackAction = updatedLog[attackTouchIdx];
+    const match = attackAction.action.match(/^(.+?) \(#(\d+)\) touched ball \(Attack\)/i);
+    if (match) {
+      const [_, name, number] = match;
+      const player = courtPlayers.find(
+        p =>
+          p.name?.trim().toLowerCase() === name.trim().toLowerCase() &&
+          String(p.number) === number
+      );
+      if (player) {
+        console.log("↩️ Undoing attack stat for", player.name);
+        undoPlayerStats({
+          playerId: player._id,
+          playerName: player.name,
+          statKeys: ["attacks"],
+          teamId: player.teamId,
+          setPlayerStats,
+          currentMatchId
+        });
+      }
+    }
+    updatedLog.splice(attackTouchIdx, 1);
+  }
+
+  // 3️⃣ Return updated log + setter touch (if available)
+  let setterTouch = null;
+  if (setTouchEntry) {
+    const match = setTouchEntry.action.match(/^(.+?) \(#(\d+)\) touched ball \(Set\)/i);
+    if (match) {
+      const [_, name, number] = match;
+      const player = courtPlayers.find(
+        p =>
+          p.name?.trim().toLowerCase() === name.trim().toLowerCase() &&
+          String(p.number) === number
+      );
+      if (player) {
+        const slotIndex = courtPlayers.findIndex(p => p._id === player._id);
+        setterTouch = {
+          slotIndex,
+          role: "Set",
+          side: "our"
+        };
+      }
+    }
+  }
+
+  return {
+    updatedLog,
+    setterTouch
+  };
+};

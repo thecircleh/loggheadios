@@ -1,0 +1,160 @@
+// Enhanced CollaborativeStatusBar.js with defensive deduplication
+import React from 'react';
+import { useCollaborative } from './CollaborativeProvider';
+
+const CollaborativeStatusBar = () => {
+  const { 
+    isConnected, 
+    activeSessions = [], // Default to empty array
+    collaborativeMode,
+    notifications = [], // Default to empty array
+    removeNotification
+  } = useCollaborative();
+
+  // Fix: Add the missing notification click handler
+  
+
+  
+  
+  const handleNotificationClick = (notificationId) => {
+    removeNotification(notificationId);
+  };
+
+  if (!collaborativeMode) return null;
+
+  // ✅ FIXED: Defensive deduplication at render time as backup
+  const uniqueSessions = React.useMemo(() => {
+
+  if (!Array.isArray(activeSessions)) return [];
+    const byUser = new Map();
+
+    for (const s of activeSessions) {
+      if (!s?.userId) continue;
+      const prev = byUser.get(s.userId);
+      if (!prev) {
+        byUser.set(s.userId, s);
+        continue;
+      }
+      // Prefer an online session over offline; otherwise keep the first
+      if (!prev.isOnline && s.isOnline) {
+        byUser.set(s.userId, s);
+      }
+    }
+    return Array.from(byUser.values());
+   }, [activeSessions]);
+
+  const onlineUsers = uniqueSessions.filter(s => s && s.isOnline);
+
+  // ✅ FIXED: Defensive notification deduplication
+  const uniqueNotifications = React.useMemo(() => {
+    if (!Array.isArray(notifications)) {
+      console.warn('notifications is not an array:', notifications);
+      return [];
+    }
+
+    const seen = new Set();
+    return notifications.filter(notification => {
+      if (!notification?.id) {
+        console.warn('Invalid notification data:', notification);
+        return false;
+      }
+      
+      if (seen.has(notification.id)) {
+        console.warn('Duplicate notification filtered:', notification);
+        return false;
+      }
+      
+      seen.add(notification.id);
+      return true;
+    });
+  }, [notifications]);
+  
+  const getStatusCounts = React.useMemo(() => {
+  const matchParticipants = uniqueSessions.filter(s => s && s.isOnline);
+  // You might also want to fetch global online count from an API endpoint
+  
+  return {
+    inThisMatch: matchParticipants.length,
+    // globalOnline: could come from a separate API call if needed
+  };
+}, [uniqueSessions]);
+
+ return (
+  <div
+    style={{
+      position: 'fixed',
+      top: '50px',
+      left: '10px',
+      zIndex: 9999,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      gap: '8px',
+      pointerEvents: 'none', // ✅ prevents shifting and blocking clicks
+    }}
+  >
+    {/* Connection Status */}
+    <div
+      style={{
+        pointerEvents: 'auto',
+        padding: '6px 12px',
+        borderRadius: '20px',
+        fontSize: '12px',
+        fontWeight: '600',
+        backgroundColor: isConnected ? '#28a745' : '#dc3545',
+        color: '#fff',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+      }}
+    >
+      <div
+        style={{
+          width: '8px',
+          height: '8px',
+          borderRadius: '50%',
+          backgroundColor: isConnected ? '#90ee90' : '#ffcccb',
+        }}
+      />
+      {isConnected ? (
+        <>
+          <span>🔵 {getStatusCounts.inThisMatch} in match</span>
+        </>
+      ) : (
+        'Disconnected'
+      )}
+    </div>
+
+    {/* Notifications */}
+    <div style={{ pointerEvents: 'auto', display: 'grid', gap: '6px' }}>
+      {uniqueNotifications.map((n, i) => (
+        <div
+          key={`notification-${n.id}-${i}`}
+          style={{
+            padding: '8px 12px',
+            borderRadius: '8px',
+            fontSize: '12px',
+            maxWidth: '250px',
+            backgroundColor:
+              n.type === 'error'
+                ? '#dc3545'
+                : n.type === 'warning'
+                ? '#ffc107'
+                : n.type === 'success'
+                ? '#28a745'
+                : '#007AFF',
+            color: '#fff',
+            cursor: 'pointer',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+          }}
+          onClick={() => handleNotificationClick(n.id)}
+        >
+          {n.message}
+        </div>
+      ))}
+    </div>
+  </div>
+);
+};
+
+export { CollaborativeStatusBar };

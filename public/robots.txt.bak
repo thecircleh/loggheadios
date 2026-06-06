@@ -1,0 +1,34 @@
+User-agent: *
+
+# Allow important SEO content (prerendered pages)
+Allow: /how-to
+Allow: /faq
+Allow: /blogs
+Allow: /about
+Allow: /contact
+Allow: /privacy
+Allow: /terms-of-service
+
+# Block user-specific and admin areas
+Disallow: /
+Disallow: /profile
+Disallow: /dashboard
+Disallow: /settings
+Disallow: /match
+Disallow: /stats
+Disallow: /private/
+Disallow: /admin/
+Disallow: /env
+Disallow: /beta-admin
+Disallow: /ads-preview
+
+# Allow AdSense to crawl for ads
+User-agent: Mediapartners-Google
+Disallow: /profile
+Disallow: /dashboard
+Disallow: /settings
+Disallow: /match
+Disallow: /stats
+
+# Sitemap location
+Sitemap: https://loggerhead.app/sitemap.xml

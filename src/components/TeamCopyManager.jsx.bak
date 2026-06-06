@@ -1,0 +1,1087 @@
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+
+const getApiUrl = () => {
+  if (window.location.hostname.startsWith("10.")) {
+    return `http://${window.location.hostname}:3000`;
+  }
+  return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
+};
+
+const API_URL = getApiUrl();
+
+/**
+ * TeamCopyManager Component
+ * Streamlined UI for:
+ * 1. Copying players from one team to another (auto-links)
+ * 2. Searching for similar players across teams
+ * 3. Linking players for career stats tracking
+ * 4. Supporting external search triggers from player card link buttons
+ */
+const TeamCopyManager = ({ 
+  userTeams, 
+  archivedTeams = [],
+  selectedTeam, 
+  token,
+  onTeamCopied,
+  refreshBenchPlayers,
+  // NEW: Support external search trigger from player card link buttons
+  initialSearchName = '',
+  externalShowSearch = false,
+  onCloseExternalSearch,
+  // NEW: Support inline button mode for grid layouts
+  inlineMode = false
+}) => {
+  // Copy team state
+  const [showCopyDialog, setShowCopyDialog] = useState(false);
+  const [sourceTeam, setSourceTeam] = useState('');
+  const [targetTeam, setTargetTeam] = useState('');
+  const [copying, setCopying] = useState(false);
+  const [copyResult, setCopyResult] = useState(null);
+  
+  // Similar player search state
+  const [showSearchDialog, setShowSearchDialog] = useState(false);
+  const [searchName, setSearchName] = useState('');
+  const [similarResults, setSimilarResults] = useState(null);
+  const [searching, setSearching] = useState(false);
+  const [existingLinks, setExistingLinks] = useState(null);
+  const [player1, setPlayer1] = useState(null); // The searched player in current team
+  
+  // Linking state
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState([]);
+  const [linking, setLinking] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
+
+  // Handle external search trigger from player card link button
+  useEffect(() => {
+    if (externalShowSearch && initialSearchName) {
+      setSearchName(initialSearchName);
+      setShowSearchDialog(true);
+      // Automatically trigger search
+      handleSearchWithName(initialSearchName);
+    }
+  }, [externalShowSearch, initialSearchName]);
+
+  // Reset when closing dialogs
+  useEffect(() => {
+    if (!showCopyDialog) {
+      setCopyResult(null);
+      setSourceTeam('');
+      setTargetTeam('');
+    }
+  }, [showCopyDialog]);
+
+  useEffect(() => {
+    if (!showSearchDialog) {
+      setSimilarResults(null);
+      setSelectedPlayerIds([]);
+      setExistingLinks(null);
+      setPlayer1(null);
+      // Notify parent that search dialog closed (for external triggers)
+      if (onCloseExternalSearch) {
+        onCloseExternalSearch();
+      }
+    }
+  }, [showSearchDialog, onCloseExternalSearch]);
+
+  const handleCopyTeam = async () => {
+    if (!sourceTeam || !targetTeam) {
+      alert('Please select both source and target teams');
+      return;
+    }
+
+    if (sourceTeam === targetTeam) {
+      alert('Source and target teams must be different');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Copy all players from "${sourceTeam}" to "${targetTeam}"?\n\n` +
+      `Players will be automatically linked to track career stats.`
+    );
+
+    if (!confirmed) return;
+
+    setCopying(true);
+    setCopyResult(null);
+
+    try {
+      const response = await axios.post(
+        `${API_URL}/api/players/copy-from-team`,
+        { sourceTeam, targetTeam },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      setCopyResult(response.data);
+      
+      // Refresh if the current team is the target
+      if (selectedTeam === targetTeam && refreshBenchPlayers) {
+        await refreshBenchPlayers();
+      }
+      
+      if (onTeamCopied) {
+        onTeamCopied(targetTeam);
+      }
+
+    } catch (error) {
+      console.error('Error copying team:', error);
+      setCopyResult({
+        error: error.response?.data?.error || 'Failed to copy team',
+        details: error.response?.data
+      });
+    } finally {
+      setCopying(false);
+    }
+  };
+
+  const handleSearchWithName = async (nameToSearch) => {
+    if (!nameToSearch || nameToSearch.trim().length < 2) {
+      alert('Please enter at least 2 characters to search');
+      return;
+    }
+
+    setSearching(true);
+    setSimilarResults(null);
+    setSelectedPlayerIds([]);
+    setExistingLinks(null);
+
+    try {
+      const allUserTeams = [...userTeams, ...archivedTeams];
+      
+      console.log(`🔍 Searching across ${allUserTeams.length} teams for: "${nameToSearch}"`);
+
+      // Search for similar players
+      const searchResponse = await axios.get(
+        `${API_URL}/api/players/search-similar`,
+        { 
+          params: { 
+            name: nameToSearch, 
+            userTeams: JSON.stringify(allUserTeams)
+          },
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+
+      setSimilarResults(searchResponse.data);
+
+      // Find player 1 - the player in current team matching the search name
+      // Check both linked groups and unlinked players
+      let currentTeamPlayer = null;
+      
+      // Check unlinked players first
+      if (searchResponse.data.unlinkedPlayers) {
+        currentTeamPlayer = searchResponse.data.unlinkedPlayers.find(p => p.team === selectedTeam);
+      }
+      
+      // If not found, check linked groups
+      if (!currentTeamPlayer && searchResponse.data.linkedGroups) {
+        for (const group of searchResponse.data.linkedGroups) {
+          currentTeamPlayer = group.players.find(p => p.team === selectedTeam);
+          if (currentTeamPlayer) break;
+        }
+      }
+      
+      setPlayer1(currentTeamPlayer);
+      console.log('🎯 Player 1 (current team):', currentTeamPlayer?.name, '#' + currentTeamPlayer?.number, '-', currentTeamPlayer?.team);
+
+      // NOTE: existing-links endpoint not implemented yet - commented out to reduce 404 errors
+      /*
+      // Also try to fetch existing links for any player matching the search
+      // This will show players already linked even if they don't have similar names
+      try {
+        const linksResponse = await axios.get(
+          `${API_URL}/api/players/existing-links`,
+          {
+            params: {
+              name: nameToSearch,
+              userTeams: JSON.stringify(allUserTeams)
+            },
+            headers: { Authorization: `Bearer ${token}` }
+          }
+        );
+        
+        if (linksResponse.data && linksResponse.data.players && linksResponse.data.players.length > 0) {
+          setExistingLinks(linksResponse.data);
+        }
+      } catch (linkError) {
+        // If the endpoint doesn't exist or fails, just continue without existing links
+        console.log('Could not fetch existing links:', linkError);
+      }
+      */
+
+    } catch (error) {
+      console.error('Error searching:', error);
+      alert(error.response?.data?.error || 'Failed to search for players');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleSearch = () => {
+    handleSearchWithName(searchName);
+  };
+
+  const togglePlayerSelection = (playerId) => {
+    setSelectedPlayerIds(prev => {
+      if (prev.includes(playerId)) {
+        return prev.filter(id => id !== playerId);
+      } else {
+        return [...prev, playerId];
+      }
+    });
+  };
+
+  const handleLinkToPlayer1 = async () => {
+    if (!player1) {
+      alert('Could not find player in current team. Please try searching again.');
+      return;
+    }
+
+    // Get only unlinked players that are selected (excluding player1)
+    const selectedUnlinkedPlayers = selectedPlayerIds.filter(id => 
+      id !== player1._id && similarResults.unlinkedPlayers.some(p => p._id === id)
+    );
+
+    if (selectedUnlinkedPlayers.length === 0) {
+      alert('Please select at least 1 unlinked player to link');
+      return;
+    }
+
+    const playerText = selectedUnlinkedPlayers.length === 1 ? 'player' : `${selectedUnlinkedPlayers.length} players`;
+    const confirmed = window.confirm(
+      `Link ${playerText} to ${player1.name} #${player1.number} (${player1.team})?\n\n` +
+      `This will connect all players for career stats tracking.`
+    );
+
+    if (!confirmed) return;
+
+    setLinking(true);
+
+    try {
+      // Include player1 and the selected unlinked players
+      const allPlayerIds = [player1._id, ...selectedUnlinkedPlayers];
+      
+      console.log('🔗 Linking players to player1:', allPlayerIds);
+
+      const response = await axios.post(
+        `${API_URL}/api/players/link`,
+        { playerIds: allPlayerIds },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      alert(
+        `✅ Successfully linked ${selectedUnlinkedPlayers.length} player${selectedUnlinkedPlayers.length === 1 ? '' : 's'} to ${player1.name}!\n\n` +
+        `Total in network: ${response.data.totalInNetwork} (including ${player1.name})\n\n` +
+        `Career stats will now be tracked across all linked teams.`
+      );
+
+      // Refresh search to show updated links
+      await handleSearchWithName(searchName);
+      setSelectedPlayerIds([]);
+
+    } catch (error) {
+      console.error('Error linking players:', error);
+      alert(error.response?.data?.error || 'Failed to link players');
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  const handleJoinGroup = async (group) => {
+    if (!player1) {
+      alert('Could not find player in current team. Please try searching again.');
+      return;
+    }
+
+    // Get selected unlinked players (excluding player1)
+    const selectedUnlinkedPlayers = selectedPlayerIds.filter(id => 
+      id !== player1._id && similarResults.unlinkedPlayers?.some(p => p._id === id)
+    );
+
+    // Check if player1 is already in a group
+    const player1Group = similarResults.linkedGroups?.find(g => 
+      g.players.some(p => p._id === player1._id)
+    );
+
+    if (player1Group) {
+      alert(`${player1.name} is already in a linked group. You can only link unlinked players.`);
+      return;
+    }
+
+    // Pick any player from the target group as the reference
+    const groupPlayer = group.players[0];
+
+    const totalPlayers = 1 + selectedUnlinkedPlayers.length; // player1 + selected
+    const playerText = totalPlayers === 1 ? `${player1.name}` : `${player1.name} and ${selectedUnlinkedPlayers.length} other player${selectedUnlinkedPlayers.length === 1 ? '' : 's'}`;
+    
+    const confirmed = window.confirm(
+      `Add ${playerText} to ${groupPlayer.name}'s linked group?\n\n` +
+      `This group currently has ${group.players.length} players.\n\n` +
+      `All players will be connected for career stats tracking.`
+    );
+
+    if (!confirmed) return;
+
+    setLinking(true);
+
+    try {
+      // Include one player from the group, player1, and all selected unlinked players
+      const allPlayerIds = [groupPlayer._id, player1._id, ...selectedUnlinkedPlayers];
+      
+      console.log('🔗 Adding players to existing group:', allPlayerIds);
+
+      const response = await axios.post(
+        `${API_URL}/api/players/link`,
+        { playerIds: allPlayerIds },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const addedCount = 1 + selectedUnlinkedPlayers.length; // player1 + selected unlinked
+      const addedText = addedCount === 1 ? player1.name : `${player1.name} and ${selectedUnlinkedPlayers.length} other${selectedUnlinkedPlayers.length === 1 ? '' : 's'}`;
+      
+      alert(
+        `✅ Successfully added ${addedText} to the linked group!\n\n` +
+        `Total in network: ${response.data.totalInNetwork}\n\n` +
+        `Career stats will be tracked across all linked teams.`
+      );
+
+      // Refresh search to show updated links
+      await handleSearchWithName(searchName);
+      setSelectedPlayerIds([]);
+
+    } catch (error) {
+      console.error('Error linking players:', error);
+      alert(error.response?.data?.error || 'Failed to link players');
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  const handleUnlinkPlayers = async (playersToUnlink) => {
+    if (playersToUnlink.length === 0) {
+      alert('Please select at least 1 player to unlink');
+      return;
+    }
+
+    // Get the selected players' names for confirmation
+    let selectedPlayerNames = [];
+    if (similarResults?.linkedGroups) {
+      for (const group of similarResults.linkedGroups) {
+        for (const player of group.players) {
+          if (playersToUnlink.includes(player._id)) {
+            selectedPlayerNames.push(`${player.name} #${player.number} (${player.team})`);
+          }
+        }
+      }
+    }
+
+    const playerText = playersToUnlink.length === 1 ? 'this player' : `these ${playersToUnlink.length} players`;
+    const confirmed = window.confirm(
+      `Unlink ${playerText}?\n\n` +
+      `${selectedPlayerNames.join('\n')}\n\n` +
+      `These players will no longer be connected for career stats tracking.`
+    );
+
+    if (!confirmed) return;
+
+    setUnlinking(true);
+
+    try {
+      console.log('🔓 Unlinking players:', playersToUnlink);
+
+      const response = await axios.post(
+        `${API_URL}/api/players/unlink`,
+        { playerIds: playersToUnlink },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      alert(
+        `✅ Successfully unlinked ${playersToUnlink.length} player${playersToUnlink.length === 1 ? '' : 's'}!\n\n` +
+        `Career stats will no longer be tracked together.`
+      );
+
+      // Refresh search to show updated links
+      await handleSearchWithName(searchName);
+      setSelectedPlayerIds([]);
+
+    } catch (error) {
+      console.error('Error unlinking players:', error);
+      alert(error.response?.data?.error || 'Failed to unlink players');
+    } finally {
+      setUnlinking(false);
+    }
+  };
+
+  // Inline mode: render just the button for grid layouts
+  if (inlineMode) {
+    return (
+      <>
+        <button
+          onClick={() => setShowCopyDialog(true)}
+          style={{
+            ...styles.primaryButton,
+            margin: 0,
+            height: '100%',
+            minHeight: '48px'
+          }}
+        >
+          Copy Roster
+        </button>
+
+        {/* Modals are rendered outside - they work the same way */}
+        {showCopyDialog && renderCopyDialog()}
+        {showSearchDialog && renderSearchDialog()}
+      </>
+    );
+  }
+
+  // Normal mode: render full UI with container
+  return (
+    <div style={styles.container}>
+      {/* Copy Team Section */}
+      <div style={styles.section}>
+        <h3 style={styles.sectionTitle}>📋 Team Management</h3>
+        <button
+          onClick={() => setShowCopyDialog(true)}
+          style={styles.primaryButton}
+        >
+          Copy Team Roster
+        </button>
+        <p style={styles.helpText}>
+          Copy players to a new team with automatic linking for career stats maintenance.  Names and Numbers will carry over.
+        </p>
+      </div>
+
+
+      {/* Copy Team Dialog */}
+      {showCopyDialog && renderCopyDialog()}
+
+      {/* Search & Link Dialog */}
+      {showSearchDialog && renderSearchDialog()}
+    </div>
+  );
+
+  // Helper function to render copy dialog
+  function renderCopyDialog() {
+    return (
+        <div style={styles.modalOverlay} onClick={() => setShowCopyDialog(false)}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <h2 style={styles.modalTitle}>Copy Team Roster</h2>
+            
+            <div style={styles.formField}>
+              <label style={styles.label}>Source Team (copy from):</label>
+              <select
+                value={sourceTeam}
+                onChange={(e) => setSourceTeam(e.target.value)}
+                style={styles.select}
+              >
+                <option value="">Select source team...</option>
+                {userTeams.map(team => (
+                  <option key={team} value={team}>{team}</option>
+                ))}
+                {archivedTeams.length > 0 && (
+                  <>
+                    <option disabled>──────────</option>
+                    <option disabled>Archived Teams:</option>
+                    {archivedTeams.map(team => (
+                      <option key={team} value={team}>📦 {team}</option>
+                    ))}
+                  </>
+                )}
+              </select>
+            </div>
+
+            <div style={styles.formField}>
+              <label style={styles.label}>Target Team (copy to):</label>
+              <select
+                value={targetTeam}
+                onChange={(e) => setTargetTeam(e.target.value)}
+                style={styles.select}
+              >
+                <option value="">Select target team...</option>
+                {userTeams.map(team => (
+                  <option key={team} value={team}>{team}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.infoBox}>
+              <p style={styles.infoText}>
+                ℹ️ Players will be automatically linked for career stats tracking
+              </p>
+            </div>
+
+            {copyResult && (
+              <>
+                {copyResult.error ? (
+                  <div style={styles.errorBox}>
+                    <p style={{ ...styles.resultTitle, color: '#C62828' }}>❌ Error</p>
+                    <p style={{ margin: '4px 0', color: '#C62828' }}>{copyResult.error}</p>
+                  </div>
+                ) : (
+                  <div style={styles.successBox}>
+                    <p style={{ ...styles.resultTitle, color: '#2E7D32' }}>✅ Success!</p>
+                    <p style={{ margin: '4px 0', color: '#2E7D32' }}>
+                      Copied {copyResult.playersCreated} players
+                    </p>
+                    {copyResult.linksCreated > 0 && (
+                      <p style={{ margin: '4px 0', color: '#2E7D32' }}>
+                        Created {copyResult.linksCreated} player links
+                      </p>
+                    )}
+                    {copyResult.skipped > 0 && (
+                      <p style={{ margin: '4px 0', color: '#F57C00' }}>
+                        ⚠️ Skipped {copyResult.skipped} duplicate players
+                      </p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            <div style={styles.modalActions}>
+              <button
+                onClick={() => setShowCopyDialog(false)}
+                style={styles.cancelButton}
+              >
+                Close
+              </button>
+              <button
+                onClick={handleCopyTeam}
+                style={{ ...styles.primaryButton, width: 'auto', padding: '12px 24px', marginBottom: 0 }}
+                disabled={copying || !sourceTeam || !targetTeam}
+              >
+                {copying ? 'Copying...' : 'Copy Team'}
+              </button>
+            </div>
+          </div>
+        </div>
+    );
+  }
+
+  // Helper function to render search dialog
+  function renderSearchDialog() {
+    return (
+        <div style={styles.modalOverlay} onClick={() => setShowSearchDialog(false)}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <h2 style={styles.modalTitle}>Search & Link Players</h2>
+            
+            <div style={styles.formField}>
+              <label style={styles.label}>Player Name:</label>
+              <input
+                type="text"
+                value={searchName}
+                onChange={(e) => setSearchName(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                placeholder="Enter player name..."
+                style={styles.input}
+              />
+            </div>
+
+            <button
+              onClick={handleSearch}
+              style={styles.searchButton}
+              disabled={searching || !searchName}
+            >
+              {searching ? 'Searching...' : '🔍 Search Players'}
+            </button>
+
+            {similarResults && (
+              <div style={styles.resultsContainer}>
+                {/* Show who we're linking */}
+                {player1 && (
+                  <div style={{...styles.infoBox, backgroundColor: '#E3F2FD', marginBottom: '16px'}}>
+                    <p style={{...styles.infoText, fontWeight: '600', marginBottom: '4px'}}>
+                      🎯 Linking: {player1.name} #{player1.number}
+                    </p>
+                    <p style={{...styles.infoText, fontSize: '13px', margin: 0}}>
+                      {player1.team} • {player1.position || 'No position'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Existing Linked Groups */}
+                {similarResults.linkedGroups && similarResults.linkedGroups.length > 0 && (
+                  <div style={styles.linkedSection}>
+                    <div style={styles.resultsHeader}>
+                      <span>🔗 Existing Linked Groups ({similarResults.linkedGroups.length})</span>
+                    </div>
+                    <div style={{ marginBottom: '12px', fontSize: '13px', color: '#8E8E93', fontStyle: 'italic' }}>
+                      These players are already linked together for career stats.
+                    </div>
+                    
+                    {similarResults.linkedGroups.map((group, idx) => {
+                      // Check if player1 is in this group
+                      const player1InGroup = player1 && group.players.some(p => p._id === player1._id);
+                      
+                      // Filter out player1 from display in this group
+                      const displayPlayers = group.players.filter(p => !player1 || p._id !== player1._id);
+                      
+                      // DEBUG: Log the counts
+                      console.log(`📊 Group ${idx + 1}:`, {
+                        totalInGroup: group.players.length,
+                        player1InGroup,
+                        player1Id: player1?._id,
+                        displayPlayersCount: displayPlayers.length,
+                        allPlayerIds: group.players.map(p => ({ id: p._id, name: p.name, team: p.team })),
+                        displayPlayerIds: displayPlayers.map(p => ({ id: p._id, name: p.name, team: p.team }))
+                      });
+                      
+                      return (
+                        <div key={idx} style={styles.groupBox}>
+                          <div style={styles.groupTitle}>
+                            Group {idx + 1} • {displayPlayers.length} Player{displayPlayers.length === 1 ? '' : 's'}
+                            {player1InGroup && (
+                              <span style={{ marginLeft: '8px', color: '#1976D2', fontSize: '13px' }}>
+                                (+{player1.name} from {player1.team})
+                              </span>
+                            )}
+                          </div>
+                          
+                          {displayPlayers.map(player => (
+                            <div key={player._id} style={styles.playerItem}>
+                              <div style={styles.playerInfo}>
+                                <div style={styles.playerName}>
+                                  {player.name} #{player.number}
+                                </div>
+                                <div style={styles.playerTeam}>{player.team}</div>
+                                {player.position && (
+                                  <div style={styles.playerPosition}>{player.position}</div>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => handleUnlinkPlayers([player._id])}
+                                style={styles.unlinkButton}
+                                disabled={unlinking}
+                              >
+                                🔓 Unlink
+                              </button>
+                            </div>
+                          ))}
+                          {player1 && player1InGroup && (
+  <button
+    onClick={() => handleUnlinkPlayers([player1._id])}
+        style={{
+      ...styles.joinGroupButton,        // <– match existing button style
+      backgroundColor: '#FF3B30',       // iOS red (same tone you already use)
+      color: 'white'
+    }}
+    disabled={unlinking}
+  >
+    {unlinking ? 'Leaving...' : `🚪 Remove ${player1.name} from this group`}
+  </button>
+)}
+
+                          {/* Join Group Button - only show if player1 exists and is NOT in this group */}
+                          {player1 && !player1InGroup && (
+                            <button
+                              onClick={() => handleJoinGroup(group)}
+                              style={styles.joinGroupButton}
+                              disabled={linking}
+                            >
+                              {linking 
+                                ? 'Adding...' 
+                                : `➕ Add unlinked ${player1.name} to This Group`
+                              }
+                              {selectedPlayerIds.length > 0 && (
+                                <span style={{ fontSize: '13px', fontWeight: 'normal', marginLeft: '4px' }}>
+                                  (+{selectedPlayerIds.filter(id => similarResults.unlinkedPlayers?.some(p => p._id === id) && id !== player1._id).length} selected)
+                                </span>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Unlinked Players */}
+                {similarResults.unlinkedPlayers && similarResults.unlinkedPlayers.length > 0 && (() => {
+                  // Filter out player1 from unlinked players display
+                  const unlinkedPlayersToShow = similarResults.unlinkedPlayers.filter(p => 
+                    !player1 || p._id !== player1._id
+                  );
+                  
+                  if (unlinkedPlayersToShow.length === 0) {
+                    return null;
+                  }
+                  
+                  return (
+                    <div style={styles.unlinkedSection}>
+                      <div style={styles.resultsHeader}>
+                        <span>📋 Unlinked Players ({unlinkedPlayersToShow.length})</span>
+                        {selectedPlayerIds.length > 0 && (
+                          <span style={styles.selectedCount}>
+                            {selectedPlayerIds.filter(id => id !== player1?._id).length} selected
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ marginBottom: '12px', fontSize: '13px', color: '#8E8E93', fontStyle: 'italic' }}>
+                        {player1 ? (
+                          <>
+                            Select unlinked players to link with <strong>{player1.name} #{player1.number}</strong> ({player1.team})
+                          </>
+                        ) : (
+                          <>Select players to link together</>
+                        )}
+                      </div>
+                      <div>
+                        {unlinkedPlayersToShow.map(player => {
+                          const isSelected = selectedPlayerIds.includes(player._id);
+                          
+                          return (
+                            <div
+                              key={player._id}
+                              style={{
+                                ...styles.playerItem,
+                                ...(isSelected ? styles.selectedPlayer : {}),
+                                cursor: 'pointer'
+                              }}
+                              onClick={() => togglePlayerSelection(player._id)}
+                            >
+                              <div style={styles.playerInfo}>
+                                <div style={styles.playerName}>
+                                  {player.name} #{player.number}
+                                </div>
+                                <div style={styles.playerTeam}>{player.team}</div>
+                                {player.position && (
+                                  <div style={styles.playerPosition}>{player.position}</div>
+                                )}
+                              </div>
+                              <div style={styles.checkbox}>
+                                {isSelected ? '✓' : ''}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Link to Player1 Button */}
+                      {player1 && selectedPlayerIds.filter(id => id !== player1._id).length > 0 && (
+                        <button
+                          onClick={handleLinkToPlayer1}
+                          style={styles.linkButton}
+                          disabled={linking}
+                        >
+                          {linking 
+                            ? 'Linking...' 
+                            : `🔗 Link ${selectedPlayerIds.filter(id => id !== player1._id).length} Player${selectedPlayerIds.filter(id => id !== player1._id).length === 1 ? '' : 's'} to ${player1.name}`
+                          }
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* No Results */}
+                {(!similarResults.linkedGroups || similarResults.linkedGroups.length === 0) &&
+                 (!similarResults.unlinkedPlayers || similarResults.unlinkedPlayers.filter(p => !player1 || p._id !== player1._id).length === 0) && (
+                  <div style={styles.noResults}>
+                    No similar players found
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={styles.modalActions}>
+              <button
+                onClick={() => setShowSearchDialog(false)}
+                style={styles.cancelButton}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+    );
+  }
+};
+
+const styles = {
+  container: {
+    padding: '16px',
+    backgroundColor: '#F9F9F9',
+    borderRadius: '12px',
+    marginBottom: '16px',
+  },
+  section: {
+    marginBottom: '20px',
+  },
+  sectionTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    marginBottom: '12px',
+    color: '#1C1C1E',
+  },
+  subHeader: {
+    fontSize: '16px',
+    fontWeight: '600',
+    marginBottom: '12px',
+    color: '#1C1C1E',
+  },
+  primaryButton: {
+    width: '100%',
+    padding: '14px',
+    fontSize: '16px',
+    backgroundColor: '#007AFF',
+    color: 'white',
+    border: 'none',
+    borderRadius: '12px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    marginBottom: '8px',
+  },
+  secondaryButton: {
+    width: '100%',
+    padding: '14px',
+    fontSize: '16px',
+    backgroundColor: '#5856D6',
+    color: 'white',
+    border: 'none',
+    borderRadius: '12px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    marginBottom: '8px',
+  },
+  searchButton: {
+    width: '100%',
+    padding: '12px',
+    fontSize: '16px',
+    backgroundColor: '#34C759',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    marginTop: '12px',
+  },
+  linkButton: {
+    width: '100%',
+    padding: '14px',
+    fontSize: '16px',
+    backgroundColor: '#FF9500',
+    color: 'white',
+    border: 'none',
+    borderRadius: '12px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    marginTop: '16px',
+  },
+  joinGroupButton: {
+    width: '100%',
+    padding: '12px',
+    fontSize: '15px',
+    backgroundColor: '#34C759',
+    color: 'white',
+    border: 'none',
+    borderRadius: '8px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    marginTop: '12px',
+  },
+  unlinkButton: {
+    padding: '8px 16px',
+    fontSize: '13px',
+    backgroundColor: '#DC3545',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
+  helpText: {
+    fontSize: '13px',
+    color: '#8E8E93',
+    fontStyle: 'italic',
+    marginTop: '4px',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10000,
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: '16px',
+    padding: '24px',
+    maxWidth: '600px',
+    width: '90%',
+    maxHeight: '80vh',
+    overflowY: 'auto',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+  },
+  modalTitle: {
+    fontSize: '22px',
+    fontWeight: '600',
+    marginBottom: '20px',
+    color: '#1C1C1E',
+  },
+  formField: {
+    marginBottom: '16px',
+  },
+  label: {
+    display: 'block',
+    fontSize: '14px',
+    fontWeight: '600',
+    marginBottom: '6px',
+    color: '#1C1C1E',
+  },
+  select: {
+    width: '100%',
+    padding: '12px',
+    fontSize: '16px',
+    border: '1px solid #D1D1D6',
+    borderRadius: '8px',
+    backgroundColor: '#FAFAFA',
+  },
+  input: {
+    width: '100%',
+    padding: '12px',
+    fontSize: '16px',
+    border: '1px solid #D1D1D6',
+    borderRadius: '8px',
+    backgroundColor: '#FAFAFA',
+  },
+  infoBox: {
+    backgroundColor: '#E3F2FD',
+    padding: '12px',
+    borderRadius: '8px',
+    marginBottom: '16px',
+  },
+  infoText: {
+    fontSize: '14px',
+    color: '#1976D2',
+    margin: 0,
+  },
+  successBox: {
+    backgroundColor: '#E8F5E9',
+    padding: '12px',
+    borderRadius: '8px',
+    marginTop: '16px',
+  },
+  errorBox: {
+    backgroundColor: '#FFEBEE',
+    padding: '12px',
+    borderRadius: '8px',
+    marginTop: '16px',
+  },
+  resultTitle: {
+    fontSize: '16px',
+    fontWeight: '600',
+    marginBottom: '8px',
+  },
+  modalActions: {
+    display: 'flex',
+    gap: '12px',
+    marginTop: '24px',
+    justifyContent: 'flex-end',
+  },
+  cancelButton: {
+    padding: '12px 24px',
+    backgroundColor: '#E5E5EA',
+    border: 'none',
+    borderRadius: '8px',
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#1C1C1E',
+    cursor: 'pointer',
+  },
+  resultsContainer: {
+    marginTop: '20px',
+  },
+  resultsHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    fontSize: '16px',
+    fontWeight: '600',
+    marginBottom: '16px',
+    color: '#1C1C1E',
+  },
+  selectedCount: {
+    fontSize: '14px',
+    color: '#007AFF',
+    fontWeight: '600',
+  },
+  noResults: {
+    textAlign: 'center',
+    color: '#8E8E93',
+    fontStyle: 'italic',
+    padding: '20px',
+  },
+  linkedSection: {
+    marginBottom: '20px',
+  },
+  unlinkedSection: {
+    marginTop: '20px',
+  },
+  groupBox: {
+    backgroundColor: '#E8F5E9',
+    padding: '12px',
+    borderRadius: '8px',
+    marginBottom: '12px',
+  },
+  groupTitle: {
+    fontSize: '14px',
+    fontWeight: '600',
+    marginBottom: '8px',
+    color: '#2E7D32',
+  },
+  playerItem: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '12px',
+    backgroundColor: 'white',
+    borderRadius: '8px',
+    marginBottom: '8px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+  },
+  selectedPlayer: {
+    backgroundColor: '#E3F2FD',
+    boxShadow: '0 2px 8px rgba(0,122,255,0.3)',
+  },
+  playerInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+  playerName: {
+    fontSize: '15px',
+    fontWeight: '600',
+    color: '#1C1C1E',
+  },
+  playerTeam: {
+    fontSize: '13px',
+    color: '#007AFF',
+    fontWeight: '500',
+  },
+  playerPosition: {
+    fontSize: '13px',
+    color: '#8E8E93',
+  },
+  checkbox: {
+    width: '24px',
+    height: '24px',
+    borderRadius: '6px',
+    border: '2px solid #007AFF',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '18px',
+    color: '#007AFF',
+    fontWeight: 'bold',
+  },
+};
+
+export default TeamCopyManager;

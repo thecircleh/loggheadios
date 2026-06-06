@@ -1,0 +1,122 @@
+import React, { useEffect, useState, useRef } from 'react';
+
+const houseAds = [
+  "/ads/loggerhead-banner.png",
+  "/ads/coaches-mode.png",
+  "/ads/mobile-tips.png",
+  "/ads/how-to.png",
+];
+
+const HouseAdOverlay = ({ ad }) => (
+  <img
+    src={ad}
+    alt="Loggerhead House Ad"
+    style={{
+      position: "absolute",
+      top: 0,
+      left: 0,
+      width: "300px",
+      height: "100px",
+      objectFit: "cover",
+      borderRadius: "12px",
+      boxShadow: "0 4px 8px rgba(0,0,0,0.1)",
+      zIndex: 1,
+    }}
+  />
+);
+
+const AdCourtBottom = () => {
+  const adRef = useRef(null);
+  const alreadyPushedRef = useRef(false);
+  const [showFallback, setShowFallback] = useState(false);
+  const [houseAdIndex, setHouseAdIndex] = useState(Math.floor(Math.random() * houseAds.length));
+
+  // Push AdSense once
+  useEffect(() => {
+    console.log("[AdCourtBottom] useEffect: attempt AdSense push");
+    if (!window.adsbygoogle) {
+      console.warn("[AdCourtBottom] adsbygoogle not found on window.");
+      setShowFallback(true);
+      return;
+    }
+
+    if (!adRef.current) {
+      console.warn("[AdCourtBottom] adRef.current is null.");
+      setShowFallback(true);
+      return;
+    }
+
+    if (alreadyPushedRef.current) {
+      console.warn("[AdCourtBottom] AdSense already pushed once, skipping.");
+      return;
+    }
+
+    try {
+      
+      (window.adsbygoogle = window.adsbygoogle || []).push({});
+      alreadyPushedRef.current = true;
+    } catch (e) {
+      
+      setShowFallback(true);
+    }
+  }, []);
+
+  // Check ad status every 90s
+
+useEffect(() => {
+  const checkAdStatus = () => {
+    const el = adRef.current;
+    const status = el?.getAttribute("data-adsbygoogle-status");
+    const width = el?.offsetWidth || 0;
+    const height = el?.offsetHeight || 0;
+
+
+	
+	const adFailed = true; 
+
+  //  const adFailed =
+  //    !status || status === "unfilled" || width < 20 || height < 20;
+
+    if (adFailed) {
+      
+      setShowFallback(true);
+      setHouseAdIndex(Math.floor(Math.random() * houseAds.length));
+    } else {
+      
+      setShowFallback(false);
+    }
+  };
+
+  checkAdStatus(); // First check
+  const interval = setInterval(checkAdStatus, 90000);
+  return () => clearInterval(interval);
+}, []);
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: '300px',
+        height: '100px',
+        margin: '12px auto',
+      }}
+    >
+      <ins
+        ref={adRef}
+        className="adsbygoogle"
+        style={{ display: 'inline-block', width: '300px', height: '100px' }}
+        data-ad-client="ca-pub-3584274514330714"
+        data-ad-slot="9345918650"
+      />
+      {showFallback && (
+        <>
+          <p style={{ position: "absolute", top: -20, left: 0, color: "#888", fontSize: "10px" }}>
+            [house ad]
+          </p>
+          <HouseAdOverlay ad={houseAds[houseAdIndex]} />
+        </>
+      )}
+    </div>
+  );
+};
+
+export default AdCourtBottom;

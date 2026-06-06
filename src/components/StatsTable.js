@@ -1,0 +1,112 @@
+import React from 'react';
+import PropTypes from 'prop-types';
+import { STYLES } from '../../constants/statDefinitions';
+import { calculateHittingPercentage } from '../../utils/helpers';
+
+/**
+ * Component for displaying player statistics in a table
+ */
+const StatsTable = ({ players, getStats, teamTotals, onExplainStat, statExplanations }) => {
+  // Stat column headers that will have tooltips
+  const statColumns = ["K", "E", "TA", "PCT.", "A", "SA", "SE", "RE", "DIG", "BS", "BA", "BE", "BHE", "PTS"];
+
+  return (
+    <div style={{ overflowX: 'auto', border: '1px solid #ccc', borderRadius: 8 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr style={STYLES.tableHeader}>
+            <th rowSpan="2">#</th>
+            <th rowSpan="2">Player</th>
+            <th rowSpan="2">GP</th>
+            <th colSpan="4">Attacking</th>
+            <th>Setting</th>
+            <th colSpan="2">Serving</th>
+            <th>RE</th>
+            <th>Dig</th>
+            <th colSpan="3">Blocking</th>
+            <th>BHE</th>
+            <th>PTS</th>
+          </tr>
+          <tr style={{ ...STYLES.tableHeader, cursor: "pointer" }}>
+            {statColumns.map((abbr) => (
+              <th 
+                key={abbr} 
+                onClick={() => onExplainStat(statExplanations[abbr] || "")}
+                style={STYLES.tableHeaderCell}
+              >
+                {abbr}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {players.map((player) => {
+            const stats = getStats(player);
+            const kills = stats.kills || 0;
+            const errors = stats.attackErrors || 0;
+            const attempts = stats.attacks || 0;
+            const pct = calculateHittingPercentage(kills, errors, attempts);
+            const points = kills + (stats.aces || 0) + (stats.blockSolo || 0) + 0.5 * (stats.blockAssist || 0);
+
+            return (
+              <tr key={player._id} style={{ borderTop: "1px solid #eee" }}>
+                <td style={STYLES.tableCell}>{player.number}</td>
+                <td style={STYLES.tableCell}>{player.name}</td>
+                <td style={STYLES.tableCell}>–</td>
+                <td style={STYLES.tableCell}>{kills}</td>
+                <td style={STYLES.tableCell}>{errors}</td>
+                <td style={STYLES.tableCell}>{attempts}</td>
+                <td style={STYLES.tableCell}>{pct}</td>
+                <td style={STYLES.tableCell}>{stats.assists || 0}</td>
+                <td style={STYLES.tableCell}>{stats.aces || 0}</td>
+                <td style={STYLES.tableCell}>{stats.serveErrors || 0}</td>
+                <td style={STYLES.tableCell}>{stats.receiveErrors || 0}</td>
+                <td style={STYLES.tableCell}>{stats.digs || 0}</td>
+                <td style={STYLES.tableCell}>{stats.blockSolo || 0}</td>
+                <td style={STYLES.tableCell}>{stats.blockAssist || 0}</td>
+                <td style={STYLES.tableCell}>{stats.blockErrors || 0}</td>
+                <td style={STYLES.tableCell}>{stats.bhes || 0}</td>
+                <td style={STYLES.tableCell}>{points.toFixed(1)}</td>
+              </tr>
+            );
+          })}
+          
+          {/* Team Totals Row */}
+          {players.length > 0 && (
+            <tr style={STYLES.tableTeamTotals}>
+              <td style={STYLES.tableCell}>–</td>
+              <td style={STYLES.tableCell}>Team Totals</td>
+              <td style={STYLES.tableCell}>–</td>
+              <td style={STYLES.tableCell}>{teamTotals.kills}</td>
+              <td style={STYLES.tableCell}>{teamTotals.attackErrors}</td>
+              <td style={STYLES.tableCell}>{teamTotals.attacks}</td>
+              <td style={STYLES.tableCell}>
+                {calculateHittingPercentage(teamTotals.kills, teamTotals.attackErrors, teamTotals.attacks)}
+              </td>
+              <td style={STYLES.tableCell}>{teamTotals.assists}</td>
+              <td style={STYLES.tableCell}>{teamTotals.aces}</td>
+              <td style={STYLES.tableCell}>{teamTotals.serveErrors}</td>
+              <td style={STYLES.tableCell}>{teamTotals.receiveErrors}</td>
+              <td style={STYLES.tableCell}>{teamTotals.digs}</td>
+              <td style={STYLES.tableCell}>{teamTotals.blockSolo}</td>
+              <td style={STYLES.tableCell}>{teamTotals.blockAssist}</td>
+              <td style={STYLES.tableCell}>{teamTotals.blockErrors}</td>
+              <td style={STYLES.tableCell}>{teamTotals.bhes}</td>
+              <td style={STYLES.tableCell}>{teamTotals.points.toFixed(1)}</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+StatsTable.propTypes = {
+  players: PropTypes.array.isRequired,
+  getStats: PropTypes.func.isRequired,
+  teamTotals: PropTypes.object.isRequired,
+  onExplainStat: PropTypes.func.isRequired,
+  statExplanations: PropTypes.object.isRequired
+};
+
+export default StatsTable;

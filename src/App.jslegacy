@@ -1,0 +1,3113 @@
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Link,
+  Navigate,
+  useNavigate,
+  useLocation,
+} from "react-router-dom";
+import axios from "axios";
+import { DndProvider } from "react-dnd";
+import { HTML5Backend } from "react-dnd-html5-backend";
+import { TouchBackend } from "react-dnd-touch-backend";
+import { AuthProvider, useAuth } from "./components/AuthContext";
+import { isMobile } from "react-device-detect";
+// Component imports
+import VolleyballCourt from "./components/VolleyballCourt";
+import SettingsPanel from "./components/SettingsPanel";
+import Login from "./components/Login";
+import Register from "./components/Register";
+import Profile from "./components/Profile";
+import PlayerStatsPage from "./components/PlayerStatsPage";
+import EnvCheck from './EnvCheck';
+import BetaAdminPage from "./components/BetaAdminPage";
+import ExpressStatPage from "./components/ExpressStatPage";
+import AdsPreviewPage from './components/AdsPreviewPage';
+import About from './pages/about';
+import Contact from './pages/contact';
+import PrivacyPolicy from './pages/privacyPolicy';
+import TermsOfService from './pages/termsOfService';
+import FAQPage from './components/FAQPage';
+import HowToPage from './components/HowToPage'; 
+import BlogList from './components/BlogList';
+import SubmitBlog from './components/SubmitBlog';
+import BlogPostPage from './components/BlogPostPage';
+import BlogApprovalDashboard from './components/BlogApprovalDashboard';
+import ForgotPassword from './components/ForgotPassword';
+import ResetPassword from './components/ResetPassword';
+import { useCollaborative } from "./components/collaborative/CollaborativeProvider";
+import { CollaborativeProvider } from "./components/collaborative/CollaborativeProvider";
+
+// Constants
+const getApiUrl = () => {
+  if (window.location.hostname.startsWith("10.")) {
+    return `http://${window.location.hostname}:3000`;
+  }
+  return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
+};
+
+const API_URL = getApiUrl(); 
+const APP_VERSION = "vers7 prod1.1";
+const AUTO_SAVE_DELAY = 2000;
+const PERIODIC_SAVE_INTERVAL = 180000; // 3 minutes
+
+console.log(`Loggerhead deployed version: ${APP_VERSION}`);
+
+const backend = isMobile ? TouchBackend : HTML5Backend;
+
+const noSelect = {
+  userSelect: "none",
+  WebkitUserSelect: "none",
+  msUserSelect: "none",
+  MozUserSelect: "none",
+};
+
+// Utility functions (moved outside component)
+function autoJoinMatchIfPossible(matchId, user) {
+  try {
+    const sid = `${user?.id || 'anon'}-${Date.now()}`;
+    if (window.collabJoin) {
+      window.collabJoin(matchId, sid);
+    } else if (window.socket?.emit) {
+      window.socket.emit('join_match', { matchId, sessionId: sid });
+    } else {
+      console.warn('No collab socket available to auto-join match.');
+    }
+  } catch (e) {
+    console.warn('autoJoinMatchIfPossible failed:', e);
+  }
+}
+
+function rebuildSetScoresFromActionLog(actionLog) {
+  const setScores = [];
+  let setCounter = 1;
+
+  for (const log of actionLog) {
+    if (log.type === 'set_end' && typeof log.score === 'string') {
+      const [ourScoreStr, opponentScoreStr] = log.score.split('-');
+      const ourScore = parseInt(ourScoreStr.trim(), 10);
+      const opponentScore = parseInt(opponentScoreStr.trim(), 10);
+
+      if (!isNaN(ourScore) && !isNaN(opponentScore)) {
+        setScores.push({
+          setNumber: setCounter++,
+          ourScore,
+          opponentScore,
+        });
+      }
+    }
+  }
+
+  return setScores;
+}
+
+function PrivateRoute({ children, requiredRole }) {
+  const { token, loading, user } = useAuth();
+  if (loading) return <div>Loading...</div>;
+  if (!token) return <Navigate to="/login" />;
+  if (requiredRole && user?.role !== requiredRole) return <Navigate to="/settings" replace />;
+  return children;
+}
+
+function SubscriptionRoute({ children, feature = "Express Statistical Logging" }) {
+  const { token, loading, isSubscriber } = useAuth();
+  
+  if (loading) {
+    return (
+      <div style={{ 
+        padding: 40, 
+        textAlign: "center", 
+        fontSize: '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '300px'
+      }}>
+        <div style={{ marginBottom: '20px', fontSize: '48px' }}>Loading...</div>
+        <div>Checking subscription status...</div>
+      </div>
+    );
+  }
+  
+  if (!token) return <Navigate to="/login" />;
+  
+  if (!isSubscriber) {
+    return <SubscriptionRequired feature={feature} />;
+  }
+  
+  return children;
+}
+
+function SubscriptionRequired({ feature }) {
+  return (
+    <div style={{ 
+      padding: 40, 
+      textAlign: "center", 
+      fontSize: '18px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: '400px',
+      backgroundColor: '#f8f9fa',
+      borderRadius: '12px',
+      margin: '20px',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+    }}>
+      <div style={{ marginBottom: '20px', fontSize: '64px' }}>Premium</div>
+      <div style={{ fontSize: '28px', fontWeight: 'bold', marginBottom: '16px', color: '#333' }}>
+        Premium Feature
+      </div>
+      <div style={{ color: '#666', marginBottom: '32px', maxWidth: '500px', lineHeight: '1.6' }}>
+        {feature} is available to Loggerhead subscribers. Upgrade your account to access advanced logging features and detailed match analytics.
+      </div>
+      
+      <div style={{ 
+        backgroundColor: '#fff',
+        padding: '24px',
+        borderRadius: '12px',
+        border: '1px solid #e0e0e0',
+        marginBottom: '32px',
+        maxWidth: '400px',
+        textAlign: 'left'
+      }}>
+        <div style={{ fontWeight: '600', marginBottom: '16px', color: '#333', textAlign: 'center' }}>
+          Premium Features Include:
+        </div>
+        <div style={{ fontSize: '14px', color: '#666', lineHeight: '1.8' }}>
+          • Express Statistical Logging<br/>
+          • Advanced Analytics Dashboard<br/>
+          • Detailed Performance Metrics<br/>
+          • Enhanced Mobile Experience<br/>
+          • Export Match Data<br/>
+          • Priority Support<br/>
+          • Early Access to New Features
+        </div>
+      </div>
+
+      <div style={{ 
+        display: 'flex', 
+        gap: '16px', 
+        flexWrap: 'wrap', 
+        justifyContent: 'center',
+        marginBottom: '24px'
+      }}>
+        <Link 
+          to="/profile" 
+          style={{
+            display: 'inline-block',
+            padding: '12px 24px',
+            backgroundColor: '#007AFF',
+            color: '#fff',
+            textDecoration: 'none',
+            borderRadius: '12px',
+            fontWeight: '600',
+            fontSize: '16px',
+            boxShadow: '0 2px 6px rgba(0,122,255,0.3)',
+            transition: 'transform 0.2s ease',
+          }}
+          onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
+          onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
+        >
+          Manage Subscription
+        </Link>
+        
+        <Link 
+          to="/" 
+          style={{
+            display: 'inline-block',
+            padding: '12px 24px',
+            backgroundColor: '#6c757d',
+            color: '#fff',
+            textDecoration: 'none',
+            borderRadius: '12px',
+            fontWeight: '600',
+            fontSize: '16px',
+            boxShadow: '0 2px 6px rgba(108,117,125,0.3)',
+            transition: 'transform 0.2s ease',
+          }}
+          onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
+          onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
+        >
+          Back to Match
+        </Link>
+      </div>
+
+      <div style={{
+        backgroundColor: '#e7f3ff',
+        padding: '16px',
+        borderRadius: '8px',
+        border: '1px solid #b3d9ff',
+        maxWidth: '500px',
+        fontSize: '14px',
+        color: '#0c5aa6'
+      }}>
+        <div style={{ fontWeight: '600', marginBottom: '8px' }}>Ready to Upgrade?</div>
+        <div style={{ lineHeight: '1.5' }}>
+          Visit your Profile page to manage your subscription and unlock all premium features.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  return (
+   <AuthProvider>
+    <CollaborativeProvider>
+      <Router>
+        <AppContent />
+      </Router>
+    </CollaborativeProvider>  
+   </AuthProvider>
+  );
+}
+
+function AppContent() {
+  // FIXED: Add missing hooks at the top
+  const { user, token } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate(); // FIXED: This was missing!
+  
+  // State variables
+  const [loadingMatch, setLoadingMatch] = useState(true);
+  const [showHeader, setShowHeader] = useState(true);
+  const [isPortrait, setIsPortrait] = useState(window.innerHeight > window.innerWidth);
+  const [isDismissed, setIsDismissed] = useState(false);
+  const [courtPlayers, setCourtPlayers] = useState(
+    Array.from({ length: 6 }, (_, i) => ({ id: `empty-${i}`, name: "?", number: "?", isLibero: false }))
+  );
+  const [deactivatedPlayers, setDeactivatedPlayers]  = useState([]);
+  const [ourScore, setOurScore] = useState(0);
+  const [creditedPlayersThisSet, setCreditedPlayersThisSet] = useState([]);
+  const [ballState, setBallState] = useState("serve");
+  const [ballSide, setBallSide] = useState("opponent");
+  const [currentServeSide, setCurrentServeSide] = useState("opponent");
+  const [setScores, setSetScores] = useState([]);
+  const [opponentScore, setOpponentScore] = useState(0);
+  const [serveSide, setServeSide] = useState("our");
+  const [matchSettings, setMatchSettings] = useState(null);
+  const [opponentName, setOpponentName] = useState("Enter an Opponent");
+  const [benchPlayers, setBenchPlayers] = useState([]);
+  const [ourSetsWon, setOurSetsWon] = useState(0);
+  const [opponentSetsWon, setOpponentSetsWon] = useState(0);
+  const [substitutionLog, setSubstitutionLog] = useState([]);
+  const [actionLog, setActionLog] = useState([]);
+  const [allowedLiberoSubTarget, setAllowedLiberoSubTarget] = useState(null);
+  const [slot5TargetId, setSlot5TargetId] = useState(null);
+  const [currentSet, setCurrentSet] = useState(1);
+  const [totalSets, setTotalSets] = useState(null);
+  const [currentMatchId, setCurrentMatchId] = useState(null);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [matchRestored, setMatchRestored] = useState(false);
+  const [isRestoringMatch, setIsRestoringMatch] = useState(false);
+  const [saveStatus, setSaveStatus] = useState(null);
+  const [teamStats, setTeamStats] = useState({
+    ourEarned: 0,
+    ourError: 0,
+    oppEarned: 0,
+    oppError: 0,
+  });
+  const [positionMapping, setPositionMapping] = useState({
+    0: '4', 1: '3', 2: '2', 3: '5', 4: '6', 5: '1'
+  });
+  const [uiPrefs, setUiPrefs] = useState({
+    cardDisplayMode: "number-first", // or "name-first"
+  });
+
+  // Refs
+  const syncPayloadRef = useRef({});
+  const creditedPlayersThisSetRef = useRef(new Set());
+  const firstServeHandledRef = useRef(false);
+  const previousPathname = useRef(location.pathname);
+  const isRestoringMatchRef = useRef(false);
+  const setEndingInProgressRef = useRef(false);
+  const previousUserRef = useRef(user?.id);
+  const isRestoringScoresRef = useRef(false);
+
+  // Collaborative hooks
+  const {
+    restoreCollaborativeModeFromMatch,
+    updateBallState,
+    updateServeSide,
+    updateScore,
+    collaborativeMode,
+    isConnected,
+    socket,
+    setMatchId,
+    syncCourtPlayers,
+    syncPositionMapping,
+    registerStateCallbacks, 
+    broadcastSetEndingDecision,
+    broadcastSetEndingCancellation
+  } = useCollaborative();
+
+  // FIXED: Move all utility functions before they're used
+ const normalizePlayer = useCallback((p = {}) => ({
+    _id: p?._id ?? null,
+    id: p?.id ?? p?._id ?? null,
+    name: p?.name ?? "?",
+    number: p?.number ?? "?",
+    isLibero: !!p?.isLibero,
+    replacedPlayer: p?.replacedPlayer
+      ? {
+          _id: p.replacedPlayer?._id ?? p.replacedPlayer?.id ?? null,
+          name: p.replacedPlayer?.name ?? "?",
+          number: p.replacedPlayer?.number ?? "?"
+        }
+      : null,
+    careerStats: p?.careerStats ?? {},
+    seasonStats: p?.seasonStats ?? {},
+  }), []);
+
+
+const syncCurrentMatchIdToProfile = useCallback(async (newMatchId) => {
+    if (!user?.id) return;
+    try {
+      await axios.put(`${API_URL}/api/users/${user.id}/match-id`, {
+        currentMatchId: newMatchId,
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true,
+      });
+      console.log("currentMatchId synced to user profile");
+    } catch (err) {
+      console.error("Failed to sync currentMatchId to user:", err);
+    }
+  }, [user?.id, token]);
+
+
+const saveMatchData = useCallback(async (showAlert = false) => {
+    if (!user?.id) {
+      console.error("Cannot save match, user not logged in.");
+      if (showAlert) alert("Cannot save match, user not logged in.");
+      return null;
+    }
+    if (!matchSettings?.teamName) {
+      console.error("Cannot save match, team name not set.");
+      if (showAlert) alert("Cannot save match, team name not set in settings.");
+      return null;
+    }
+
+    setSaveStatus('saving');
+
+    try {
+      const convertCourtPlayersToPositionOrder = (slotBasedPlayers, positionMapping) => {
+        const positionOrder = ['4', '3', '2', '5', '6', '1'];
+        
+        const expressPositionToSlot = {};
+        const hasExpressPositions = slotBasedPlayers.some(player => player?.expressPosition);
+        
+        if (hasExpressPositions) {
+          console.log("Express: Using expressPosition data for position order conversion");
+          slotBasedPlayers.forEach((player, slotIndex) => {
+            if (player?.expressPosition) {
+              expressPositionToSlot[player.expressPosition] = slotIndex;
+            }
+          });
+          
+          const positionOrderedArray = positionOrder.map((position, index) => {
+            const slotIndex = expressPositionToSlot[position];
+            const player = slotIndex !== undefined ? slotBasedPlayers[slotIndex] : null;
+            
+            if (player && player.name !== "?") {
+              return normalizePlayer(player);
+            } else {
+              return normalizePlayer({
+                id: `empty-pos-${position}`,
+                name: "?",
+                number: "?",
+                isLibero: false
+              });
+            }
+          });
+          
+          return positionOrderedArray;
+        }
+        
+        console.log("Main court: Using positionMapping for position order conversion");
+        
+        const positionToSlot = {};
+        Object.entries(positionMapping).forEach(([slotIndex, position]) => {
+          positionToSlot[position] = parseInt(slotIndex);
+        });
+        
+        const positionOrderedArray = positionOrder.map((position, index) => {
+          const slotIndex = positionToSlot[position];
+          const player = slotBasedPlayers[slotIndex];
+          
+          if (player && player.name !== "?") {
+            return normalizePlayer(player);
+          } else {
+            return normalizePlayer({
+              id: `empty-pos-${position}`,
+              name: "?",
+              number: "?",
+              isLibero: false
+            });
+          }
+        });
+        
+        return positionOrderedArray;
+      };
+
+      const positionOrderedCourtPlayers = convertCourtPlayersToPositionOrder(
+        courtPlayers || [], 
+        positionMapping
+      );
+	  
+	  const isCollaborative = matchSettings?.collaborativeMode?.enabled;
+
+      const matchPayload = {
+        userId: user.id,
+        timestamp: new Date().toISOString(),
+        teamName: matchSettings?.teamName || "",
+        opponentName: opponentName || "Opponent",
+        eventName: matchSettings?.eventName || "",
+        location: matchSettings?.location || "",
+        currentSet: matchSettings?.currentSet || 1,
+        totalSets: matchSettings?.totalSets || 3,
+        playAllSets: !!matchSettings?.playAllSets,
+        pointsNonDeciding: matchSettings?.pointsNonDeciding || 25,
+        pointsDeciding: matchSettings?.pointsDeciding || 15,
+        collaborativeMode: matchSettings?.collaborativeMode || { enabled: false },
+        positionMapping: positionMapping,
+        ourSetsWon: ourSetsWon ?? 0,
+        opponentSetsWon: opponentSetsWon ?? 0,
+		...(isCollaborative ? {} : {
+          ourScore: ourScore ?? 0,
+          opponentScore: opponentScore ?? 0,
+        }),
+        setScores: setScores || [],
+        gameState: {
+          ballState: ballState || "serve",
+          ballSide: ballSide || serveSide || "opponent", 
+          currentServeSide: currentServeSide || serveSide || "opponent",
+          serveSide: serveSide || "opponent"
+        },
+        courtPlayers: positionOrderedCourtPlayers,
+        benchPlayers: (benchPlayers ?? []).filter(Boolean).map(normalizePlayer),
+        actionLog: actionLog || [],
+        substitutionLog: substitutionLog || [],
+        deactivatedPlayers: deactivatedPlayers || [],
+        liberoSubTargets: {
+          allowedLiberoSubTarget: allowedLiberoSubTarget || null,
+          slot5TargetId: slot5TargetId || null,
+        },
+        creditedPlayersThisSet: creditedPlayersThisSet || [],
+        teamStats: teamStats || {
+          ourEarned: 0,
+          ourError: 0,
+          oppEarned: 0,
+          oppError: 0,
+        },
+      };
+
+      let response;
+      if (currentMatchId) {
+        response = await axios.put(`${API_URL}/api/matches/${currentMatchId}`, matchPayload, {
+          headers: { Authorization: `Bearer ${token}` },
+          withCredentials: true,
+        });
+        console.log("Match updated successfully with position-ordered courtPlayers.");
+      } else {
+        response = await axios.post(`${API_URL}/api/matches/save`, matchPayload, {
+          headers: { Authorization: `Bearer ${token}` },
+          withCredentials: true,
+        });
+        console.log("Match created successfully with position-ordered courtPlayers.");
+      }
+
+      if (response?.data?._id) {
+        setCurrentMatchId(response.data._id);
+        await syncCurrentMatchIdToProfile(response.data._id);
+      }
+
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus(null), 2000);
+
+      if (showAlert) {
+        alert("Match saved successfully.");
+      }
+
+      return response?.data?._id || null;
+
+    } catch (err) {
+      console.error("Failed to save match:", err);
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus(null), 3000);
+      
+      if (showAlert) alert("Failed to save match. See console for details.");
+      return null;
+    }
+  }, [
+    user?.id,
+    courtPlayers,
+    benchPlayers,
+    matchSettings,
+    opponentName,
+    ourSetsWon,
+    opponentSetsWon,
+    setScores,
+	ourScore,
+	opponentScore,
+    actionLog,
+    substitutionLog,
+    allowedLiberoSubTarget,
+    slot5TargetId,
+    currentMatchId,
+    token,
+    teamStats,
+    ballState,
+    ballSide, 
+    currentServeSide,
+    serveSide,
+    creditedPlayersThisSet,
+    deactivatedPlayers,
+    positionMapping,
+    syncCurrentMatchIdToProfile,
+    normalizePlayer
+  ]);
+
+ const resetGamesPlayedForNewSet = useCallback(() => {
+    console.log("Resetting games played tracking for new set");
+    console.log("Previously credited players:", Array.from(creditedPlayersThisSetRef.current));
+    
+    creditedPlayersThisSetRef.current.clear();
+    setCreditedPlayersThisSet([]);
+    firstServeHandledRef.current = false;
+  }, []);
+
+  
+  const updateCourtPositions = useCallback(async (newCourtPlayers, newPositionMapping = null) => {
+    setCourtPlayers(newCourtPlayers);
+    
+    if (newPositionMapping && JSON.stringify(newPositionMapping) !== JSON.stringify(positionMapping)) {
+      console.warn("Attempted to change position mapping - positions stay fixed at court locations");
+    }
+    
+    if (collaborativeMode && isConnected) {
+      try {
+        const success = await syncCourtPlayers(newCourtPlayers, {
+          source: 'player_placement',
+          timestamp: new Date().toISOString()
+        });
+        
+        if (success) {
+          console.log("Court players synced to other users");
+        } else {
+          console.warn("Failed to sync court players to other users");
+        }
+      } catch (error) {
+        console.error("Error syncing court players:", error);
+      }
+    }
+    
+    if (location.pathname === '/express' && currentMatchId) {
+      try {
+        setTimeout(async () => {
+          await saveMatchData(false);
+          console.log("Express: Court positions saved immediately");
+        }, 100);
+      } catch (err) {
+        console.error("Express: Failed to save court positions:", err);
+      }
+    }
+  }, [
+    positionMapping, 
+    location.pathname, 
+    currentMatchId, 
+    saveMatchData,
+    collaborativeMode,
+    isConnected,
+    syncCourtPlayers
+  ]);
+
+  const swapCourtPlayers = useCallback(async (sourceIndex, targetIndex) => {
+    if (sourceIndex === targetIndex) return;
+    
+    console.log(`Swapping players AND positions: slot ${sourceIndex} <-> slot ${targetIndex}`);
+    
+    const newCourtPlayers = [...courtPlayers];
+    const sourcePlayer = newCourtPlayers[sourceIndex];
+    const targetPlayer = newCourtPlayers[targetIndex];
+    
+    newCourtPlayers[sourceIndex] = targetPlayer;
+    newCourtPlayers[targetIndex] = sourcePlayer;
+    
+    const newPositionMapping = { ...positionMapping };
+    const sourcePosition = newPositionMapping[sourceIndex];
+    const targetPosition = newPositionMapping[targetIndex];
+    
+    newPositionMapping[sourceIndex] = targetPosition;
+    newPositionMapping[targetIndex] = sourcePosition;
+    
+    setCourtPlayers(newCourtPlayers);
+    setPositionMapping(newPositionMapping);
+    
+    const sourcePlayerName = sourcePlayer?.name !== "?" ? `${sourcePlayer.name} (#${sourcePlayer.number})` : "Empty";
+    const targetPlayerName = targetPlayer?.name !== "?" ? `${targetPlayer.name} (#${targetPlayer.number})` : "Empty";
+    
+    setActionLog(prev => [
+      ...prev,
+      {
+        action: `Player+Position swap: ${sourcePlayerName} (Pos ${sourcePosition}) <-> ${targetPlayerName} (Pos ${targetPosition})`,
+        timestamp: new Date().toISOString(),
+        meta: { 
+          type: 'player_position_swap',
+          sourceIndex,
+          targetIndex,
+          sourcePosition,
+          targetPosition
+        }
+      }
+    ]);
+    
+    if (location.pathname === '/express') {
+      try {
+        await saveMatchData(false);
+        console.log("Express: Swap saved immediately");
+      } catch (err) {
+        console.error("Express: Failed to save swap:", err);
+      }
+    }
+    
+    console.log(`Swapped players and positions: ${sourcePlayerName} (Pos ${sourcePosition}) <-> ${targetPlayerName} (Pos ${targetPosition})`);
+  }, [courtPlayers, positionMapping, setActionLog, location.pathname, saveMatchData]);
+
+  const rotateCourtPositions = useCallback(async () => {
+    console.log("Rotating court positions clockwise...");
+    
+    const newPositionMapping = {
+      0: positionMapping[1],
+      1: positionMapping[2],
+      2: positionMapping[5],
+      3: positionMapping[0],
+      4: positionMapping[3],
+      5: positionMapping[4],
+    };
+    
+    setPositionMapping(newPositionMapping);
+    
+    setActionLog(prev => [
+      ...prev,
+      {
+        action: "Manual rotation: Position labels rotated clockwise",
+        timestamp: new Date().toISOString(),
+        meta: { 
+          type: 'rotation',
+          oldMapping: positionMapping,
+          newMapping: newPositionMapping 
+        }
+      }
+    ]);
+    
+    if (currentMatchId) {
+      try {
+        setTimeout(async () => {
+          await saveMatchData(false);
+          console.log("Rotation saved immediately");
+        }, 100);
+      } catch (err) {
+        console.error("Failed to save rotation:", err);
+      }
+    }
+    
+    console.log("Position mapping rotated:", newPositionMapping);
+  }, [positionMapping, setActionLog, currentMatchId, saveMatchData]);
+
+
+ 
+
+  const clearAllMatchState = useCallback(() => {
+    console.log("Clearing all match state for user security");
+    
+    setLoadingMatch(true);
+    setCurrentMatchId(null);
+    setMatchSettings(null);
+    setCourtPlayers(Array.from({ length: 6 }, (_, i) => ({ 
+      id: `empty-${i}`, 
+      name: "?", 
+      number: "?", 
+      isLibero: false 
+    })));
+    setBenchPlayers([]);
+    setOurScore(0);
+    setOpponentScore(0);
+    setOurSetsWon(0);
+    setOpponentSetsWon(0);
+    setSetScores([]);
+    setActionLog([]);
+    setSubstitutionLog([]);
+    setDeactivatedPlayers([]);
+    setCreditedPlayersThisSet([]);
+    setOpponentName("Enter an Opponent");
+    setAllowedLiberoSubTarget(null);
+    setSlot5TargetId(null);
+    setTeamStats({
+      ourEarned: 0,
+      ourError: 0,
+      oppEarned: 0,
+      oppError: 0,
+    });
+    
+    setPositionMapping({
+      0: '4', 1: '3', 2: '2', 3: '5', 4: '6', 5: '1'
+    });
+    
+    // Clear refs
+    creditedPlayersThisSetRef.current.clear();
+    firstServeHandledRef.current = false;
+    isRestoringMatchRef.current = false;
+    setEndingInProgressRef.current = false;
+    
+    setMatchRestored(false);
+    setIsRestoringMatch(false);
+    setLoadingMatch(false);
+    
+    console.log("All match state cleared");
+  }, []);
+
+
+ 
+
+const refreshBenchPlayers = useCallback(async () => {
+    if (!matchSettings?.teamName) return;
+
+    console.log("Manual refreshBenchPlayers triggered");
+
+    try {
+      const resBench = await axios.get(`${API_URL}/api/players/bench/recall`, { 
+        params: { team: matchSettings.teamName }
+      });
+      setBenchPlayers(resBench.data);
+      console.log("Refreshed bench players.");
+    } catch (error) {
+      console.error("Failed to refresh bench players:", error);
+    }
+  }, [matchSettings?.teamName]);
+
+  const refreshCourtPlayers = useCallback(async () => {
+    if (!currentMatchId) return;
+
+    console.log("Refreshing court players from match...");
+
+    try {
+      const resMatch = await axios.get(`${API_URL}/api/matches/${currentMatchId}`);
+      const match = resMatch.data;
+
+      if (match && match.courtPlayers) {
+        const hydratedCourtPlayers = (match.courtPlayers || []).map((player, i) => {
+          if (!player || !player.name) {
+            return { id: `empty-${i}`, name: "?", number: "?", isLibero: false };
+          }
+          return {
+            _id: player._id || `empty-${i}`,
+            id: player.id || player._id || `empty-${i}`,
+            name: player.name,
+            number: player.number,
+            position: player.position || null,
+            isLibero: player.isLibero || false,
+            replacedPlayer: player.replacedPlayer || null,
+            careerStats: player.careerStats || {},
+            seasonStats: player.seasonStats || {},
+          };
+        });
+
+        const filledCourtPlayers = [
+          ...hydratedCourtPlayers,
+          ...Array.from({ length: Math.max(0, 6 - hydratedCourtPlayers.length) }, (_, i) => ({
+            id: `empty-filler-${i}`,
+            name: "?",
+            number: "?",
+            isLibero: false,
+          }))
+        ].slice(0, 6);
+
+        setCourtPlayers(filledCourtPlayers);
+        console.log("Court players refreshed from match.");
+      }
+    } catch (error) {
+      console.error("Failed to refresh court players:", error);
+    }
+  }, [currentMatchId]);
+
+
+ const clearCourt = useCallback(async () => {
+    console.log("Clearing court and syncing players...");
+
+    if (!user?.id || !matchSettings?.teamName) {
+      console.error("Cannot clear court — user or team missing.");
+      return;
+    }
+
+    try {
+      const res = await axios.get(`${API_URL}/api/players`, {
+        params: { team: matchSettings.teamName },
+      });
+
+      const allPlayers = res.data || [];
+      const playersOnCourt = allPlayers.filter(p => p.isOnCourt);
+
+      if (playersOnCourt.length > 0) {
+        await Promise.all(
+          playersOnCourt.map(p =>
+            axios.put(`${API_URL}/api/players/${p._id}`, { isOnCourt: false })
+          )
+        );
+        console.log(`Updated ${playersOnCourt.length} players off court`);
+      } else {
+        console.log("No players currently marked on court.");
+      }
+
+      setCourtPlayers(
+        Array.from({ length: 6 }, (_, i) => ({
+          id: `empty-${i}`,
+          name: "?",
+          number: "?",
+          isLibero: false,
+        }))
+      );
+
+      await refreshBenchPlayers();
+      console.log("Court cleared successfully.");
+    } catch (error) {
+      console.error("Failed to clear court:", error);
+      alert("Failed to clear court properly. Please refresh your browser.");
+    }
+  }, [user?.id, matchSettings?.teamName, refreshBenchPlayers]);
+
+const syncMatchState = useCallback(async () => {
+  if (!currentMatchId) return;
+
+  try {
+    await axios.put(`${API_URL}/api/matches/${currentMatchId}/sync-state`, syncPayloadRef.current, {
+      headers: { Authorization: `Bearer ${token}` },
+      withCredentials: true,
+    });
+    console.log("✅ Match state synced successfully.");
+  } catch (error) {
+    console.error("❌ Failed to sync match state:", error);
+  }
+}, [currentMatchId, token]);
+	
+const restoreScoresFromDatabase = useCallback((match) => {
+  const dbOurScore = typeof match.ourScore === "number" ? match.ourScore : 0;
+  const dbOpponentScore = typeof match.opponentScore === "number" ? match.opponentScore : 0;
+  
+  const maxValidScore = 50;
+  const isOurScoreValid = dbOurScore >= 0 && dbOurScore <= maxValidScore;
+  const isOppScoreValid = dbOpponentScore >= 0 && dbOpponentScore <= maxValidScore;
+  
+  if (!isOurScoreValid || !isOppScoreValid) {
+    console.warn("Database scores invalid, using 0-0");
+    return { 
+      ourScore: 0, 
+      opponentScore: 0,
+      setScores: match.setScores || [],
+      currentSet: match.currentSet || 1
+    };
+  }
+  
+  const currentSetNumber = match.currentSet || 1;
+  const completedSets = match.setScores || [];
+  
+  // 🔥 FIX #3: Only check if a FUTURE set is marked complete (data corruption)
+  const futureSetComplete = completedSets.some(set => set.setNumber > currentSetNumber);
+  
+  if (futureSetComplete) {
+    console.error("❌ Data corruption: Future set marked complete!");
+    return { 
+      ourScore: 0, 
+      opponentScore: 0,
+      setScores: completedSets.filter(set => set.setNumber < currentSetNumber),
+      currentSet: currentSetNumber
+    };
+  }
+  
+  // 🔥 FIX #4: Trust database scores - don't second-guess
+  console.log(`✅ Restoring in-progress set ${currentSetNumber}: ${dbOurScore}-${dbOpponentScore}`);
+  return { 
+    ourScore: dbOurScore, 
+    opponentScore: dbOpponentScore,
+    setScores: completedSets,
+    currentSet: currentSetNumber
+  };
+}, []);
+
+  const syncCreditedPlayersFromState = useCallback((creditedArray) => {
+    creditedPlayersThisSetRef.current.clear();
+    setCreditedPlayersThisSet(creditedArray || []);
+    
+    if (creditedArray) {
+      creditedArray.forEach(playerId => {
+        creditedPlayersThisSetRef.current.add(playerId);
+      });
+    }
+    
+    console.log("Synced credited players:", creditedArray);
+  }, []);
+
+  const isMatchOwner = useCallback(() => {
+    if (!matchSettings || !user) return false;
+    return String(matchSettings.userId || matchSettings._id) === String(user.id || user._id);
+  }, [matchSettings, user]);
+
+  
+ const processSetEnding = useCallback(async (winner, winnerName, newOurSets, newOpponentSets, isMatchOver) => {
+  try {
+    setEndingInProgressRef.current = true;
+    
+    // 🔥 FIX #1: Capture current scores BEFORE any state changes
+    const finalOurScore = ourScore;
+    const finalOpponentScore = opponentScore;
+    const finalSetNumber = matchSettings.currentSet;
+    
+    console.log(`🏆 Processing set ending: ${winnerName} wins ${finalOurScore}-${finalOpponentScore}`);
+    
+    if (collaborativeMode && !isMatchOwner()) {
+      console.log("Non-owner processing set ending - updating local state only");
+    } else {
+      console.log("Owner processing set ending - saving to database");
+      await syncMatchState();
+    }
+
+    if (isMatchOver) {
+      console.log("🏆 Match is complete, finalizing...");
+      
+      const finalSetScore = {
+        setNumber: finalSetNumber,
+        ourScore: finalOurScore,
+        opponentScore: finalOpponentScore,
+      };
+      
+      const updatedSetScores = [...setScores, finalSetScore];
+      setSetScores(updatedSetScores);
+      
+      setCurrentMatchId(null);
+      
+      if (!collaborativeMode || isMatchOwner()) {
+        try {
+          await axios.put(`${API_URL}/api/matches/${currentMatchId}`, {
+            status: "Final",
+            winner: winnerName,
+            ourSetsWon: newOurSets,
+            opponentSetsWon: newOpponentSets,
+            currentSet: finalSetNumber,
+            setScores: updatedSetScores,
+            finalScore: `${finalOurScore}-${finalOpponentScore}`,
+            ourScore: finalOurScore,  // 🔥 FIX: Use captured values
+            opponentScore: finalOpponentScore,
+          }, {
+            headers: { Authorization: `Bearer ${token}` },
+            withCredentials: true,
+          });
+          console.log("✅ Match marked as Final in database");
+        } catch (err) {
+          console.error("❌ Failed to mark match as final:", err);
+        }
+
+        try {
+          await axios.put(`${API_URL}/api/users/${user.id}/match-id`, {
+            currentMatchId: null,
+          }, {
+            headers: { Authorization: `Bearer ${token}` },
+            withCredentials: true,
+          });
+        } catch (err) {
+          console.error("❌ Failed to clear currentMatchId from user profile:", err);
+        }
+      }
+      
+      setLoadingMatch(false);
+      navigate(`/stats?match=${currentMatchId}&team=${encodeURIComponent(matchSettings.teamName)}`);
+      
+    } else {
+      // Set complete but match continues
+      console.log("✅ Set complete, preparing for next set...");
+      
+      resetGamesPlayedForNewSet();
+      
+      const newSetScore = {
+        setNumber: finalSetNumber,
+        ourScore: finalOurScore,
+        opponentScore: finalOpponentScore,
+      };
+      
+      const updatedSetScores = [...setScores, newSetScore];
+      setSetScores(updatedSetScores);
+      
+      const updatedActionLog = [
+        ...actionLog,
+        {
+          type: 'set_end',
+          winner: winnerName,
+          score: `${finalOurScore}-${finalOpponentScore}`,
+          timestamp: new Date().toISOString()
+        }
+      ];
+      setActionLog(updatedActionLog);
+      
+      // 🔥 FIX #2: Save with FINAL scores before resetting
+      const nextSet = finalSetNumber + 1;
+      
+      if (!collaborativeMode || isMatchOwner()) {
+        console.log(`💾 Saving set ${finalSetNumber} completion with scores ${finalOurScore}-${finalOpponentScore}`);
+        
+        try {
+          await axios.put(`${API_URL}/api/matches/${currentMatchId}`, {
+            ourScore: 0,  // Reset for next set
+            opponentScore: 0,  // Reset for next set
+            currentSet: nextSet,
+            setScores: updatedSetScores,
+            ourSetsWon: newOurSets,
+            opponentSetsWon: newOpponentSets,
+            actionLog: updatedActionLog,
+            teamStats: {
+              ourEarned: 0,
+              ourError: 0,
+              oppEarned: 0,
+              oppError: 0,
+            },
+            gameState: {
+              ballState: 'serve',
+              ballSide: 'opponent',
+              currentServeSide: 'opponent',
+              serveSide: 'opponent'
+            }
+          }, {
+            headers: { Authorization: `Bearer ${token}` },
+            withCredentials: true,
+          });
+          console.log(`✅ Database updated: Set ${nextSet} ready with scores reset to 0-0`);
+        } catch (err) {
+          console.error("❌ CRITICAL: Failed to save set completion:", err);
+          alert("Failed to save set completion. Please refresh the page.");
+          return;
+        }
+      }
+      
+      // NOW reset local state after database is updated
+      console.log("🔄 Resetting local state for next set");
+      setOurScore(0);
+      setOpponentScore(0);
+      setTeamStats({
+        ourEarned: 0,
+        ourError: 0,
+        oppEarned: 0,
+        oppError: 0,
+      });
+      
+      setOurSetsWon(newOurSets);
+      setOpponentSetsWon(newOpponentSets);
+      
+      // Reset game state
+      setAllowedLiberoSubTarget(null);
+      setServeSide("opponent");
+      setSlot5TargetId(null);
+      setSubstitutionLog([]);
+      setBallState("serve");
+      setCurrentServeSide("opponent");
+      setBallSide("opponent");
+      
+      // Update match settings with new set number
+      setMatchSettings(prev => ({
+        ...prev,
+        currentSet: nextSet
+      }));
+      
+      // Clear court
+      clearCourt();
+      
+      console.log(`🎉 Ready for set ${nextSet}!`);
+    }
+  } finally {
+    setTimeout(() => {
+      setEndingInProgressRef.current = false;
+    }, 1000);
+  }
+}, [
+  matchSettings, ourScore, opponentScore, setScores, actionLog, syncMatchState, 
+  saveMatchData, clearCourt, resetGamesPlayedForNewSet, currentMatchId, token, 
+  user, navigate, collaborativeMode, isMatchOwner
+]);
+
+  // Now define functions that depend on processSetEnding
+  const handleSetEndingAsOwner = useCallback(async (winner, winnerName, newOurSets, newOpponentSets, isMatchOver) => {
+    if (setEndingInProgressRef.current) return;
+    setEndingInProgressRef.current = true;
+
+    try {
+      let confirmMessage;
+      let shouldContinue = false;
+
+      if (isMatchOver) {
+        confirmMessage = `MATCH COMPLETE!\n\n${winnerName} wins the match ${newOurSets}-${newOpponentSets}!\n\nClick OK to view match statistics.`;
+        shouldContinue = window.confirm(confirmMessage);
+        shouldContinue = true;
+      } else {
+        confirmMessage = `${winnerName} wins set ${matchSettings.currentSet} (${ourScore}-${opponentScore}).\n\nPrepare for set ${matchSettings.currentSet + 1}?`;
+        shouldContinue = window.confirm(confirmMessage);
+      }
+
+      if (shouldContinue) {
+        const setEndingDecision = {
+          winner,
+          winnerName,
+          newOurSets,
+          newOpponentSets,
+          isMatchOver,
+          setNumber: matchSettings.currentSet,
+          finalScore: `${ourScore}-${opponentScore}`,
+        };
+
+        console.log("OWNER: Broadcasting set ending decision to all users");
+        broadcastSetEndingDecision(setEndingDecision);
+
+        await processSetEnding(winner, winnerName, newOurSets, newOpponentSets, isMatchOver);
+      } else {
+        console.log("OWNER: Declined to continue to next set");
+        broadcastSetEndingCancellation();
+      }
+    } catch (error) {
+      console.error("Error in owner set ending logic:", error);
+    } finally {
+      setEndingInProgressRef.current = false;
+    }
+  }, [broadcastSetEndingDecision, broadcastSetEndingCancellation, matchSettings, ourScore, opponentScore, processSetEnding]);
+
+ const handleSetEndingIndividually = useCallback(async (winner, winnerName, newOurSets, newOpponentSets, isMatchOver) => {
+  console.log("🎯 INDIVIDUAL: Set ending handler called", { winner, winnerName, newOurSets, newOpponentSets, isMatchOver });
+  
+  if (setEndingInProgressRef.current) {
+    console.log("⚠️ INDIVIDUAL: Set ending already in progress, skipping");
+    return;
+  }
+  
+  setEndingInProgressRef.current = true;
+
+  try {
+    let confirmMessage;
+    let shouldContinue = false;
+
+    if (isMatchOver) {
+      confirmMessage = `🏆 MATCH COMPLETE!\n\n${winnerName} wins the match ${newOurSets}-${newOpponentSets}!\n\nClick OK to view match statistics.`;
+      console.log("🏆 INDIVIDUAL: Showing match completion dialog");
+      shouldContinue = true; // Always continue for match completion
+    } else {
+      confirmMessage = `🎉 ${winnerName} wins set ${matchSettings.currentSet} (${ourScore}-${opponentScore}).\n\nPrepare for set ${matchSettings.currentSet + 1}?`;
+      console.log("🎉 INDIVIDUAL: Showing set completion dialog");
+    }
+
+    // Show the dialog and get user response
+    console.log("📢 INDIVIDUAL: Displaying confirm dialog:", confirmMessage);
+    
+    try {
+      if (!isMatchOver) {
+        shouldContinue = window.confirm(confirmMessage);
+        console.log("👤 INDIVIDUAL: User response:", shouldContinue ? "OK" : "Cancel");
+      }
+    } catch (confirmError) {
+      console.error("❌ INDIVIDUAL: Confirm dialog failed:", confirmError);
+      shouldContinue = true; // Auto-continue if confirm fails
+      alert("Set complete! Continuing automatically...");
+    }
+
+    if (shouldContinue) {
+      console.log("✅ INDIVIDUAL: Proceeding with set ending...");
+      await processSetEnding(winner, winnerName, newOurSets, newOpponentSets, isMatchOver);
+      console.log("🎉 INDIVIDUAL: Set ending completed successfully");
+    } else {
+      console.log("❌ INDIVIDUAL: User declined to continue");
+      // Show a helpful message
+      alert("Set ending cancelled. The set is complete but you chose not to continue. You can advance manually when ready.");
+    }
+  } catch (error) {
+    console.error("💥 INDIVIDUAL: Error in set ending logic:", error);
+    alert(`Error processing set ending: ${error.message}. Please check the console and try refreshing.`);
+  } finally {
+    console.log("🔄 INDIVIDUAL: Clearing set ending flag");
+    setEndingInProgressRef.current = false;
+  }
+}, [matchSettings, ourScore, opponentScore, processSetEnding]);
+
+
+  const toggleHeader = useCallback(() => setShowHeader(prev => !prev), []);
+
+  const updatePlayersOnCourt = useCallback(async (newCourtPlayers) => {
+    if (collaborativeMode && isConnected) {
+      try {
+        const success = await syncCourtPlayers(newCourtPlayers);
+        if (success) {
+          setCourtPlayers(newCourtPlayers);
+        } else {
+          console.warn('Sync failed, updating locally only');
+          setCourtPlayers(newCourtPlayers);
+        }
+      } catch (error) {
+        console.error('Collaborative sync error, falling back to local:', error);
+        setCourtPlayers(newCourtPlayers);
+      }
+    } else {
+      setCourtPlayers(newCourtPlayers);
+    }
+  }, [collaborativeMode, isConnected, syncCourtPlayers]);
+
+  const setBallStateWithSync = useCallback((newBallState) => {
+    setBallState(newBallState);
+    
+    if (collaborativeMode && isConnected) {
+      updateBallState(newBallState, {
+        ballSide: ballSide,
+        currentServeSide: currentServeSide
+      });
+    }
+  }, [setBallState, collaborativeMode, isConnected, updateBallState, ballSide, currentServeSide]);
+
+  const setCurrentServeSideWithSync = useCallback((newServeSide) => {
+    setCurrentServeSide(newServeSide);
+    setBallSide(newServeSide);
+    
+    if (collaborativeMode && isConnected) {
+      updateServeSide(newServeSide);
+    }
+  }, [setCurrentServeSide, setBallSide, collaborativeMode, isConnected, updateServeSide]);
+
+ 
+
+const saveScoreImmediately = useCallback(async (newOurScore, newOpponentScore, reason = 'manual') => {
+  if (!currentMatchId) return;
+  
+  // ✅ Only save to database, don't trigger collaborative updates
+  try {
+    await axios.put(`${API_URL}/api/matches/${currentMatchId}/score`, {
+      ourScore: newOurScore,
+      opponentScore: newOpponentScore,
+      // ... other fields
+    });
+  } catch (err) {
+    console.error("Failed to save score:", err);
+  }
+}, [currentMatchId, token]);
+
+const onOurPoint = useCallback(async (skipCollaborative = false, reason = 'manual') => {
+  // 🔍 DEBUG: Log the call stack
+  console.log('🎯 onOurPoint called from:', new Error().stack);
+  console.log('onOurPoint params:', { oldScore: ourScore, skipCollaborative, reason });
+  
+
+  const oldScore = ourScore;
+  const newScore = oldScore + 1;
+  
+  console.log('onOurPoint called:', { oldScore, newScore, skipCollaborative, reason });
+  
+  // Always update local state immediately
+  setOurScore(newScore);
+  
+  // Only do collaborative if not skipping and conditions are met
+  if (!skipCollaborative && collaborativeMode && isConnected) {
+    console.log('Sending collaborative update...');
+    const success = updateScore('our', 1, reason);
+    if (!success) {
+      console.warn('Collaborative update failed');
+    }
+  }
+}, [ourScore, collaborativeMode, isConnected, updateScore]);
+
+const onOpponentPoint = useCallback(async (skipCollaborative = false, reason = 'manual') => {
+  const oldScore = opponentScore;
+  const newScore = oldScore + 1;
+  
+  console.log('onOpponentPoint called:', { oldScore, newScore, skipCollaborative, reason });
+  
+  // Always update local state immediately  
+  setOpponentScore(newScore);
+  
+  // Only do collaborative if not skipping and conditions are met
+  if (!skipCollaborative && collaborativeMode && isConnected) {
+    console.log('Sending collaborative update...');
+    const success = updateScore('opponent', 1, reason);
+    if (!success) {
+      console.warn('Collaborative update failed');
+    }
+  }
+}, [opponentScore, collaborativeMode, isConnected, updateScore]);
+
+  const maybeCreditGamesPlayed = useCallback(async (playerId, forceCredit = false, context = "unknown") => {
+    if (!playerId || !currentMatchId) {
+      console.warn("Cannot credit games played - missing playerId or matchId");
+      return false;
+    }
+
+    if (!forceCredit && creditedPlayersThisSetRef.current.has(playerId)) {
+      console.log(`Player ${playerId} already credited this set - skipping (context: ${context})`);
+      return true;
+    }
+
+    try {
+      console.log(`Crediting games played for player: ${playerId} (context: ${context}, force: ${forceCredit})`);
+      
+      const maxSetsLimit = matchSettings?.totalSets || 3;
+      console.log(`Using maxSetsLimit: ${maxSetsLimit} for player ${playerId}`);
+      
+      const response = await axios.post(`${API_URL}/api/players/increment-games-played`, {
+        playerIds: [playerId],
+        matchId: currentMatchId,
+        maxSetsLimit: maxSetsLimit,
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true,
+      });
+
+      const results = response.data.results || [];
+      const playerResult = results.find(r => r.playerId === playerId);
+      
+      if (playerResult && !playerResult.success) {
+        console.warn(`Server blocked games played for ${playerId}: ${playerResult.error}`);
+        return false;
+      }
+
+      creditedPlayersThisSetRef.current.add(playerId);
+      setCreditedPlayersThisSet(prev => {
+        if (prev.includes(playerId)) return prev;
+        return [...prev, playerId];
+      });
+      
+      console.log(`Successfully credited games played for player ${playerId} (context: ${context})`);
+      return true;
+    } catch (err) {
+      console.error(`Failed to credit games played for player ${playerId} (context: ${context}):`, err.response?.data || err.message);
+      
+      if (err.response?.data?.message?.includes('maximum sets') || 
+          err.response?.data?.message?.includes('exceeds')) {
+        console.warn(`Player ${playerId} blocked - already at games played limit`);
+      }
+      
+      return false;
+    }
+  }, [currentMatchId, token, matchSettings?.totalSets]);
+
+ 
+ 
+
+  const onAddPoint = useCallback((team, amount = 1) => {
+    team === "our"
+      ? setOurScore(prev => prev + amount)
+      : setOpponentScore(prev => prev + amount);
+  }, []);
+
+  const onRemovePoint = useCallback((team, amount = 1) => {
+    team === "our"
+      ? setOurScore(prev => Math.max(0, prev - amount))
+      : setOpponentScore(prev => Math.max(0, prev - amount));
+  }, []);
+
+  const handleNewMatch = useCallback(async (newSettings) => {
+    console.log("Starting new match setup...");
+    setLoadingMatch(true);
+    try {
+      if (user?.id) {
+        await axios.put(`${API_URL}/api/users/${user.id}/match-id`, 
+          { currentMatchId: null }, 
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            withCredentials: true,
+          }
+        );
+        console.log("Cleared currentMatchId from user profile.");
+      }
+
+      const payload = {
+        userId: user?.id,
+        teamName: newSettings?.teamName || "Our Team",
+        opponentName: opponentName || newSettings?.opponentName || "Opponent",
+        eventName: newSettings?.eventName || "",
+        location: newSettings?.location || "",
+        currentSet: 1,
+        totalSets: newSettings?.totalSets || newSettings?.maxSets || 3,
+        playAllSets: !!newSettings?.playAllSets,
+        pointsNonDeciding: newSettings?.pointsNonDeciding || 25,
+        pointsDeciding: newSettings?.pointsDeciding || 15,
+        collaborativeMode: newSettings?.collaborativeMode,
+        courtPlayers: Array.from({ length: 6 }, (_, i) => ({
+          id: `empty-filler-${i}`,
+          name: "?",
+          number: "?",
+          isLibero: false,
+        })),
+        benchPlayers: benchPlayers || [],
+        ourScore: 0,
+        opponentScore: 0,
+        ourSetsWon: 0,
+        opponentSetsWon: 0,
+        actionLog: [],
+        substitutionLog: [],
+        liberoSubTargets: {},
+        setDeactivatedPlayers,
+        setScores: [],
+        creditedPlayersThisSet: [],
+        teamStats: {
+          ourEarned: 0,
+          ourError: 0,
+          oppEarned: 0,
+          oppError: 0,
+        },
+      };
+
+      const res = await axios.post(`${API_URL}/api/matches/save`, payload, {
+        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true,
+      });
+      const newMatch = res.data;
+      
+      console.log("New match created:", newMatch);
+      
+      setCurrentMatchId(newMatch._id);
+      await syncCurrentMatchIdToProfile(newMatch._id);
+      
+      setMatchSettings({
+        teamName: newMatch.teamName,
+        opponentName: opponentName || "Opponent",
+        eventName: newMatch.eventName || "",
+        location: newMatch.location || "",
+        currentSet: newMatch.currentSet || 1,
+        totalSets: newMatch.totalSets || 3,
+        playAllSets: !!newSettings?.playAllSets,
+        pointsNonDeciding: newMatch.pointsNonDeciding || 25,
+        pointsDeciding: newMatch.pointsDeciding || 15,
+        _id: newMatch._id,
+      });
+
+      setCourtPlayers(Array.from({ length: 6 }, (_, i) => ({
+        id: `empty-filler-${i}`,
+        name: "?",
+        number: "?",
+        isLibero: false,
+      })));
+
+      if (benchPlayers && benchPlayers.length > 0) {
+        setBenchPlayers(benchPlayers);
+      } else {
+        console.warn("Bench players missing or empty during match creation.");
+      }
+
+      syncCreditedPlayersFromState([]);
+      setSubstitutionLog([]);
+      setActionLog([]);
+      setAllowedLiberoSubTarget(null);
+      setSlot5TargetId(null);
+      setOurScore(0);
+      setOpponentScore(0);
+      setOurSetsWon(0);
+      setOpponentSetsWon(0);
+      setSetScores(newMatch.setScores || []);
+      setServeSide("opponent");
+
+    } catch (err) {
+      console.error("Failed to create new match:", err);
+      alert("Failed to create a new match. Try again.");
+    } finally {
+      setLoadingMatch(false);
+    }
+  }, [user?.id, token, benchPlayers, opponentName, syncCurrentMatchIdToProfile, syncCreditedPlayersFromState]);
+
+  const handleDeletePlayer = useCallback(async (id) => {
+    try {
+      await axios.delete(`${API_URL}/api/players/${id}`);
+      await refreshBenchPlayers();
+    } catch (error) {
+      console.error("Error deleting player:", error);
+      alert("Failed to delete player.");
+    }
+  }, [refreshBenchPlayers]);
+  
+  const handlePlayerUpdate = useCallback(async (id, updates) => {
+    try {
+      await axios.put(`${API_URL}/api/players/${id}`, updates, {
+        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true,
+      });
+      await refreshBenchPlayers();
+      console.log("Player updated successfully");
+    } catch (error) {
+      console.error("Error updating player:", error);
+      alert("Failed to update player.");
+    }
+  }, [refreshBenchPlayers, token]); 
+
+  const removeGamesPlayedCredit = useCallback(async (playerId) => {
+    if (!playerId || !currentMatchId) {
+      console.warn("Cannot remove games played credit - missing playerId or matchId");
+      return false;
+    }
+
+    try {
+      console.log(`Removing games played credit for player: ${playerId}`);
+      
+      const response = await axios.post(`${API_URL}/api/players/decrement-games-played`, {
+        playerIds: [playerId],
+        matchId: currentMatchId,
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true,
+      });
+
+      creditedPlayersThisSetRef.current.delete(playerId);
+      setCreditedPlayersThisSet(prev => prev.filter(id => id !== playerId));
+      
+      console.log(`Successfully removed games played credit for player ${playerId}`, response.data);
+      return true;
+    } catch (err) {
+      console.error(`Failed to remove games played credit for player ${playerId}:`, err.response?.data || err.message);
+      return false;
+    }
+  }, [currentMatchId, token]);
+
+  const handlePlayerCreate = useCallback(async (playerData) => {
+    if (!user?.id || !matchSettings?.teamName) {
+      alert("Cannot create player: User or Team Name missing.");
+      return;
+    }
+    try {
+      await axios.post(`${API_URL}/api/players`, {
+        ...playerData,
+        userId: user.id,
+        team: matchSettings.teamName
+      });
+      await refreshBenchPlayers();
+    } catch (error) {
+      console.error("Error creating player:", error);
+      alert("Failed to create player. Please select the team above and make sure the player number is unique.");
+    }
+  }, [user?.id, matchSettings?.teamName, refreshBenchPlayers]);
+
+  const onResetBench = useCallback(async () => {
+    if (!matchSettings?.teamName) {
+      alert("Cannot reset bench: Team name not set.");
+      return;
+    }
+    const confirmReset = window.confirm(
+      `Are you sure you want to delete ALL players associated with team "${matchSettings.teamName}" from the database? This cannot be undone.`
+    );
+    if (confirmReset) {
+      try {
+        await axios.delete(`${API_URL}/api/players`, {
+          params: { userId: user.id, team: matchSettings.teamName }
+        });
+        setBenchPlayers([]);
+        clearCourt();
+        alert(`All players for team "${matchSettings.teamName}" deleted.`);
+      } catch (error) {
+        console.error("Error resetting bench:", error);
+        alert("Failed to reset bench.");
+      }
+    }
+  }, [matchSettings?.teamName, user?.id, clearCourt]);
+
+  const onRecallBench = useCallback(async (team) => {
+    if (!team) {
+      alert("Please provide a team name to recall.");
+      return;
+    }
+    if (!user?.id) {
+      alert("Cannot recall bench: User not logged in.");
+      return;
+    }
+    try {
+      const response = await axios.get(`${API_URL}/api/players`, {
+        params: { team: team }
+      });
+      
+      const currentCourtPlayerIds = new Set(
+        courtPlayers.map(p => p?._id).filter(id => id)
+      );
+      const fetchedBenchPlayers = response.data.filter(
+        player => !currentCourtPlayerIds.has(player._id)
+      );
+      setBenchPlayers(fetchedBenchPlayers);
+      alert(`Players for team "${team}" recalled to bench.`);
+    } catch (error) {
+      console.error("Error recalling bench:", error);
+      alert(`Failed to recall players for team "${team}".`);
+    }
+  }, [user?.id, courtPlayers]);
+
+  const SaveStatusIndicator = useCallback(() => {
+    if (!saveStatus) return null;
+    
+    const statusConfig = {
+      saving: { text: "Saving...", color: "#FFA500", icon: "Loading" },
+      saved: { text: "Saved", color: "#4CAF50", icon: "Check" },
+      error: { text: "Save Failed", color: "#F44336", icon: "Error" }
+    };
+    
+    const config = statusConfig[saveStatus];
+    
+    return (
+      <div style={{
+        position: "fixed",
+        top: showHeader ? "120px" : "60px",
+        left: "10px",
+        zIndex: 1001,
+        padding: "8px 12px",
+        borderRadius: "6px",
+        fontSize: "14px",
+        background: config.color,
+        color: "white",
+        border: "none",
+        boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+        display: "flex",
+        alignItems: "center",
+        gap: "5px",
+        transition: "all 0.3s ease"
+      }}>
+        <span>{config.icon}</span>
+        <span>{config.text}</span>
+      </div>
+    );
+  }, [saveStatus, showHeader]);
+
+  // FIXED: Now register callbacks after processSetEnding is defined
+ // In App.js, around line 800-900, ensure the set ending callbacks are included:
+
+useEffect(() => {
+  if (!collaborativeMode) return;
+
+  const callbacks = {
+    onBallStateChange: (newBallState, data) => {
+      console.log('App.js: onBallStateChange callback called!', { newBallState, data });
+      setBallState(newBallState);
+      
+      if (data.ballSide !== undefined) {
+        setBallSide(data.ballSide);
+      }
+      if (data.currentServeSide !== undefined) {
+        setCurrentServeSide(data.currentServeSide);
+      }
+    },
+
+    onServeSideChange: (newServeSide, data) => {
+      console.log('App.js: onServeSideChange callback called!', { newServeSide, data });
+      setCurrentServeSide(newServeSide);
+      setBallSide(newServeSide);
+    },
+
+    onGameStateChange: (gameState, data) => {
+      console.log('App.js: onGameStateChange callback called!', { gameState, data });
+      setBallState(gameState.ballState);
+      setCurrentServeSide(gameState.serveSide);
+      setBallSide(gameState.ballSide);
+    },
+
+    onScoreUpdate: (data) => {
+  console.log("App.js: Score update via callback:", data);
+  
+  if (setEndingInProgressRef.current || isRestoringMatchRef.current) {
+    console.log("BLOCKED: Score update during transition");
+    return;
+  }
+  
+  const currentUserId = user?.id || user?._id;
+  const updateUserId = data.updatedBy?.userId;
+  
+  if (updateUserId === currentUserId) {
+    console.log("Skipping own score update");
+    return;
+  }
+  
+  console.log("Processing collaborative score update from another user");
+  
+  // ✅ FIX: SET to absolute scores from server
+  if (data.team === 'our') {
+    setOurScore(data.newScore);
+    setTeamStats(prev => ({ ...prev, ourEarned: prev.ourEarned + 1 }));
+  } else if (data.team === 'opponent') {
+    setOpponentScore(data.newScore);
+    setTeamStats(prev => ({ ...prev, oppEarned: prev.oppEarned + 1 }));
+  }
+  
+  setBallState('serve');
+  setCurrentServeSide(data.team);
+  setBallSide(data.team);
+  
+  const actionText = `${data.updatedBy?.username || 'Another user'} scored: ${data.reason}`;
+  setActionLog(prev => [...prev, {
+    action: actionText,
+    timestamp: data.timestamp || new Date().toISOString(),
+    type: 'collaborative_score_update',
+    meta: { source: 'collaborative', team: data.team, reason: data.reason }
+  }]);
+},
+
+    // 🔥 FIX: Add the missing set ending callbacks HERE in App.js
+    onSetEndingDecision: (data) => {
+      console.log("App.js: Set ending decision received from owner:", data);
+      processSetEnding(data.winner, data.winnerName, data.newOurSets, data.newOpponentSets, data.isMatchOver);
+    },
+
+    onSetEndingCancelled: (data) => {
+      console.log("App.js: Set ending cancelled by owner:", data);
+      setEndingInProgressRef.current = false;
+    }
+  };
+
+  registerStateCallbacks(callbacks);
+  
+  return () => {
+    registerStateCallbacks({
+      onBallStateChange: null,
+      onServeSideChange: null, 
+      onGameStateChange: null,
+      onScoreUpdate: null,
+      onSetEndingDecision: null,     // 🔥 FIX: Clear these too
+      onSetEndingCancelled: null     // 🔥 FIX: Clear these too
+    });
+  };
+}, [
+  collaborativeMode,
+  registerStateCallbacks, 
+  setBallState, 
+  setBallSide, 
+  setCurrentServeSide,
+  setOurScore,      
+  setOpponentScore, 
+  setTeamStats,     
+  setActionLog,     
+  user?.id,
+  processSetEnding  // 🔥 FIX: Add this dependency
+]);
+  // All remaining useEffect hooks...
+
+  useEffect(() => {
+    const handleUserLogout = () => {
+      console.log("User logout detected, clearing match state");
+      clearAllMatchState();
+    };
+
+    window.addEventListener('userLogout', handleUserLogout);
+    return () => window.removeEventListener('userLogout', handleUserLogout);
+  }, [clearAllMatchState]);
+
+  useEffect(() => {
+    const currentUserId = user?.id;
+    const previousUserId = previousUserRef.current;
+
+    if (previousUserId && !currentUserId) {
+      console.log(`User logged out, clearing state`);
+      clearAllMatchState();
+    } else if (previousUserId && currentUserId && previousUserId !== currentUserId) {
+      if (!matchSettings?.collaborativeMode?.enabled) {
+        console.log(`User switched (non-collaborative), clearing state`);
+        clearAllMatchState();
+      }
+    }
+
+    previousUserRef.current = currentUserId;
+  }, [user?.id, clearAllMatchState, matchSettings?.collaborativeMode?.enabled]);
+
+  useEffect(() => {
+    if (matchSettings && matchSettings.teamName && !isRestoringMatch) {
+      refreshBenchPlayers();
+    }
+  }, [matchSettings?.teamName, isRestoringMatch, refreshBenchPlayers]);
+
+  useEffect(() => {
+    const performAutoSave = async () => {
+      try {
+        if (currentMatchId && previousPathname.current !== location.pathname) {
+          console.log(`Auto-saving match before navigation (${previousPathname.current} -> ${location.pathname})`);
+          await saveMatchData(false);
+          console.log("Auto-save completed successfully");
+        }
+      } catch (err) {
+        console.error("Auto-save failed:", err);
+      }
+    };
+
+    if (previousPathname.current !== null) {
+      performAutoSave();
+    }
+
+    previousPathname.current = location.pathname;
+  }, [location.pathname, currentMatchId, saveMatchData]);
+
+  useEffect(() => {
+    if (!currentMatchId || location.pathname !== '/') return;
+    
+    const timeoutId = setTimeout(async () => {
+      try {
+        await saveMatchData(false);
+        console.log("Auto-saved (non-score data)");
+      } catch (err) {
+        console.error("Auto-save failed:", err);
+      }
+    }, AUTO_SAVE_DELAY);
+    
+    return () => clearTimeout(timeoutId);
+  }, [
+    courtPlayers,
+    positionMapping, 
+    actionLog,
+    substitutionLog,
+    currentMatchId,
+    location.pathname,
+    saveMatchData
+  ]);
+
+  useEffect(() => {
+    if (!currentMatchId || location.pathname !== '/express' || !matchSettings?.teamName) return;
+    
+    const autoSaveExpress = async () => {
+      try {
+        await saveMatchData(false);
+        console.log("Express: Auto-saved court/position changes");
+      } catch (err) {
+        console.error("Express: Auto-save failed:", err);
+      }
+    };
+
+    const timeoutId = setTimeout(autoSaveExpress, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [courtPlayers, positionMapping, actionLog, currentMatchId, location.pathname, matchSettings?.teamName, saveMatchData]);
+
+  useEffect(() => {
+    if (!currentMatchId || location.pathname !== '/') return;
+
+    const intervalId = setInterval(async () => {
+      try {
+        await saveMatchData(false);
+        console.log("Periodic auto-save completed (3 min interval)");
+      } catch (err) {
+        console.error("Periodic auto-save failed:", err);
+      }
+    }, PERIODIC_SAVE_INTERVAL);
+
+    return () => clearInterval(intervalId);
+  }, [currentMatchId, location.pathname, saveMatchData]);
+
+  useEffect(() => {
+    const handleBeforeUnload = async () => {
+      if (!currentMatchId) return;
+
+      try {
+        await saveMatchData(false);
+      } catch (err) {
+        console.error("beforeunload comprehensive save failed, falling back to beacon:", err);
+        
+        try {
+          const blob = new Blob([JSON.stringify(syncPayloadRef.current)], {
+            type: "application/json",
+          });
+          navigator.sendBeacon(`${API_URL}/api/matches/${currentMatchId}/sync-state`, blob);
+        } catch (beaconErr) {
+          console.error("beacon save also failed:", beaconErr);
+        }
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [currentMatchId, saveMatchData]);
+
+  useEffect(() => {
+    syncPayloadRef.current = {
+      substitutionLog,
+      courtPlayers,
+      benchPlayers,
+      currentSet,
+      totalSets,
+      actionLog,
+      ourScore,
+      opponentName,
+      opponentScore,
+      teamStats,
+      ourSetsWon,
+      opponentSetsWon,
+      setScores,
+      liberoSubTargets: {
+        allowedLiberoSubTarget,
+        slot5TargetId,
+      },
+      lastUpdated: new Date().toISOString(),
+    };
+  }, [
+    substitutionLog,
+    courtPlayers,
+    benchPlayers,
+    currentSet,
+    totalSets,
+    actionLog,
+    ourScore,
+    opponentName,
+    opponentScore,
+    teamStats,
+    ourSetsWon,
+    opponentSetsWon,
+    setScores,
+    allowedLiberoSubTarget,
+    slot5TargetId
+  ]);
+
+  // Set ending logic effect
+// Replace your entire set ending useEffect with this complete version:
+
+useEffect(() => {
+  if (!currentMatchId) return;
+  if (!matchSettings || !matchSettings.totalSets) return;
+  if (isRestoringMatchRef.current) return;
+  if (setEndingInProgressRef.current) return;
+  if (isRestoringScoresRef.current) return;
+  if (location.pathname === '/settings') return;
+
+  const timeSinceLastCheck = Date.now() - (window.lastSetEndingCheck || 0);
+  if (timeSinceLastCheck < 5000) {
+    console.log("⏱️ Set ending check debounced");
+    return;
+  }
+  window.lastSetEndingCheck = Date.now();
+  
+  console.log("SET ENDING CHECK:", {
+    ourScore,
+    opponentScore, 
+    currentSet: matchSettings.currentSet,
+    ourSetsWon,
+    opponentSetsWon,
+    matchId: currentMatchId,
+    timestamp: new Date().toISOString(),
+    collaborativeMode,
+    isMatchOwner: isMatchOwner(),
+    isConnected
+  });
+
+  const isPlayAll = !!matchSettings.playAllSets;
+  const setsToWin = Math.ceil(matchSettings.totalSets / 2);
+
+  const requiredPoints = isPlayAll
+    ? (matchSettings.pointsNonDeciding || 25)
+    : (matchSettings.currentSet === matchSettings.totalSets
+        ? (matchSettings.pointsDeciding || 15)
+        : (matchSettings.pointsNonDeciding || 25));
+
+  // Check if set is actually complete
+  const isSetComplete = (ourScore >= requiredPoints || opponentScore >= requiredPoints) && 
+                       Math.abs(ourScore - opponentScore) >= 2;
+
+  const setsCompleted = ourSetsWon + opponentSetsWon;
+  const isValidSetCompletion = setsCompleted < matchSettings.totalSets;
+
+  // Additional validation to prevent false triggers
+  if (isSetComplete && !isValidSetCompletion) {
+    console.error("CRITICAL: Invalid set completion detected!", {
+      ourScore, opponentScore, currentSet: matchSettings.currentSet,
+      ourSetsWon, opponentSetsWon, totalSets: matchSettings.totalSets,
+      setsCompleted, isValidSetCompletion
+    });
+    return;
+  }
+
+  // Only proceed if set is actually complete
+  if (!isSetComplete) {
+    // Remove this log entirely to prevent spam
+    // console.log("SET ENDING: Set not complete yet", ...);
+    return;
+  }
+
+  console.log("VALID SET COMPLETION:", {
+    winner: ourScore > opponentScore ? "our" : "opponent",
+    score: `${ourScore}-${opponentScore}`,
+    setNumber: matchSettings.currentSet,
+    collaborativeMode,
+    isOwner: isMatchOwner()
+  });
+
+  // Calculate winner and match details
+  const winner = ourScore > opponentScore ? "our" : "opponent";
+  const winnerName = winner === "our"
+    ? (matchSettings.teamName || "Our Team")
+    : (opponentName || "Opponent");
+
+  const newOurSets = ourSetsWon + (winner === "our" ? 1 : 0);
+  const newOpponentSets = opponentSetsWon + (winner === "opponent" ? 1 : 0);
+  const totalSetsPlayed = newOurSets + newOpponentSets;
+
+  const isMatchOver = isPlayAll
+    ? (totalSetsPlayed >= matchSettings.totalSets)
+    : (newOurSets >= setsToWin || newOpponentSets >= setsToWin);
+
+  // In collaborative mode, ONLY the match owner should process set endings
+  if (collaborativeMode && isConnected) {
+    if (isMatchOwner()) {
+      console.log("COLLABORATIVE: Match owner handling set ending decision");
+      handleSetEndingAsOwner(winner, winnerName, newOurSets, newOpponentSets, isMatchOver);
+    } else {
+      console.log("COLLABORATIVE: Non-owner detected set completion - waiting for owner's decision");
+      return;
+    }
+  } else {
+    // Non-collaborative: Process normally
+    console.log("NON-COLLABORATIVE: Handling set ending individually");
+    handleSetEndingIndividually(winner, winnerName, newOurSets, newOpponentSets, isMatchOver);
+  }
+
+}, [
+  // Put currentMatchId first so the effect only runs when there's actually a match
+  currentMatchId,
+  // Only include score-related dependencies that actually matter for set completion
+  ourScore, 
+  opponentScore, 
+  // Only include match settings if they exist
+  matchSettings?.currentSet,
+  matchSettings?.totalSets,
+  matchSettings?.playAllSets,
+  matchSettings?.pointsNonDeciding,
+  matchSettings?.pointsDeciding,
+  matchSettings?.teamName,
+  ourSetsWon, 
+  opponentSetsWon, 
+  // Other essential dependencies
+  location.pathname, 
+  collaborativeMode, 
+  isConnected, 
+  opponentName,
+  // These functions should be memoized with useCallback to prevent unnecessary re-runs
+  handleSetEndingAsOwner,
+  handleSetEndingIndividually,
+  isMatchOwner
+]);
+
+  useEffect(() => {
+    if (!socket || !collaborativeMode) return;
+
+    const toNum = (v) => (v === undefined || v === null ? NaN : Number(v));
+
+    const handleScoreUpdate = (data) => {
+      console.log("App.js: Received collaborative score update:", data);
+
+      const our = toNum(data.ourScore);
+      const opp = toNum(data.opponentScore);
+      if (Number.isFinite(our)) setOurScore(our);
+      if (Number.isFinite(opp)) setOpponentScore(opp);
+
+      setTeamStats((prev) => {
+        const next = { ...prev };
+        switch (data.reason) {
+          case 'earned':
+            next.ourEarned = (next.ourEarned || 0) + 1;
+            break;
+          case 'opponent_error':
+            next.oppError = (next.oppError || 0) + 1;
+            break;
+          case 'opponent_earned':
+            next.oppEarned = (next.oppEarned || 0) + 1;
+            break;
+          case 'our_error':
+            next.ourError = (next.ourError || 0) + 1;
+            break;
+          default:
+            break;
+        }
+        return next;
+      });
+
+      setBallState('serve');
+      setCurrentServeSide(data.team);
+      setBallSide(data.team);
+
+      const me = user?.id || user?._id;
+      const actorId = data.updatedBy?.userId || data.userId;
+      const actorName = actorId === me ? 'You' : (data.updatedBy?.username || 'Another user');
+      const actionText = `${actorName} scored: ${data.reason}`;
+
+      setActionLog((prev) => [
+        ...prev,
+        {
+          action: actionText,
+          timestamp: data.timestamp || new Date().toISOString(),
+          type: 'collaborative_score_update',
+          meta: {
+            source: 'collaborative',
+            team: data.team,
+            reason: data.reason,
+            newScore: data.newScore
+          }
+        }
+      ]);
+    };
+
+    socket.on('score_updated', handleScoreUpdate);
+    return () => socket.off('score_updated', handleScoreUpdate);
+  }, [
+    socket,
+    collaborativeMode,
+    user?.id,
+    user?._id,
+    setOurScore,
+    setOpponentScore,
+    setTeamStats,
+    setBallState,
+    setCurrentServeSide,
+    setBallSide,
+    setActionLog
+  ]);
+
+  useEffect(() => {
+    if (!socket || !collaborativeMode) return;
+
+    const handleSetEndingDecision = (data) => {
+      console.log("NON-OWNER: Received set ending decision from owner:", data);
+      
+      if (data.matchId !== currentMatchId) {
+        console.warn("Received set ending decision for different match, ignoring");
+        return;
+      }
+
+      const message = data.isMatchOver 
+        ? `${data.winnerName} wins the match ${data.newOurSets}-${data.newOpponentSets}!`
+        : `${data.winnerName} wins set ${data.setNumber} (${data.finalScore}). Preparing for next set...`;
+      
+      alert(message);
+
+      processSetEnding(data.winner, data.winnerName, data.newOurSets, data.newOpponentSets, data.isMatchOver);
+    };
+
+    const handleSetEndingCancelled = (data) => {
+      console.log("NON-OWNER: Owner cancelled set ending:", data);
+      
+      if (data.matchId !== currentMatchId) return;
+      
+      console.log("Match owner chose not to continue to next set");
+    };
+
+    socket.on('set_ending_decision', handleSetEndingDecision);
+    socket.on('set_ending_cancelled', handleSetEndingCancelled);
+
+    return () => {
+      socket.off('set_ending_decision', handleSetEndingDecision);
+      socket.off('set_ending_cancelled', handleSetEndingCancelled);
+    };
+  }, [socket, collaborativeMode, currentMatchId, processSetEnding]);
+
+  useEffect(() => {
+    const syncStateOnNavigation = async () => {
+      if (location.pathname === '/express' && previousPathname.current === '/' && currentMatchId) {
+        console.log("Syncing state when entering Express page");
+        return;
+      }
+      
+      if (location.pathname === '/' && previousPathname.current === '/express' && currentMatchId) {
+        console.log("Syncing state when returning to main court from Express");
+        
+        try {
+          await saveMatchData(false);
+          
+          const res = await axios.get(`${API_URL}/api/matches/${currentMatchId}`);
+          const match = res.data;
+          
+          if (match.courtPlayers) {
+            const hydratedCourtPlayers = match.courtPlayers.map((player, i) => {
+              if (!player || !player.name) {
+                return { id: `empty-${i}`, name: "?", number: "?", isLibero: false };
+              }
+              return {
+                _id: player._id || `empty-${i}`,
+                id: player.id || player._id || `empty-${i}`,
+                name: player.name,
+                number: player.number,
+                isLibero: player.isLibero || false,
+                replacedPlayer: player.replacedPlayer || null,
+                careerStats: player.careerStats || {},
+                seasonStats: player.seasonStats || {},
+              };
+            });
+            
+            const filledCourtPlayers = [
+              ...hydratedCourtPlayers,
+              ...Array.from({ length: Math.max(0, 6 - hydratedCourtPlayers.length) }, (_, i) => ({
+                id: `empty-filler-${i}`,
+                name: "?",
+                number: "?",
+                isLibero: false,
+              }))
+            ].slice(0, 6);
+            
+            setCourtPlayers(filledCourtPlayers);
+            
+            if (match.positionMapping) {
+              setPositionMapping(match.positionMapping);
+            }
+            
+            console.log("Court state synced on navigation from Express");
+          }
+        } catch (error) {
+          console.error("Failed to sync state on navigation:", error);
+        }
+      }
+    };
+    
+    const timeoutId = setTimeout(syncStateOnNavigation, 200);
+    return () => clearTimeout(timeoutId);
+  }, [location.pathname, currentMatchId, saveMatchData]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const restoreMatchIdFromUser = async () => {
+      if (!user?.id) {
+        if (isMounted) {
+          clearAllMatchState();
+          setMatchRestored(true);
+        }
+        return;
+      }
+
+      console.log(`Restoring match data for user: ${user.id} with teams: ${user.teams?.join(', ') || 'none'}`);
+      
+      try {
+        const res = await axios.get(`${API_URL}/api/users/${user.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          withCredentials: true,
+        });
+        
+        if (res.data?.id !== user.id && res.data?._id !== user.id) {
+          console.error("SECURITY: User ID mismatch in response!");
+          clearAllMatchState();
+          if (isMounted) setMatchRestored(true);
+          return;
+        }
+
+        const storedMatchId = res.data?.currentMatchId;
+        if (storedMatchId && isMounted) {
+          console.log(`Found match ID for user ${user.id}: ${storedMatchId}`);
+          setCurrentMatchId(storedMatchId);
+          await setMatchId(storedMatchId);
+        } else {
+          console.log(`No active match found for user ${user.id}`);
+        }
+      } catch (err) {
+        console.error("Fetch match ID failed:", err);
+        clearAllMatchState();
+      } finally {
+        if (isMounted) setMatchRestored(true);
+      }
+    };
+
+    const timeoutId = setTimeout(restoreMatchIdFromUser, 100);
+    
+    return () => { 
+      clearTimeout(timeoutId);
+      isMounted = false; 
+    };
+  }, [user?.id, user?.teams, token, clearAllMatchState, setMatchId]);
+
+  useEffect(() => {
+    const loadMatch = async () => {
+      if (!matchRestored || !currentMatchId || !user?.id) return;
+
+      console.log(`Loading match ${currentMatchId} for user ${user.id}`);
+      setLoadingMatch(true);
+      setIsRestoringMatch(true);
+      isRestoringMatchRef.current = true;
+
+      try {
+        const res = await axios.get(`${API_URL}/api/matches/${currentMatchId}`);
+        const match = res.data;
+        
+        if (match.status === "Final") {
+          console.log(`Match ${currentMatchId} is finalized, clearing currentMatchId`);
+          
+          try {
+            await axios.put(`${API_URL}/api/users/${user.id}/match-id`, {
+              currentMatchId: null,
+            }, {
+              headers: { Authorization: `Bearer ${token}` },
+              withCredentials: true,
+            });
+            console.log("Cleared currentMatchId from user profile");
+          } catch (err) {
+            console.error("Failed to clear currentMatchId from user profile:", err);
+          }
+          
+          clearAllMatchState();
+          return;
+        }
+
+        // Security check
+        const isOwner = String(match.userId) === String(user.id || user._id);
+        const hasTeamAccess = user.teams && user.teams.includes(match.teamName);
+        const canAccessMatch = isOwner || hasTeamAccess;
+
+        if (!canAccessMatch) {
+          console.error(`SECURITY: User ${user.id} cannot access match ${currentMatchId}`);
+          console.log(`Match owner: ${match.userId}, Match team: ${match.teamName}`);
+          console.log(`User teams: ${user.teams?.join(', ') || 'none'}`);
+          
+          alert("Access denied: You don't have permission to view this match. This may be from a different team or user.");
+          clearAllMatchState();
+          return;
+        }
+
+        // Restore match data
+        const teamNameFromSettings = match.teamName?.trim();
+        const teamNameFallback = "Your Team";
+        const resolvedTeamName = teamNameFromSettings || teamNameFallback;
+        setTotalSets(match.totalSets);
+
+        if (!resolvedTeamName) {
+          alert("This match does not have a valid team name. Please go to Settings and select one.");
+          return;
+        }
+
+        if (match.opponentName) {
+          setOpponentName(match.opponentName);
+        }
+
+        setMatchSettings({
+          teamName: resolvedTeamName,
+          opponentName: match.opponentName || "Opponent",
+          eventName: match.eventName || "LOGGERHEAD.APP",
+          location: match.location || "",
+          currentSet: match.currentSet || 1,
+          totalSets: match.totalSets || match.maxSets || 3,
+          playAllSets: match.playAllSets ?? false,
+          pointsNonDeciding: match.pointsNonDeciding || 25,
+          pointsDeciding: match.pointsDeciding || 15,
+          collaborativeMode: match.collaborativeMode,
+          userId: isOwner ? (match.userId || user.id) : undefined,
+          _id: match._id,
+        });
+
+        // Restore court players
+        const hydratedCourtPlayers = (match.courtPlayers || []).map((slot, i) => {
+          if (!slot) {
+            console.warn(`Court slot ${i} missing player info. Using placeholder.`);
+            return { id: `empty-${i}`, name: "?", number: "?", isLibero: false };
+          }
+
+          if (typeof slot === "string") {
+            const found = (match.benchPlayers || []).find(p => p._id === slot);
+            if (!found) {
+              console.warn(`Court slot ${i} could not find player ${slot} in benchPlayers.`);
+              return { id: slot, name: "?", number: "?" };
+            }
+            return {
+              _id: found._id,
+              id: found._id,
+              name: found.name || "?",
+              number: found.number || "?",
+              isLibero: found.isLibero || false,
+              replacedPlayer: found.replacedPlayer || null,
+              careerStats: found.careerStats || {},
+              seasonStats: found.seasonStats || {},
+            };
+          } else {
+            return {
+              _id: slot._id || `empty-${i}`,
+              id: slot.id || slot._id || `empty-${i}`,
+              name: slot.name || "?",
+              number: slot.number || "?",
+              isLibero: slot.isLibero || false,
+              replacedPlayer: slot.replacedPlayer || null,
+              careerStats: slot.careerStats || {},
+              seasonStats: slot.seasonStats || {},
+            };
+          }
+        });
+
+        const filledCourtPlayers = [
+          ...hydratedCourtPlayers,
+          ...Array.from({ length: Math.max(0, 6 - hydratedCourtPlayers.length) }, (_, i) => ({
+            id: `empty-filler-${i}`,
+            name: "?",
+            number: "?",
+            isLibero: false,
+          }))
+        ].slice(0, 6);
+
+        setCourtPlayers(filledCourtPlayers);
+
+        if (match.collaborativeMode?.enabled) {
+          setTimeout(async () => {
+            if (collaborativeMode && isConnected && syncCourtPlayers) {
+              console.log("Syncing restored court players to other users");
+              
+              const success = await syncCourtPlayers(filledCourtPlayers, {
+                source: 'match_restoration',
+                userId: user.id,
+                username: user.username || user.name,
+                timestamp: new Date().toISOString()
+              });
+              
+              if (success) {
+                console.log("Court players synced after restoration");
+              }
+            }
+          }, 1000);
+        }
+        
+        setBenchPlayers(Array.isArray(match.benchPlayers) ? match.benchPlayers : []);
+        
+        isRestoringScoresRef.current = true;
+		const { ourScore, opponentScore } = restoreScoresFromDatabase(match);
+        setOurScore(ourScore);
+        setOpponentScore(opponentScore);
+		
+		setTimeout(() => {
+         isRestoringScoresRef.current = false;
+         }, 1000);
+
+        setSubstitutionLog(match.substitutionLog || []);
+        setActionLog(match.actionLog || []);
+        setTeamStats(match.teamStats || {
+          ourEarned: 0,
+          ourError: 0,
+          oppEarned: 0,
+          oppError: 0,
+        });
+        setAllowedLiberoSubTarget(match.liberoSubTargets?.allowedLiberoSubTarget || null);
+        setSlot5TargetId(match.liberoSubTargets?.slot5TargetId || null);
+        setOurSetsWon(typeof match.ourSetsWon === "number" ? match.ourSetsWon : 0);
+        setOpponentSetsWon(typeof match.opponentSetsWon === "number" ? match.opponentSetsWon : 0);
+        setSetScores(match.setScores || []);
+        setDeactivatedPlayers(match.deactivatedPlayers || []);
+        
+        if (match.positionMapping) {
+          setPositionMapping(match.positionMapping);
+        } else {
+          setPositionMapping({
+            0: '4', 1: '3', 2: '2', 3: '5', 4: '6', 5: '1'
+          });
+        }
+
+        if (match.creditedPlayersThisSet) {
+          console.log("Restoring credited players from database:", match.creditedPlayersThisSet);
+          syncCreditedPlayersFromState(match.creditedPlayersThisSet);
+        } else {
+          syncCreditedPlayersFromState([]);
+        }
+
+        const totalSetsCompleted = (match.ourSetsWon || 0) + (match.opponentSetsWon || 0);
+        const expectedSet = totalSetsCompleted + 1;
+        if (!match.currentSet || match.currentSet !== expectedSet) {
+          console.warn(`Mismatched currentSet (${match.currentSet}) vs expected (${expectedSet}). Auto-correcting.`);
+          setCurrentSet(expectedSet);
+          setMatchSettings(prev => ({ ...prev, currentSet: expectedSet }));
+        }
+        
+        const savedGameState = match.gameState;
+        if (savedGameState) {
+          setServeSide(savedGameState.serveSide || "opponent");
+          setBallState(savedGameState.ballState || "serve");
+          setBallSide(savedGameState.ballSide || savedGameState.serveSide || "opponent");
+          setCurrentServeSide(savedGameState.currentServeSide || savedGameState.serveSide || "opponent");
+        } else {
+          setServeSide("opponent");
+          setBallState("serve");
+          setBallSide("opponent");
+          setCurrentServeSide("opponent");
+        }
+
+        if (match.collaborativeMode && match.collaborativeMode.enabled) {
+          console.log("Restoring collaborative mode from match settings");
+          const restored = restoreCollaborativeModeFromMatch(match.collaborativeMode);
+          if (restored) {
+            setTimeout(() => {
+              console.log("Auto-joining collaborative match after restore");
+            }, 1000);
+          }
+        }
+
+        console.log("Match loaded successfully:", match);
+        await syncCurrentMatchIdToProfile(match._id);
+        await setMatchId(match._id);
+        
+      } catch (err) {
+        console.error("Failed to load match:", err);
+        alert(`Failed to load match with ID: ${currentMatchId}. Clearing data.`);
+        clearAllMatchState();
+      } finally {
+        setLoadingMatch(false);
+        setIsRestoringMatch(false);
+        isRestoringMatchRef.current = false;
+      }
+    };
+
+    loadMatch();
+  }, [
+    currentMatchId, 
+    matchRestored, 
+    user?.id, 
+    restoreScoresFromDatabase,
+    user?.teams, 
+    clearAllMatchState, 
+    syncCurrentMatchIdToProfile, 
+    syncCreditedPlayersFromState, 
+    restoreCollaborativeModeFromMatch,
+    setMatchId,
+    token,
+    collaborativeMode,
+    isConnected,
+    syncCourtPlayers
+  ]);
+
+  useEffect(() => {
+    const checkOrientation = () => setIsPortrait(window.innerHeight > window.innerWidth);
+    window.addEventListener("resize", checkOrientation);
+    checkOrientation();
+    return () => window.removeEventListener("resize", checkOrientation);
+  }, []);
+
+  useEffect(() => {
+    console.log("Current setScores state:", setScores);
+  }, [setScores]);
+
+  return (
+    <CollaborativeProvider matchSettings={matchSettings}>
+      <DndProvider backend={backend}>
+        <>
+          {showHeader && (
+            <header className="ios-header-bar" key={location.pathname}>
+              <div className="ios-header-content">
+                <div className="ios-logo-title">
+                  <img
+                    src="/web-app-manifest-192x192.png"
+                    alt="Loggerhead Logo"
+                    className="ios-logo-icon"
+                  />
+                  <span className="ios-app-title">
+                    Loggerhead
+                    <sub
+                      style={{
+                        fontSize: "0.6em",
+                        marginLeft: "4px",
+                        color: "#999999",
+                        verticalAlign: "sub",
+                      }}
+                    >
+                      v1.0
+                    </sub>
+                  </span>
+                </div>
+                {location.pathname !== "/login" &&
+                  location.pathname !== "/register" && (
+                    <button
+                      className="ios-menu-toggle"
+                      onClick={() => setShowMobileMenu((prev) => !prev)}
+                    >
+                      Menu
+                    </button>
+                  )}
+              </div>
+
+              {location.pathname !== "/login" &&
+                location.pathname !== "/register" && (
+                  <nav className={`ios-nav-links ${showMobileMenu ? "visible" : ""}`}>
+                    <a href="/profile">Profile</a>
+                    <a href="/settings">Settings</a>
+                    <a href="/match">Game Flow Logger</a>
+                    <a href="/express" style={{ 
+                      position: 'relative', 
+                      textDecoration: 'none',
+                      display: 'inline-block' 
+                    }}>
+                      Express Logger
+                      <span style={{
+                        position: 'absolute',
+                        top: '-8px',
+                        right: '-12px',
+                        background: '#FF3B30',
+                        color: 'white',
+                        fontSize: '9px',
+                        fontWeight: 'bold',
+                        padding: '2px 5px',
+                        borderRadius: '10px',
+                        minWidth: '18px',
+                        textAlign: 'center',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                      }}>
+                        NEW
+                      </span>
+                    </a>
+                    <a href="/stats">Player Stats</a>
+                    <a href="/blogs/submit">Bloggers</a>
+                  </nav>
+                )}
+            </header>
+          )}
+
+          <button
+            onClick={toggleHeader}
+            style={{
+              position: "fixed",
+              top: showHeader ? "70px" : "10px",
+              right: "10px",
+              zIndex: 1001,
+              padding: "6px 10px",
+              borderRadius: "6px",
+              fontSize: "12px",
+              background: "#007AFF",
+              color: "white",
+              border: "none",
+              boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+              cursor: "pointer",
+            }}
+          >
+            {showHeader ? "Hide Header" : "Show"}
+          </button>
+
+          <SaveStatusIndicator />
+
+          {isPortrait && !isDismissed && location.pathname === "/" && (
+            <div style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              width: "100dvw",
+              height: "100dvh",
+              backgroundColor: "#ddebe8",
+              color: "#111",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "24px",
+              padding: "1rem",
+              zIndex: 999999,
+              textAlign: "center"
+            }}>
+              <button
+                onClick={() => setIsDismissed(true)}
+                style={{
+                  position: "absolute",
+                  top: "20px",
+                  right: "20px",
+                  background: "none",
+                  border: "none",
+                  fontSize: "60px",
+                  cursor: "pointer",
+                  color: "#555"
+                }}
+              >
+                ×
+              </button>
+              <img
+                src={`${process.env.PUBLIC_URL}/favicon-96x96.png`}
+                alt="Flipped Loggerhead"
+                style={{
+                  width: "250px",
+                  height: "250px",
+                  transform: "rotate(210deg)",
+                  marginBottom: "10%",
+                  opacity: 0.9
+                }}
+              />
+              <p style={{ fontWeight: "bold", fontSize: "50px" }}>
+                Whoops!
+              </p>
+              <p style={{ fontSize: "50px" }}>
+                Match logging works best in <strong>landscape</strong> mode.<br />
+                Please rotate your device and help STANTON right himself.
+              </p>
+            </div>
+          )}
+
+          {user?.role === "admin" && (
+            <header className="admin-header">
+              <nav style={{
+                display: "flex",
+                justifyContent: "center",
+                backgroundColor: "#333",
+                color: "#fff",
+                padding: "10px",
+                gap: "20px",
+                fontSize: "16px"
+              }}>
+                <Link to="/beta-admin" style={{ color: "#fff", textDecoration: "none" }}>Beta Admin</Link>
+                <Link to="/env" style={{ color: "#fff", textDecoration: "none" }}>Env Check</Link>
+                <Link to="/admin/blogs" style={{ color: "#fff", textDecoration: "none" }}>Blog Approvals</Link>
+              </nav>
+            </header>
+          )}
+
+          <Routes>
+            <Route path="/about" element={<About />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/terms" element={<TermsOfService />} />
+            <Route path="/beta-admin" element={<PrivateRoute requiredRole="admin"><BetaAdminPage /></PrivateRoute>} />
+            <Route path="/blogs" element={<BlogList />} />
+            <Route path="/blogs/:id" element={<BlogPostPage />} />
+            <Route path="/blogs/submit" element={<PrivateRoute><SubmitBlog /></PrivateRoute>} />
+            <Route
+              path="/admin/blogs"
+              element={
+                <PrivateRoute requiredRole="admin">
+                  <BlogApprovalDashboard />
+                </PrivateRoute>
+              }
+            />
+            
+            <Route path="/faq" element={<FAQPage />} />
+            <Route path="/how-to" element={<HowToPage />} />
+            <Route path="/env" element={<PrivateRoute requiredRole="admin"><EnvCheck /></PrivateRoute>} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route 
+              path="/profile" 
+              element={
+                <PrivateRoute>
+                  <Profile setCurrentMatchId={setCurrentMatchId} />
+                </PrivateRoute>
+              } 
+            />
+
+            <Route
+              path="/"
+              element={
+                <PrivateRoute>
+                  {loadingMatch ? (
+                    <div style={{ 
+                      padding: 40, 
+                      textAlign: "center", 
+                      fontSize: '20px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minHeight: '300px'
+                    }}>
+                      <div style={{ marginBottom: '20px', fontSize: '48px' }}>Loading</div>
+                      <div>Loading match data...</div>
+                    </div>
+                  ) : !matchRestored ? (
+                    <div style={{ 
+                      padding: 40, 
+                      textAlign: "center", 
+                      fontSize: '18px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minHeight: '400px',
+                      backgroundColor: '#f8f9fa',
+                      borderRadius: '12px',
+                      margin: '20px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                    }}>
+                      <div style={{ marginBottom: '20px', fontSize: '64px' }}>Settings</div>
+                      <div style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px', color: '#333' }}>
+                        Restoring Match Data...
+                      </div>
+                      <div style={{ color: '#666', maxWidth: '400px' }}>
+                        Please wait while we check for any in-progress matches.
+                      </div>
+                    </div>
+                  ) : !currentMatchId ? (
+                    <div style={{ 
+                      padding: 40, 
+                      textAlign: "center", 
+                      fontSize: '18px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minHeight: '400px',
+                      backgroundColor: '#f8f9fa',
+                      borderRadius: '12px',
+                      margin: '20px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                    }}>
+                      <div style={{ marginBottom: '20px', fontSize: '64px' }}>Load A Match</div>
+                      <div style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px', color: '#333' }}>
+                        No Active Match Found
+                      </div>
+                      <div style={{ color: '#666', marginBottom: '32px', maxWidth: '500px', lineHeight: '1.6' }}>
+                        You don't have an active match in progress. Get started by creating a new match or resuming a previously saved match.
+                      </div>
+                      
+                      <div style={{ 
+                        display: 'flex', 
+                        gap: '16px', 
+                        flexWrap: 'wrap', 
+                        justifyContent: 'center',
+                        marginBottom: '24px'
+                      }}>
+                        <Link 
+                          to="/settings" 
+                          style={{
+                            display: 'inline-block',
+                            padding: '12px 24px',
+                            backgroundColor: '#007AFF',
+                            color: '#fff',
+                            textDecoration: 'none',
+                            borderRadius: '12px',
+                            fontWeight: '600',
+                            fontSize: '16px',
+                            boxShadow: '0 2px 6px rgba(0,122,255,0.3)',
+                            transition: 'transform 0.2s ease',
+                          }}
+                          onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
+                          onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
+                        >
+                          Start New Match
+                        </Link>
+                        
+                        <Link 
+                          to="/stats" 
+                          style={{
+                            display: 'inline-block',
+                            padding: '12px 24px',
+                            backgroundColor: '#34C759',
+                            color: '#fff',
+                            textDecoration: 'none',
+                            borderRadius: '12px',
+                            fontWeight: '600',
+                            fontSize: '16px',
+                            boxShadow: '0 2px 6px rgba(52,199,89,0.3)',
+                            transition: 'transform 0.2s ease',
+                          }}
+                          onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
+                          onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
+                        >
+                          View Past Matches
+                        </Link>
+                      </div>
+
+                      <div style={{
+                        backgroundColor: '#fff',
+                        padding: '20px',
+                        borderRadius: '8px',
+                        border: '1px solid #e0e0e0',
+                        maxWidth: '500px',
+                        fontSize: '14px',
+                        color: '#666'
+                      }}>
+                        <div style={{ fontWeight: '600', marginBottom: '8px', color: '#333' }}>Quick Start Guide:</div>
+                        <div style={{ textAlign: 'left', lineHeight: '1.5' }}>
+                          <div>1. Go to Settings to configure your team</div>
+                          <div>2. Add players to your roster</div>
+                          <div>3. Set match details (opponent, location, etc.)</div>
+                          <div>4. Start logging your match!</div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : !matchSettings ? (
+                    <div style={{ 
+                      padding: 40, 
+                      textAlign: "center", 
+                      fontSize: '18px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minHeight: '400px',
+                      backgroundColor: '#fff3cd',
+                      borderRadius: '12px',
+                      margin: '20px',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                      border: '1px solid #ffeaa7'
+                    }}>
+                      <div style={{ marginBottom: '20px', fontSize: '64px' }}>Warning</div>
+                      <div style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px', color: '#856404' }}>
+                        Match Settings Missing
+                      </div>
+                      <div style={{ color: '#856404', marginBottom: '32px', maxWidth: '500px', lineHeight: '1.6' }}>
+                        We found an active match but the settings are incomplete or corrupted. Please go to Settings to reconfigure your match.
+                      </div>
+                      
+                      <Link 
+                        to="/settings" 
+                        style={{
+                          display: 'inline-block',
+                          padding: '12px 24px',
+                          backgroundColor: '#FF9500',
+                          color: '#fff',
+                          textDecoration: 'none',
+                          borderRadius: '12px',
+                          fontWeight: '600',
+                          fontSize: '16px',
+                          boxShadow: '0 2px 6px rgba(255,149,0,0.3)',
+                        }}
+                      >
+                        Fix Match Settings
+                      </Link>
+                    </div>
+                  ) : (
+                    <VolleyballCourt
+                      courtPlayers={courtPlayers}
+                      benchPlayers={benchPlayers}
+                      setBenchPlayers={setBenchPlayers}
+                      setCourtPlayers={setCourtPlayers}
+                      updateCourtPositions={updateCourtPositions}
+                      updatePlayersOnCourt={updateCourtPositions}
+                      positionMapping={positionMapping}
+                      rotateCourtPositions={rotateCourtPositions}
+                      swapCourtPlayers={swapCourtPlayers} 
+                      removeGamesPlayedCredit={removeGamesPlayedCredit}
+                      refreshBenchPlayers={refreshBenchPlayers}
+                      refreshCourtPlayers={refreshCourtPlayers}
+                      serveSide={serveSide}
+                      opponentName={opponentName}
+                      setOpponentName={setOpponentName}
+                      onOurPoint={onOurPoint}
+                      onOpponentPoint={onOpponentPoint}
+                      ourScore={ourScore}
+                      saveMatchData={saveMatchData}
+                      opponentScore={opponentScore}
+                      ourSets={ourSetsWon}
+                      opponentSets={opponentSetsWon}
+                      match={matchSettings}
+                      onAddPoint={onAddPoint}
+                      onRemovePoint={onRemovePoint}
+                      currentMatchId={currentMatchId}
+                      setServeSide={setServeSide}
+                      actionLog={actionLog}
+                      setActionLog={setActionLog}
+                      substitutionLog={substitutionLog}
+                      setSubstitutionLog={setSubstitutionLog}
+                      allowedLiberoSubTarget={allowedLiberoSubTarget}
+                      slot5TargetId={slot5TargetId}
+                      setAllowedLiberoSubTarget={setAllowedLiberoSubTarget}
+                      setSlot5TargetId={setSlot5TargetId}
+					  syncMatchState={syncMatchState}
+                      teamStats={teamStats}
+                      setTeamStats={setTeamStats}
+                      showHeader={showHeader} 
+                      setShowHeader={setShowHeader}
+                      ballState={ballState}
+                      setBallState={setBallState}
+                      ballSide={ballSide}
+                      setBallSide={setBallSide}
+                      currentServeSide={currentServeSide}
+                      setCurrentServeSide={setCurrentServeSide}
+                      maybeCreditGamesPlayed={maybeCreditGamesPlayed}
+                      cardDisplayMode={uiPrefs.cardDisplayMode}
+                      setCardDisplayMode={(mode) =>
+                        setUiPrefs((p) => ({ ...p, cardDisplayMode: mode }))
+                      }
+                    />
+                  )}
+                </PrivateRoute>
+              }
+            />
+
+            <Route
+              path="/settings"
+              element={
+                <PrivateRoute>
+                  <SettingsPanel
+                    matchSettings={matchSettings}
+                    setMatchSettings={setMatchSettings}
+                    benchPlayers={benchPlayers}
+                    setBenchPlayers={setBenchPlayers}
+                    setCourtPlayers={setCourtPlayers}
+                    refreshBenchPlayers={refreshBenchPlayers}
+                    refreshCourtPlayers={refreshCourtPlayers}
+                    setCurrentMatchId={setCurrentMatchId}
+                    opponentName={opponentName}
+                    setOpponentName={setOpponentName}
+                    onCreatePlayer={handlePlayerCreate}
+                    handleDeletePlayer={handleDeletePlayer}
+                    onUpdatePlayer={handlePlayerUpdate}
+                    onResetBench={onResetBench}
+                    currentMatchId={currentMatchId}
+                    onRecallBench={onRecallBench}
+                    handleNewMatch={handleNewMatch}
+                    saveMatchData={saveMatchData}
+                    setOurScore={setOurScore}
+                    playAllSets={matchSettings?.playAllSets}
+                    setOpponentScore={setOpponentScore}
+                    setSubstitutionLog={setSubstitutionLog}
+                    setActionLog={setActionLog}
+                    setAllowedLiberoSubTarget={setAllowedLiberoSubTarget}
+                    setSlot5TargetId={setSlot5TargetId}
+                    ourScore={ourScore}
+                    isMobile={isMobile}
+                    opponentScore={opponentScore}
+                    ourSetsWon={ourSetsWon}
+                    opponentSetsWon={opponentSetsWon}
+                    setOurSetsWon={setOurSetsWon}
+                    setOpponentSetsWon={setOpponentSetsWon}
+                  />
+                </PrivateRoute>
+              }
+            />
+
+            <Route path="/express" element={
+              <SubscriptionRoute feature="Express Statistical Logging">
+                <ExpressStatPage
+                  courtPlayers={courtPlayers}
+                  setCourtPlayers={setCourtPlayers}
+                  updateCourtPositions={updateCourtPositions}
+                  rotateCourtPositions={rotateCourtPositions}
+                  swapCourtPlayers={swapCourtPlayers}
+                  positionMapping={positionMapping}
+                  deactivatedPlayers={deactivatedPlayers}
+                  setDeactivatedPlayers={setDeactivatedPlayers}
+                  benchPlayers={benchPlayers}
+                  setBenchPlayers={setBenchPlayers}
+                  
+                  currentMatchId={currentMatchId}
+                  match={matchSettings}
+                  actionLog={actionLog}
+                  setActionLog={setActionLog}
+                  substitutionLog={substitutionLog}
+                  setSubstitutionLog={setSubstitutionLog}
+                  setMatchSettings={setMatchSettings}
+                  
+                  ourScore={ourScore}
+                  opponentScore={opponentScore}
+                  onOurPoint={onOurPoint}
+                  onOpponentPoint={onOpponentPoint}
+                  teamStats={teamStats}
+                  setTeamStats={setTeamStats}
+                  
+                  ballState={ballState}
+                  setBallState={setBallState}
+                  ballSide={ballSide}
+                  setBallSide={setBallSide}
+                  currentServeSide={currentServeSide}
+                  setCurrentServeSide={setCurrentServeSide}
+				  processSetEnding={processSetEnding}
+				  setEndingInProgressRef={setEndingInProgressRef}
+                  
+                  saveMatchData={saveMatchData}
+                  maybeCreditGamesPlayed={maybeCreditGamesPlayed}
+                  token={token}
+                  autoJoinMatchIfPossible={(matchId) => autoJoinMatchIfPossible(matchId, user)}
+                  isMatchOwner={isMatchOwner}
+                  
+                  allowedLiberoSubTarget={allowedLiberoSubTarget}
+                  setAllowedLiberoSubTarget={setAllowedLiberoSubTarget}
+                  slot5TargetId={slot5TargetId}
+                  setSlot5TargetId={setSlot5TargetId}
+                />
+              </SubscriptionRoute>
+            } />
+
+            <Route
+              path="/stats"
+              element={
+                <PrivateRoute>
+                  <PlayerStatsPage
+                    currentMatchId={currentMatchId}
+                    teamName={matchSettings?.teamName}
+                    opponentName={opponentName}
+                  />
+                </PrivateRoute>
+              }
+            />
+            
+            <Route path="/ads-preview" element={<AdsPreviewPage />} />
+            <Route path="*" element={<Navigate to="/" />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password/:token" element={<ResetPassword />} />
+          </Routes>
+        </>
+      </DndProvider>
+    </CollaborativeProvider>
+  );
+}
+
+export default App;

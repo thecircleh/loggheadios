@@ -1,0 +1,2948 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import axios from 'axios';
+import logAndSyncStat from './logAndSyncStat';
+import { useDrag, useDrop } from "react-dnd";
+import { useCollaborative} from './collaborative/CollaborativeProvider';
+import {PlayerTrackingIndicator} from './collaborative/PlayerTrackingIndicator';
+import {PlayerAssignmentModal} from './collaborative/PlayerAssignmentModal';
+import {CollaborativeStatusBar} from './collaborative/CollaborativeStatusBar';
+ 
+
+const getApiUrl = () => {
+  if (window.location.hostname.startsWith("10.")) {
+    return `http://${window.location.hostname}:3000`;
+  }
+  return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
+};
+
+const API_URL = getApiUrl();
+
+const ExpressStatLogger = ({
+  courtPlayers = [],
+  rotateCourtPositions,
+  updateCourtPositions,  
+  deactivatedPlayers = {},
+  setDeactivatedPlayers,
+  swapCourtPlayers,
+  setCourtPlayers,
+  positionMapping = {},
+  rotateCourtArray,  
+  currentMatchId,
+  match,
+  actionLog = [],
+  setActionLog,
+  onOurPoint,
+  onOpponentPoint,
+  ballState = "serve",
+  setBallState,
+  ballSide = "our", 
+  setBallSide,
+  currentServeSide = "our",
+  setCurrentServeSide,
+  teamStats,
+  setTeamStats,
+  saveMatchData,
+  // Add games played props
+  maybeCreditGamesPlayed,
+  token,
+  // Add libero tracking props
+  allowedLiberoSubTarget,
+  setAllowedLiberoSubTarget,
+  slot5TargetId,
+  setSlot5TargetId,
+  benchPlayers = [],
+  setBenchPlayers,
+  // NEW: Add substitution log props
+  substitutionLog = [],
+  setSubstitutionLog
+}) => {
+  const [availableRoster, setAvailableRoster] = useState([]);
+  const [showRosterModal, setShowRosterModal] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState(null);
+  const [playerStats, setPlayerStats] = useState({});
+  const [activePlayerIds, setActivePlayerIds] = useState(new Set());
+  const [blockAssistMode, setBlockAssistMode] = useState(false);
+  const [selectedBlockPlayers, setSelectedBlockPlayers] = useState(new Set());
+  const [positionLabels, setPositionLabels] = useState(['4', '3', '2', '5', '6', '1']);
+  const serveSideAtRallyStartRef = useRef(currentServeSide);
+  const [showAssignmentModal, setShowAssignmentModal] = useState(false);
+  const [collaborativeEnabled, setCollaborativeEnabled] = useState(false);
+  const [lastScoreUpdate, setLastScoreUpdate] = useState(null);
+  
+  // NEW: Assist mode states
+  const [assistMode, setAssistMode] = useState(false);
+  const [selectedAssistPlayer, setSelectedAssistPlayer] = useState(null);
+  
+  // NEW: Track credited players for games played
+  const creditedPlayersThisSetRef = useRef(new Set());
+  
+  const previousServeSideRef = useRef(currentServeSide);
+
+  // Initialize active players based on courtPlayers
+ useEffect(() => {
+    if (!Array.isArray(courtPlayers)) return;
+
+    setActivePlayerIds(prev => {
+      const newActiveSet = new Set(prev);
+      
+      // Only add NEW players that aren't already being tracked AND aren't manually deactivated
+      courtPlayers.forEach((player) => {
+        if (player && player.name !== "?" && player._id && 
+            !prev.has(player._id) && 
+            !deactivatedPlayers.includes(player._id)) { // NEW: Check deactivated list
+          newActiveSet.add(player._id);
+        }
+      });
+      
+      // Remove players no longer on court
+      const currentPlayerIds = new Set(
+        courtPlayers
+          .filter(p => p && p._id && p.name !== "?")
+          .map(p => p._id)
+      );
+      
+      prev.forEach(playerId => {
+        if (!currentPlayerIds.has(playerId)) {
+          newActiveSet.delete(playerId);
+        }
+      });
+      
+      return newActiveSet;
+    });
+  }, [courtPlayers, deactivatedPlayers]);
+  
+  // When courtPlayers changes, ensure each player has a position label
+  useEffect(() => {
+    // When courtPlayers changes, ensure each player has a position label
+    const updatedPlayers = courtPlayers.map((player, index) => {
+      if (player && player.name !== "?" && !player.expressPosition) {
+        // Default position assignment: slot 0=Pos4, slot 1=Pos3, slot 2=Pos2, etc.
+        const defaultPositions = ['4', '3', '2', '5', '6', '1'];
+        return {
+          ...player,
+          expressPosition: defaultPositions[index] || '?'
+        };
+      }
+      return player;
+    });
+    
+    if (JSON.stringify(updatedPlayers) !== JSON.stringify(courtPlayers)) {
+      setCourtPlayers(updatedPlayers);
+    }
+  }, [courtPlayers, setCourtPlayers]);
+  
+  const isPlayerActive = useCallback((playerIndex) => {
+  const player = courtPlayers[playerIndex];
+  return player && player._id && activePlayerIds.has(player._id);
+}, [courtPlayers, activePlayerIds]);
+
+const createActionLogEntry = (action, options = {}) => {
+  const { user } = useAuth(); // Get current user context
+  
+  return {
+    action,
+    timestamp: new Date().toISOString(),
+    type: options.type || null,
+    meta: options.meta || null,
+    
+    // Collaborative attribution (optional but recommended)
+    attribution: {
+      userId: user?.id || user?._id || null,
+      username: user?.username || user?.name || null,
+      sessionId: options.sessionId || null, // You'll need to track this
+      source: options.source || 'main' // 'express' for ExpressStatLogger, 'main' for VolleyballCourt
+    },
+    
+    // Sync info for collaborative features
+    syncInfo: {
+      isOriginal: true,
+      replicatedTo: [],
+      conflictData: {
+        hadConflict: false,
+        resolutionMethod: null,
+        conflictedWith: []
+      }
+    }
+  };
+};
+
+// For ExpressStatLogger.js - use source: 'express'
+  const createExpressActionEntry = (action, options = {}) => {
+    return {
+      action,
+      timestamp: new Date().toISOString(),
+      type: options.type || null,
+      meta: options.meta || null,
+      
+      attribution: {
+        userId: user?.id || user?._id || null,
+        username: user?.username || user?.name || null,
+        sessionId: null, // You can add session tracking if needed
+        source: 'express'
+      },
+      
+      syncInfo: {
+        isOriginal: true,
+        replicatedTo: [],
+        conflictData: {
+          hadConflict: false,
+          resolutionMethod: null,
+          conflictedWith: []
+        }
+      }
+    };
+  };
+
+
+
+ const {
+    isConnected,
+    collaborativeMode,
+    joinMatch,
+    leaveMatch,
+    logStat: logCollaborativeStat,
+    updateScore: updateCollaborativeScore,
+    isAssignedToPlayer,
+    getTrackingStatus,
+    activeSessions
+  } = useCollaborative();
+  
+  // Helper function to get current volleyball position for any UI slot
+  const getVolleyballPosition = useCallback((slotIndex) => {
+    if (typeof slotIndex !== 'number' || slotIndex < 0 || slotIndex > 5) {
+      return '?';
+    }
+    // Get position from the player object itself first
+    const player = courtPlayers[slotIndex];
+    if (player?.expressPosition) {
+      return player.expressPosition;
+    }
+    // Fallback to positionMapping if available
+    return positionMapping[slotIndex] || '?';
+  }, [courtPlayers, positionMapping]);
+
+  // Helper to check if a slot is currently the server position
+  const isCurrentServerSlot = useCallback((playerIndex) => {
+    const player = courtPlayers[playerIndex];
+    return player?.expressPosition === '1';
+  }, [courtPlayers]);
+
+
+  // NEW: Games played credit function
+  const creditGamesPlayed = useCallback(async (playerId, context = "express") => {
+    if (!playerId || !currentMatchId || !maybeCreditGamesPlayed) {
+      console.warn("Cannot credit games played - missing required data");
+      return false;
+    }
+
+    if (creditedPlayersThisSetRef.current.has(playerId)) {
+      console.log(`Player ${playerId} already credited this set - skipping`);
+      return true;
+    }
+
+    try {
+      const success = await maybeCreditGamesPlayed(playerId, false, context);
+      if (success) {
+        creditedPlayersThisSetRef.current.add(playerId);
+        console.log(`✅ Express: Credited games played for ${playerId}`);
+      }
+      return success;
+    } catch (error) {
+      console.error(`❌ Express: Failed to credit games played for ${playerId}:`, error);
+      return false;
+    }
+  }, [currentMatchId, maybeCreditGamesPlayed]);
+
+  // Track serve side for rotation detection
+  useEffect(() => {
+    previousServeSideRef.current = currentServeSide;
+  }, [currentServeSide]);
+  
+   useEffect(() => {
+    if (currentMatchId && !collaborativeMode && collaborativeEnabled) {
+      console.log('🔗 Joining collaborative match:', currentMatchId);
+      joinMatch(currentMatchId);
+    }
+
+    return () => {
+      if (collaborativeMode) {
+        leaveMatch();
+      }
+    };
+  }, [currentMatchId, collaborativeEnabled, collaborativeMode, joinMatch, leaveMatch]);
+
+  // Handle player drag and drop - now calls parent function
+  const handlePlayerDrop = useCallback(async (draggedPlayerIndex, targetSlotIndex) => {
+    if (draggedPlayerIndex === targetSlotIndex) return;
+    
+    // Swap players AND their position labels
+    const newCourtPlayers = [...courtPlayers];
+    const newPositionLabels = [...positionLabels];
+    
+    // Swap the players
+    const draggedPlayer = newCourtPlayers[draggedPlayerIndex];
+    const targetPlayer = newCourtPlayers[targetSlotIndex];
+    newCourtPlayers[draggedPlayerIndex] = targetPlayer;
+    newCourtPlayers[targetSlotIndex] = draggedPlayer;
+    
+    // Swap the position labels with the players
+    const draggedPosition = newPositionLabels[draggedPlayerIndex];
+    const targetPosition = newPositionLabels[targetSlotIndex];
+    newPositionLabels[draggedPlayerIndex] = targetPosition;
+    newPositionLabels[targetSlotIndex] = draggedPosition;
+    
+    // Update both players and position labels
+    swapCourtPlayers(draggedPlayerIndex, targetSlotIndex);
+    setPositionLabels(newPositionLabels);
+    
+    // Force immediate save after swap
+    setTimeout(() => {
+      if (saveMatchData) {
+        saveMatchData(false);
+      }
+    }, 100);
+  }, [courtPlayers, positionLabels, swapCourtPlayers, saveMatchData]);
+
+  // Handle multi-player block assist selection
+  const handleBlockAssistSelection = useCallback((playerIndex) => {
+    const player = courtPlayers[playerIndex];
+    if (!player || !isPlayerActive(playerIndex)) return;
+    
+    setSelectedBlockPlayers(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(playerIndex)) {
+        newSet.delete(playerIndex);
+      } else {
+        newSet.add(playerIndex);
+      }
+      return newSet;
+    });
+  }, [courtPlayers, isPlayerActive]);
+
+  // Express-specific position rotation function
+  const rotateExpressPositions = useCallback(() => {
+    const positionRotationMap = {
+      '1': '6', '6': '5', '5': '4', '4': '3', '3': '2', '2': '1'
+    };
+    
+    // Rotate position labels attached to each player
+    const updatedPlayers = courtPlayers.map(player => {
+      if (player && player.expressPosition) {
+        return {
+          ...player,
+          expressPosition: positionRotationMap[player.expressPosition] || player.expressPosition
+        };
+      }
+      return player;
+    });
+    
+    setCourtPlayers(updatedPlayers);
+    
+    setActionLog(prev => [...prev, {
+      action: "Express: Position labels rotated",
+      timestamp: new Date().toISOString()
+    }]);
+  }, [courtPlayers, setCourtPlayers, setActionLog]);
+ 
+const handleExpressRotation = useCallback(async () => {
+    console.log("Express: Starting rotation check...");
+    console.log("Current courtPlayers:", courtPlayers.map((p, i) => ({ 
+        index: i, 
+        name: p?.name, 
+        isLibero: p?.isLibero,
+        expressPosition: p?.expressPosition
+    })));
+    
+    // Find any libero in position 5 that needs substitution before rotation
+    let liberoToSub = null;
+    let liberoSlotIndex = null;
+
+    for (let i = 0; i < courtPlayers.length; i++) {
+      const player = courtPlayers[i];
+      if (player && player.isLibero && player.expressPosition === '5') {
+        liberoToSub = player;
+        liberoSlotIndex = i;
+        console.log(`Libero ${player.name} in position 5 needs substitution before rotating to position 4`);
+        break;
+      }
+    }
+
+    // Handle libero substitution if needed
+    if (liberoToSub && liberoToSub.replacedPlayer) {
+      console.log("Performing automatic libero substitution before rotation");
+      
+      const libero = liberoToSub;
+      const replacedPlayer = libero.replacedPlayer;
+      
+      try {
+        // Update database - libero off court, replacement on court
+        await axios.put(`${API_URL}/api/players/${libero._id}`, 
+          { isOnCourt: false }, 
+          {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            withCredentials: true,
+          }
+        );
+        
+        await axios.put(`${API_URL}/api/players/${replacedPlayer._id}`, 
+          { isOnCourt: true }, 
+          {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            withCredentials: true,
+          }
+        );
+        
+        // Update bench - add libero back to bench
+        setBenchPlayers(prev => {
+          const filtered = prev.filter(p => p._id !== libero._id);
+          const updated = [...filtered, { ...libero, isOnCourt: false }];
+          return updated.sort((a, b) => (a.number || 0) - (b.number || 0));
+        });
+        
+        // Create the substituted court lineup
+        const courtAfterSubstitution = [...courtPlayers];
+        courtAfterSubstitution[liberoSlotIndex] = {
+          ...replacedPlayer,
+          expressPosition: libero.expressPosition, // Keep same position (5)
+          isOnCourt: true
+        };
+        
+        // NOW rotate the positions on the substituted lineup
+        const positionRotationMap = {
+          '1': '6', '6': '5', '5': '4', '4': '3', '3': '2', '2': '1'
+        };
+        
+        const rotatedPlayers = courtAfterSubstitution.map(player => {
+          if (player && player.expressPosition) {
+            return {
+              ...player,
+              expressPosition: positionRotationMap[player.expressPosition] || player.expressPosition
+            };
+          }
+          return player;
+        });
+        
+        // Apply both substitution AND rotation in one update
+        updateCourtPositions(rotatedPlayers, positionMapping);
+        
+        setActionLog(prev => [
+          ...prev,
+          {
+            action: `Express: Auto-substitution + rotation - ${replacedPlayer.name} in for ${libero.name}, then rotated to position 4`,
+            timestamp: new Date().toISOString(),
+            meta: {
+              type: 'auto_libero_substitution_with_rotation',
+              reason: 'rotation_prevention',
+              liberoPosition: '5'
+            }
+          }
+        ]);
+        
+        console.log(`Auto-substitution + rotation completed: ${replacedPlayer.name} now in position 4 after rotation`);
+        
+      } catch (error) {
+        console.error("Libero auto-substitution failed:", error);
+        // Fall back to regular rotation if substitution fails
+        rotateExpressPositions();
+      }
+      
+      return; // Exit here - both substitution and rotation are complete
+    } 
+    
+    if (liberoToSub && !liberoToSub.replacedPlayer) {
+      console.error("Libero needs substitution but has no replacedPlayer:", liberoToSub);
+      alert(`Libero ${liberoToSub.name} needs to rotate out but has no replacement player recorded. This may indicate a setup issue.`);
+      return;
+    }
+    
+    // No libero substitution needed - do regular rotation
+    console.log("No libero auto-substitution needed, performing regular rotation");
+    rotateExpressPositions();
+    
+}, [courtPlayers, positionMapping, updateCourtPositions, setBenchPlayers, setActionLog, token, rotateExpressPositions]);
+
+useEffect(() => {
+  if (ballState === "inplay") {
+    serveSideAtRallyStartRef.current = currentServeSide;
+  }
+}, [ballState, currentServeSide]);
+
+  // Submit block assist for all selected players
+  
+  const ignoreKill = useCallback(async () => {
+  if (selectedAssistPlayer === null) return;
+  
+  const assistPlayer = courtPlayers[selectedAssistPlayer];
+  if (!assistPlayer || !isPlayerActive(selectedAssistPlayer)) return;
+  
+  const effectiveServeSide = serveSideAtRallyStartRef.current || currentServeSide;
+  const wasOpponentServing = effectiveServeSide === "opponent";
+  
+  // Log ONLY the assist (no kill)
+  await logAndSyncStat({
+    playerId: assistPlayer._id,
+    playerName: assistPlayer.name,
+    label: "Assist",
+    statKeys: ["sets", "assists"],
+    setActionLog,
+    setPlayerStats,
+    playerStats,
+    currentMatchId,
+    teamId: match?.teamName,
+  });
+  
+  // Handle scoring (same as normal kill)
+  onOurPoint && onOurPoint();
+  setTeamStats && setTeamStats(prev => ({ ...prev, ourEarned: prev.ourEarned + 1 }));
+  
+  // Handle ball state changes
+  setBallState && setBallState("serve");
+  setCurrentServeSide && setCurrentServeSide("our");
+  setBallSide && setBallSide("our");
+  
+  // Handle rotation if opponent was serving
+  if (wasOpponentServing) {
+    setTimeout(() => {
+      handleExpressRotation();
+    }, 100);
+  }
+  
+  // Add action log entry for ignored kill
+  setActionLog(prev => [
+    ...prev,
+    {
+      action: `Assist by ${assistPlayer.name} (#${assistPlayer.number}) → Kill ignored (inactive player or other reason)`,
+      timestamp: new Date().toISOString(),
+      meta: {
+        type: 'assist_kill_ignored',
+        assistPlayer: { id: assistPlayer._id, name: assistPlayer.name, number: assistPlayer.number },
+        reason: 'kill_ignored'
+      }
+    }
+  ]);
+  
+  // Exit assist mode
+  setAssistMode(false);
+  setSelectedAssistPlayer(null);
+}, [
+  selectedAssistPlayer,
+  courtPlayers,
+  isPlayerActive,
+  currentServeSide,
+  onOurPoint,
+  setTeamStats,
+  setBallState,
+  setCurrentServeSide,
+  setBallSide,
+  setActionLog,
+  playerStats,
+  currentMatchId,
+  match?.teamName,
+  handleExpressRotation
+]);
+
+  const submitBlockAssist = useCallback(async () => {
+    if (selectedBlockPlayers.size === 0) return;
+    
+	const wasOpponentServing = currentServeSide === "opponent";
+	const newServeSide = "our"; // We won the point, so serve goes to us
+	const serveSideChanged = wasOpponentServing && (newServeSide !== currentServeSide);
+    
+    // Log stat for each selected player
+    const playerNames = [];
+    for (const playerIndex of selectedBlockPlayers) {
+      const player = courtPlayers[playerIndex];
+      if (player) {
+        await logAndSyncStat({
+          playerId: player._id,
+          playerName: player.name,
+          label: "Block Assist",
+          statKeys: ["blockAssist"], // Remove "points" from here for 0.5 point handling
+          setActionLog,
+          setPlayerStats,
+          playerStats,
+          currentMatchId,
+          teamId: match?.teamName,
+        });
+        
+        // Manually add 0.5 points for block assist
+        try {
+          await axios.post(`${API_URL}/api/players/${player._id}/stats`, {
+            points: 0.5, // Half point for block assist
+            matchId: currentMatchId,
+          }, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            withCredentials: true,
+          });
+          console.log(`✅ Express: Awarded 0.5 points to ${player.name} for block assist`);
+        } catch (error) {
+          console.error(`❌ Express: Failed to award 0.5 points to ${player.name}:`, error);
+        }
+        
+        playerNames.push(`${player.name} (#${player.number})`);
+      }
+    }
+    
+    // Handle scoring (only count once for the team, not per player)
+    onOurPoint && onOurPoint();
+    setTeamStats && setTeamStats(prev => ({ ...prev, ourEarned: prev.ourEarned + 1 }));
+    
+    // Handle ball state changes
+    setBallState && setBallState("serve");
+    setCurrentServeSide && setCurrentServeSide("our");
+    setBallSide && setBallSide("our");
+    
+    // Handle rotation if needed - USE EXPRESS ROTATION
+if (serveSideChanged) {
+  setTimeout(() => {
+    handleExpressRotation();
+  }, 100);
+}
+    
+    // Add action log entry with 0.5 points notation
+    setActionLog(prev => [
+      ...prev,
+      {
+        action: `Block Assist (0.5 pts each) by: ${playerNames.join(', ')}`,
+        timestamp: new Date().toISOString(),
+        meta: {
+          type: 'block_assist',
+          playerCount: selectedBlockPlayers.size,
+          pointsPerPlayer: 0.5
+        }
+      }
+    ]);
+    
+    // Reset block assist mode
+    setBlockAssistMode(false);
+    setSelectedBlockPlayers(new Set());
+  }, [
+    selectedBlockPlayers, 
+    courtPlayers, 
+    currentServeSide, 
+    onOurPoint, 
+    setTeamStats, 
+    setBallState, 
+    setCurrentServeSide, 
+    setBallSide, 
+    setActionLog, 
+    playerStats, 
+    currentMatchId, 
+    match?.teamName, 
+    token,
+    handleExpressRotation
+  ]);
+
+  // Cancel block assist mode
+  const cancelBlockAssist = useCallback(() => {
+    setBlockAssistMode(false);
+    setSelectedBlockPlayers(new Set());
+  }, []);
+
+  // Draggable Player Card Component
+  const DraggablePlayerCard = ({ player, index, children }) => {
+    const [{ isDragging }, drag] = useDrag(() => ({
+      type: "EXPRESS_PLAYER",
+      item: { playerIndex: index },
+      collect: (monitor) => ({
+        isDragging: monitor.isDragging(),
+      }),
+    }), [index]);
+
+    return (
+      <div
+        ref={drag}
+        style={{
+          opacity: isDragging ? 0.5 : 1,
+          cursor: player ? (isDragging ? 'grabbing' : 'grab') : 'default',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+        }}
+      >
+        {children}
+      </div>
+    );
+  };
+
+  // Droppable Slot Component  
+  const DroppableSlot = ({ index, children }) => {
+    const [{ isOver }, drop] = useDrop(() => ({
+      accept: "EXPRESS_PLAYER",
+      drop: (item) => {
+        handlePlayerDrop(item.playerIndex, index);
+      },
+      collect: (monitor) => ({
+        isOver: monitor.isOver(),
+      }),
+    }), [index, handlePlayerDrop]);
+
+    return (
+      <div
+        ref={drop}
+        style={{
+          backgroundColor: isOver ? 'rgba(0, 122, 255, 0.1)' : 'transparent',
+          borderRadius: '8px',
+          transition: 'background-color 0.2s ease',
+          border: isOver ? '2px dashed #007AFF' : '2px solid transparent',
+          position: 'relative',
+        }}
+      >
+        {isOver && (
+          <div style={{
+            position: 'absolute',
+            top: '-25px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#007AFF',
+            color: 'white',
+            padding: '2px 0px',
+            borderRadius: '4px',
+            fontSize: '10px',
+            fontWeight: '600',
+            zIndex: 10,
+            whiteSpace: 'nowrap'
+          }}>
+            Will bring Pos {getVolleyballPosition(index)} here
+          </div>
+        )}
+        {children}
+      </div>
+    );
+  };
+
+  // Fetch available roster
+  useEffect(() => {
+    const fetchRoster = async () => {
+      if (!match?.teamName) return;
+      
+      try {
+        const response = await axios.get(`${API_URL}/api/players`, {
+          params: { team: match.teamName }
+        });
+        setAvailableRoster(response.data || []);
+      } catch (error) {
+        console.error('Failed to fetch roster:', error);
+      }
+    };
+    
+    fetchRoster();
+  }, [match?.teamName]);
+
+  // Format player action for logging
+  const formatPlayerAction = useCallback((player, action) => {
+    return `${player.name} (#${player.number}) ${action}`;
+  }, []);
+  
+  const isPlayerDeactivated = useCallback((playerId) => {
+    return deactivatedPlayers.includes(playerId);
+  }, [deactivatedPlayers]);
+
+  // Log stat action
+  const logStat = useCallback(async (player, label, statKeys, actionText) => {
+    if (!player || !currentMatchId) return;
+	
+	    if (collaborativeMode && !isAssignedToPlayer(player._id)) {
+      const trackingStatus = getTrackingStatus(player._id);
+      if (trackingStatus?.isAssigned) {
+        alert(`This player is being tracked by ${trackingStatus.trackedBy}. You cannot log stats for them.`);
+        return;
+      }
+    }
+
+    try {
+      // Log to collaborative system first
+      if (collaborativeMode) {
+        const success = logCollaborativeStat(player._id, label, 1, {
+          statKeys,
+          actionText,
+          playerName: player.name,
+          playerNumber: player.number
+        });
+
+        if (!success) {
+          // Collaborative logging failed, fall back to local
+          console.warn('Collaborative logging failed, falling back to local');
+        } else {
+          // Collaborative logging succeeded, no need for local logAndSyncStat
+          setActionLog(prev => [
+            ...prev,
+            {
+              action: actionText || formatPlayerAction(player, label),
+              timestamp: new Date().toISOString(),
+              source: 'collaborative',
+              playerId: player._id
+            }
+          ]);
+          return;
+        }
+      }
+	
+
+    await logAndSyncStat({
+      playerId: player._id,
+      playerName: player.name,
+      label,
+      statKeys,
+      setActionLog,
+      setPlayerStats,
+      playerStats,
+      currentMatchId,
+      teamId: match?.teamName,
+    });
+
+setActionLog(prev => [
+        ...prev,
+        {
+          action: actionText || formatPlayerAction(player, label),
+          timestamp: new Date().toISOString(),
+          source: 'local'
+        }
+      ]);
+    } catch (error) {
+      console.error('Failed to log stat:', error);
+      alert('Failed to log stat. Please try again.');
+    }
+  }, [
+    currentMatchId, 
+    collaborativeMode, 
+    isAssignedToPlayer, 
+    getTrackingStatus, 
+    logCollaborativeStat,
+    setActionLog,
+    setPlayerStats,
+    playerStats,
+    match?.teamName,
+    formatPlayerAction
+  ]);
+
+ const handleRallyStart = useCallback(() => {
+   // Remember who was serving when the rally began
+   serveSideAtRallyStartRef.current = currentServeSide;
+   // Move to rally
+   setBallState && setBallState('inplay');
+   // Mid-rally, we don't track possession with ballSide; clear it
+   setBallSide && setBallSide(null);
+   // Log it
+   setActionLog &&
+     setActionLog(prev => [
+       ...prev,
+       {
+         action: 'Manual: Rally started',
+         timestamp: new Date().toISOString(),
+         meta: { type: 'rally_start', serveSideAtStart: currentServeSide }
+       }
+     ]);
+ }, [currentServeSide, setBallState, setBallSide, setActionLog]); 
+
+ // Handle player actions - updated to use courtPlayers
+
+const handlePlayerAction = useCallback(async (playerIndex, actionType) => {
+    const player = courtPlayers[playerIndex];
+    if (!player || !isPlayerActive(playerIndex)) return;
+
+    // Check if user can track this player in collaborative mode
+    if (collaborativeMode && !isAssignedToPlayer(player._id)) {
+      const trackingStatus = getTrackingStatus(player._id);
+      if (trackingStatus?.isAssigned) {
+        alert(`${player.name} is being tracked by ${trackingStatus.trackedBy}. You cannot perform actions for this player.`);
+        return;
+      }
+    }
+    // Special handling for starting block assist
+    if (actionType === 'ASSIST_BLOCK') {
+      setBlockAssistMode(true);
+      setSelectedBlockPlayers(new Set([playerIndex]));
+      return;
+    }
+
+    // NEW: Special handling for starting assist mode
+    if (actionType === 'ASSIST') {
+      setAssistMode(true);
+      setSelectedAssistPlayer(playerIndex);
+      return;
+    }
+
+    let statKeys = [];
+    let label = "";
+    let shouldScore = null;
+    let shouldChangeBallState = null;
+    let shouldRotate = false;
+
+    switch (actionType) {
+	  case 'RALLY_START':
+       handleRallyStart();
+       break;
+      case 'SERVE':
+        label = "Serve Attempt";
+        statKeys = ["serves", "zeroServes"];
+        shouldChangeBallState = "inplay";
+        break;
+        
+      case 'ACE':
+        label = "Service Ace";
+        statKeys = ["aces", "serveAttempts", "points"];
+        shouldScore = "our";
+        shouldChangeBallState = "serve";
+        break;
+        
+      case 'SERVE_ERR':
+        label = "Service Error";
+        statKeys = ["serveErrors", "serveAttempts"];
+        shouldScore = "opponent";
+        shouldChangeBallState = "serve";
+        break;
+        
+      case 'REC':
+        label = "Reception";
+        statKeys = ["receptions"];
+        shouldChangeBallState = "inplay";
+        break;
+        
+      case 'REC_ERR':
+        label = "Reception Error";
+        statKeys = ["receiveErrors", "receptions"];
+        shouldScore = "opponent";
+        shouldChangeBallState = "serve";
+        break;
+        
+      case 'DIG':
+        label = "Dig";
+        statKeys = ["digs"];
+        break;
+        
+      case 'DIG_ERR':
+        label = "Dig Error";
+        statKeys = ["digErrors", "digs"];
+        shouldScore = "opponent";
+        shouldChangeBallState = "serve";
+        break;
+        
+      case 'SET':
+        label = "Set";
+        statKeys = ["sets", "zeroSets"];
+        break;
+        
+      case 'SET_ERR':
+        label = "Set Error";
+        statKeys = ["setErrors", "sets"];
+        shouldScore = "opponent";
+        shouldChangeBallState = "serve";
+        break;
+        
+      case 'ATTACK':
+        label = "Attack";
+        statKeys = ["zeroAttacks", "attacks"];
+        break;
+        
+      case 'FREE_BALL':
+        label = "Free Ball";
+        statKeys = ["freeballs", "zeroAttacks"];
+        shouldChangeBallState = "inplay";
+        break;
+        
+      case 'KILL':
+        label = "Kill";
+        statKeys = ["kills", "attacks", "points"];
+        shouldScore = "our";
+        shouldChangeBallState = "serve";
+        shouldRotate = currentServeSide === "opponent";
+        break;
+        
+      case 'ATTACK_ERR':
+        label = "Attack Error";
+        statKeys = ["attackErrors", "attacks"];
+        shouldScore = "opponent";
+        shouldChangeBallState = "serve";
+        break;
+        
+      case 'SOLO_BLOCK':
+        label = "Solo Block";
+        statKeys = ["blockSolo", "points"];
+        shouldScore = "our";
+        shouldChangeBallState = "serve";
+        shouldRotate = currentServeSide === "opponent";
+        break;
+        
+      case 'BLOCK_ERR':
+        label = "Block Error";
+        statKeys = ["blockErrors"];
+        shouldScore = "opponent";
+        shouldChangeBallState = "serve";
+        break;
+        
+      default:
+        return;
+    }
+
+    // Log the stat
+    await logStat(player, label, statKeys);
+
+    // Handle scoring
+    if (shouldScore === "our") {
+      onOurPoint && onOurPoint();
+      setTeamStats && setTeamStats(prev => ({ ...prev, ourEarned: prev.ourEarned + 1 }));
+    } else if (shouldScore === "opponent") {
+      onOpponentPoint && onOpponentPoint();
+      setTeamStats && setTeamStats(prev => ({ ...prev, ourError: prev.ourError + 1 }));
+    }
+
+    // Handle ball state changes
+    if (shouldChangeBallState === "serve") {
+      setBallState && setBallState("serve");
+      const newServeSide = shouldScore === "our" ? "our" : "opponent";
+      setCurrentServeSide && setCurrentServeSide(newServeSide);
+      setBallSide && setBallSide(newServeSide);
+    } else if (shouldChangeBallState === "inplay") {
+      setBallState && setBallState("inplay");
+      setBallSide && setBallSide(null);
+    }
+
+    // Handle rotation if needed
+if (shouldRotate) {
+  const newServeSide = shouldScore === "our" ? "our" : "opponent";
+  const serveSideChanged = currentServeSide !== newServeSide;
+  
+  if (serveSideChanged) {
+    console.log("🔄 Express: Serve side changed - will rotate");
+    setTimeout(() => {
+      handleExpressRotation();
+    }, 100);
+  }
+}
+  }, [courtPlayers, 
+    isPlayerActive, 
+    collaborativeMode, 
+    isAssignedToPlayer, 
+    getTrackingStatus, logStat, onOurPoint, onOpponentPoint, setTeamStats, setBallState, setCurrentServeSide, setBallSide, currentServeSide, handleExpressRotation]);
+
+  // Open roster modal
+  const openRosterModal = useCallback((slotIndex) => {
+    setSelectedSlot(slotIndex);
+    setShowRosterModal(true);
+  }, []);
+
+  // NEW: Enhanced selectPlayer with full libero substitution logic
+ const selectPlayer = useCallback(async (player) => {
+    if (selectedSlot !== null) {
+      // NEW: Libero validation - prevent front row position placement
+      const volleyballPosition = getVolleyballPosition(selectedSlot);
+      if (player.isLibero && (volleyballPosition === '2' || volleyballPosition === '3' || volleyballPosition === '4')) {
+        alert(`⚠️ Liberos cannot be placed in front row positions. This slot has volleyball position ${volleyballPosition}.`);
+        setShowRosterModal(false);
+        setSelectedSlot(null);
+        return;
+      }
+
+      const newPlayers = [...courtPlayers];
+      const targetPlayer = newPlayers[selectedSlot];
+      const isLiberoSub = player.isLibero;
+
+      if (player.isLibero && (!targetPlayer || targetPlayer.name === "?" || !targetPlayer._id)) {
+        alert(`⚠️ Libero must replace an existing player. This slot is currently empty.`);
+        setShowRosterModal(false);
+        setSelectedSlot(null);
+        return;
+      }
+
+      // Handle libero substitution logic
+      if (isLiberoSub) {
+        if (volleyballPosition === '2' || volleyballPosition === '3' || volleyballPosition === '4') {
+          alert("⚠️ Liberos cannot be placed in front row positions.");
+          setShowRosterModal(false);
+          setSelectedSlot(null);
+          return;
+        }
+
+        if (!targetPlayer || targetPlayer.name === "?") {
+          alert("⚠️ Libero must replace an existing player.");
+          setShowRosterModal(false);
+          setSelectedSlot(null);
+          return;
+        }
+
+        const currentLibero = courtPlayers.find(p => p.isLibero);
+        const isTargetLibero = targetPlayer.isLibero;
+        const validPartners = [slot5TargetId?._id, allowedLiberoSubTarget?._id].filter(Boolean);
+        const isValidPartner = targetPlayer && validPartners.includes(targetPlayer._id);
+
+        // Libero-for-libero swap
+        if (isTargetLibero && player.isLibero) {
+          const outgoingLibero = targetPlayer;
+
+          newPlayers[selectedSlot] = {
+            ...player,
+            isLibero: true,
+            expressPosition: outgoingLibero.expressPosition, // 🔧 PRESERVE POSITION
+            replacedPlayer: outgoingLibero.replacedPlayer || null,
+            isOnCourt: true,
+          };
+
+          // Update bench players
+          const newBenchPlayers = benchPlayers.filter(p => p._id !== outgoingLibero._id);
+          newBenchPlayers.push({ ...outgoingLibero, isLibero: true, isOnCourt: false });
+          setBenchPlayers([...newBenchPlayers].sort((a, b) => (a.number || 0) - (b.number || 0)));
+
+          try {
+            await axios.put(`${API_URL}/api/players/${outgoingLibero._id}`, { isOnCourt: false }, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+              withCredentials: true,
+            });
+            await axios.put(`${API_URL}/api/players/${player._id}`, { isOnCourt: true }, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+              withCredentials: true,
+            });
+          } catch (err) {
+            console.error("Failed to update libero states in DB:", err);
+          }
+
+          updateCourtPositions(newPlayers, positionMapping);
+          await creditGamesPlayed(player._id, "express_libero_swap");
+          
+          console.log(`Libero swap: ${player.name} in for ${outgoingLibero.name} at position ${outgoingLibero.expressPosition}`);
+          
+          setShowRosterModal(false);
+          setSelectedSlot(null);
+          return;
+        }
+
+        // First-time libero substitution
+        if (!currentLibero && !allowedLiberoSubTarget) {
+          newPlayers[selectedSlot] = {
+            ...player,
+            expressPosition: targetPlayer.expressPosition, // 🔧 PRESERVE POSITION
+            replacedPlayer: targetPlayer,
+            isOnCourt: true,
+          };
+
+          const newBenchPlayers = [...benchPlayers];
+          newBenchPlayers.push({ ...targetPlayer, isLibero: false, isOnCourt: false });
+          setBenchPlayers([...newBenchPlayers].sort((a, b) => (a.number || 0) - (b.number || 0)));
+
+          try {
+            await axios.put(`${API_URL}/api/players/${targetPlayer._id}`, { isOnCourt: false }, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+              withCredentials: true,
+            });
+            await axios.put(`${API_URL}/api/players/${player._id}`, { isOnCourt: true }, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+              withCredentials: true,
+            });
+          } catch (err) {
+            console.error("Failed to update players in DB:", err);
+            setShowRosterModal(false);
+            setSelectedSlot(null);
+            return;
+          }
+
+          updateCourtPositions(newPlayers, positionMapping);
+          setAllowedLiberoSubTarget && setAllowedLiberoSubTarget(targetPlayer);
+          await creditGamesPlayed(player._id, "express_first_libero_sub");
+          
+          setActionLog(prev => [
+            ...prev,
+            {
+              action: `Express: ${player.name} (Libero) substituted in for ${targetPlayer.name} at position ${targetPlayer.expressPosition}`,
+              timestamp: new Date().toISOString(),
+            }
+          ]);
+
+          setShowRosterModal(false);
+          setSelectedSlot(null);
+          return;
+        }
+
+        // Standard libero substitution with existing libero
+        if (!isValidPartner) {
+          const confirmOverride = window.confirm(
+            `⚠️ This substitution seems illegal based on earlier libero entries.\n\n` +
+            `Libero is trying to sub in for ${targetPlayer.name}, who is not a registered partner.\n\n` +
+            `Do you want to proceed anyway and update the slot5 partner to ${targetPlayer.name}?`
+          );
+          if (!confirmOverride) {
+            setShowRosterModal(false);
+            setSelectedSlot(null);
+            return;
+          }
+
+          setSlot5TargetId && setSlot5TargetId(targetPlayer);
+        }
+
+        if (currentLibero && currentLibero._id !== player._id) {
+          const newBenchPlayers = [...benchPlayers];
+          newBenchPlayers.push({ ...currentLibero, isLibero: true, isOnCourt: false });
+          setBenchPlayers([...newBenchPlayers].sort((a, b) => (a.number || 0) - (b.number || 0)));
+          
+          try {
+            await axios.put(`${API_URL}/api/players/${currentLibero._id}`, { isOnCourt: false }, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+              withCredentials: true,
+            });
+          } catch (err) {
+            console.error("Failed to update current libero in DB:", err);
+          }
+        }
+
+        newPlayers[selectedSlot] = {
+          ...player,
+          expressPosition: targetPlayer.expressPosition, // 🔧 PRESERVE POSITION
+          replacedPlayer: targetPlayer,
+          isOnCourt: true,
+        };
+
+        if (!allowedLiberoSubTarget) setAllowedLiberoSubTarget && setAllowedLiberoSubTarget(targetPlayer);
+        
+        const newBenchPlayers = benchPlayers.filter(p => p._id !== targetPlayer._id);
+        if (!newBenchPlayers.some(p => p._id === targetPlayer._id)) {
+          newBenchPlayers.push({ ...targetPlayer, isLibero: false, isOnCourt: false });
+        }
+        setBenchPlayers([...newBenchPlayers].sort((a, b) => (a.number || 0) - (b.number || 0)));
+
+        try {
+          await axios.put(`${API_URL}/api/players/${targetPlayer._id}`, { isOnCourt: false }, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            withCredentials: true,
+          });
+          await axios.put(`${API_URL}/api/players/${player._id}`, { isOnCourt: true }, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            withCredentials: true,
+          });
+        } catch (err) {
+          console.error("Failed to update players in DB:", err);
+          setShowRosterModal(false);
+          setSelectedSlot(null);
+          return;
+        }
+
+        updateCourtPositions(newPlayers, positionMapping);
+        await creditGamesPlayed(player._id, "express_libero_partner_sub");
+
+        setActionLog(prev => [
+          ...prev,
+          {
+            action: `Express: ${player.name} (Libero) substituted in for ${targetPlayer.name} at position ${targetPlayer.expressPosition}`,
+            timestamp: new Date().toISOString(),
+          }
+        ]);
+
+        setShowRosterModal(false);
+        setSelectedSlot(null);
+        return;
+      }
+
+      // 🔧 FIXED: Regular (non-libero) player placement with position preservation
+      if (targetPlayer && targetPlayer._id && targetPlayer.name !== "?") {
+        // Log the substitution before making database changes
+        const substitutionEntry = {
+          in: {
+            _id: player._id,
+            name: player.name,
+            number: player.number,
+            isLibero: player.isLibero || false
+          },
+          out: {
+            _id: targetPlayer._id,
+            name: targetPlayer.name,
+            number: targetPlayer.number,
+            isLibero: targetPlayer.isLibero || false
+          },
+          timestamp: new Date().toISOString(),
+          type: 'regular_substitution',
+          source: 'express_logger',
+          slotIndex: selectedSlot,
+          volleyballPosition: targetPlayer.expressPosition // Use target's position, not slot-based position
+        };
+
+        // Update substitution log
+        if (setSubstitutionLog) {
+          setSubstitutionLog(prev => [...prev, substitutionEntry]);
+        }
+
+        // Log to action log as well
+        setActionLog(prev => [
+          ...prev,
+          {
+            action: `Express: ${player.name} (#${player.number}) substituted in for ${targetPlayer.name} (#${targetPlayer.number}) at position ${targetPlayer.expressPosition}`,
+            timestamp: new Date().toISOString(),
+            type: 'substitution',
+            meta: {
+              source: 'express',
+              subType: 'regular',
+              slotIndex: selectedSlot,
+              position: targetPlayer.expressPosition // Use target's actual position
+            }
+          }
+        ]);
+
+        try {
+          await axios.put(`${API_URL}/api/players/${targetPlayer._id}`, { 
+            isOnCourt: false 
+          }, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            withCredentials: true,
+          });
+        } catch (error) {
+          console.error("Failed to update previous player in database:", error);
+        }
+
+        // 🔧 CRITICAL FIX: Preserve the volleyball position of the replaced player
+        newPlayers[selectedSlot] = {
+          ...player,
+          expressPosition: targetPlayer.expressPosition, // Inherit position from replaced player
+          isOnCourt: true
+        };
+      } else {
+        // 🔧 FIXED: Empty slot - use position based on slot, but ensure it's set
+        const slotPosition = getVolleyballPosition(selectedSlot);
+        newPlayers[selectedSlot] = {
+          ...player,
+          expressPosition: slotPosition, // Use the slot's designated position
+          isOnCourt: true
+        };
+      }
+
+      updateCourtPositions(newPlayers, positionMapping);
+      
+      // Credit games played for non-libero players
+      if (!player.isLibero) {
+        await creditGamesPlayed(player._id, "express_regular_sub");
+      }
+    }
+    
+    setShowRosterModal(false);
+    setSelectedSlot(null);
+  }, [selectedSlot, courtPlayers, updateCourtPositions, positionMapping, token, creditGamesPlayed, getVolleyballPosition, allowedLiberoSubTarget, slot5TargetId, benchPlayers, setBenchPlayers, setAllowedLiberoSubTarget, setSlot5TargetId, setActionLog, setSubstitutionLog]);
+
+  const renderCollaborativeControls = () => {
+    if (!collaborativeEnabled) return null;
+
+    return (
+      <div style={{
+        position: 'fixed',
+        bottom: '20px',
+        left: '20px',
+        zIndex: 1000,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px'
+      }}>
+        {/* Toggle Collaborative Mode */}
+        <button
+          onClick={() => setCollaborativeEnabled(prev => !prev)}
+          style={{
+            padding: '8px 12px',
+            borderRadius: '6px',
+            border: 'none',
+            backgroundColor: collaborativeMode ? '#28a745' : '#6c757d',
+            color: '#fff',
+            fontSize: '12px',
+            cursor: 'pointer'
+          }}
+        >
+          {collaborativeMode ? '🔗 Connected' : '🔗 Connect'}
+        </button>
+
+        {/* Player Assignment Button */}
+        {collaborativeMode && (
+          <button
+            onClick={() => setShowAssignmentModal(true)}
+            style={{
+              padding: '8px 12px',
+              borderRadius: '6px',
+              border: 'none',
+              backgroundColor: '#007AFF',
+              color: '#fff',
+              fontSize: '12px',
+              cursor: 'pointer'
+            }}
+          >
+            📋 Assign Players
+          </button>
+        )}
+
+        {/* Active Users Count */}
+        {collaborativeMode && activeSessions.length > 1 && (
+          <div style={{
+            padding: '6px 10px',
+            borderRadius: '6px',
+            backgroundColor: 'rgba(255,255,255,0.9)',
+            fontSize: '11px',
+            textAlign: 'center',
+            border: '1px solid #ddd'
+          }}>
+            {activeSessions.filter(s => s.isOnline).length} users online
+          </div>
+        )}
+      </div>
+    );
+  };
+
+const togglePlayerActivation = useCallback((playerIndex) => {
+    const player = courtPlayers[playerIndex];
+    if (!player || !player._id) return;
+    
+    const playerId = player._id;
+    const isCurrentlyActive = activePlayerIds.has(playerId);
+    
+    if (isCurrentlyActive) {
+      // Deactivating player - add to deactivated list and remove from active
+      setActivePlayerIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(playerId);
+        return newSet;
+      });
+      
+      setDeactivatedPlayers(prev => {
+        if (!prev.includes(playerId)) {
+          return [...prev, playerId];
+        }
+        return prev;
+      });
+      
+      // Log the deactivation
+      setActionLog(prev => [
+        ...prev,
+        {
+          action: `Express: ${player.name} (#${player.number}) deactivated from stat tracking`,
+          timestamp: new Date().toISOString(),
+          meta: { type: 'player_deactivated', playerId }
+        }
+      ]);
+    } else {
+      // Activating player - remove from deactivated list and add to active
+      setActivePlayerIds(prev => {
+        const newSet = new Set(prev);
+        newSet.add(playerId);
+        return newSet;
+      });
+      
+      setDeactivatedPlayers(prev => prev.filter(id => id !== playerId));
+      
+      // Log the activation
+      setActionLog(prev => [
+        ...prev,
+        {
+          action: `Express: ${player.name} (#${player.number}) activated for stat tracking`,
+          timestamp: new Date().toISOString(),
+          meta: { type: 'player_activated', playerId }
+        }
+      ]);
+    }
+  }, [courtPlayers, activePlayerIds, setDeactivatedPlayers, setActionLog]);
+
+
+  // Enhanced point handlers with 4 different point types
+  const handlePointAwarded = useCallback((pointType) => {
+    const now = Date.now();
+    
+    // Prevent rapid duplicate scoring
+    if (lastScoreUpdate && (now - lastScoreUpdate) < 1000) {
+      console.log('🚫 Rapid scoring prevented');
+      return;
+    }
+    
+    setLastScoreUpdate(now);
+
+    const wasOpponentServing = currentServeSide === "opponent";
+    let scoreChange = 0;
+    let team = '';
+    let reason = '';
+
+    switch (pointType) {
+      case 'ourEarned':
+        scoreChange = 1;
+        team = 'our';
+        reason = 'earned';
+        break;
+      case 'opponentError':
+        scoreChange = 1;
+        team = 'our';
+        reason = 'opponent_error';
+        break;
+      case 'ourError':
+        scoreChange = 1;
+        team = 'opponent';
+        reason = 'our_error';
+        break;
+      case 'opponentEarned':
+        scoreChange = 1;
+        team = 'opponent';
+        reason = 'opponent_earned';
+        break;
+      default:
+        return;
+    }
+
+    // Use collaborative scoring if available
+    if (collaborativeMode) {
+      const success = updateCollaborativeScore(team, scoreChange, reason);
+      if (success) {
+        // The UI update will come through the WebSocket event
+        return;
+      }
+    }
+
+    // Fall back to local scoring
+    if (team === 'our') {
+      onOurPoint && onOurPoint();
+      setTeamStats && setTeamStats(prev => ({ 
+        ...prev, 
+        [pointType === 'ourEarned' ? 'ourEarned' : 'oppError']: 
+          prev[pointType === 'ourEarned' ? 'ourEarned' : 'oppError'] + 1 
+      }));
+    } else {
+      onOpponentPoint && onOpponentPoint();
+      setTeamStats && setTeamStats(prev => ({ 
+        ...prev, 
+        [pointType === 'opponentEarned' ? 'oppEarned' : 'ourError']: 
+          prev[pointType === 'opponentEarned' ? 'oppEarned' : 'ourError'] + 1 
+      }));
+    }
+
+    // Handle serve side changes and rotation
+    setBallState && setBallState("serve");
+    const newServeSide = team === 'our' ? 'our' : 'opponent';
+    setCurrentServeSide && setCurrentServeSide(newServeSide);
+    setBallSide && setBallSide(newServeSide);
+
+    if (team === 'our' && wasOpponentServing) {
+      setTimeout(() => {
+        handleExpressRotation();
+      }, 100);
+    }
+
+    setActionLog(prev => [
+      ...prev,
+      {
+        action: `Manual point: ${reason}`,
+        timestamp: new Date().toISOString(),
+        meta: { pointType, source: collaborativeMode ? 'collaborative' : 'local' }
+      }
+    ]);
+  }, [
+    lastScoreUpdate,
+    currentServeSide,
+    collaborativeMode,
+    updateCollaborativeScore,
+    onOurPoint,
+    onOpponentPoint,
+    setTeamStats,
+    setBallState,
+    setCurrentServeSide,
+    setBallSide,
+    handleExpressRotation,
+    setActionLog
+  ]);
+
+  // Get available actions with block assist mode support
+  
+
+const getAvailableActions = (playerIndex) => {
+  const player = courtPlayers[playerIndex];
+  if (!player || !isPlayerActive(playerIndex)) return [];
+
+  // --- helper: who is the server & should we show Rally Start? ---
+  const serverIndex = courtPlayers.findIndex(p => p && p.expressPosition === '1');
+  const serverIsActive = serverIndex !== -1 && isPlayerActive(serverIndex);
+  const somePlayersDeactivated = Array.isArray(deactivatedPlayers) && deactivatedPlayers.length > 0;
+  const anySlotEmpty = courtPlayers.some(player => !player || player.name === "?" || !player._id);
+
+const showRallyStart =
+  ballState === 'serve' &&
+  (somePlayersDeactivated || anySlotEmpty) &&
+  !(currentServeSide === 'our' && serverIsActive);
+
+  // --- SERVE STATE ---
+  if (ballState === 'serve') {
+    if (currentServeSide === 'our') {
+      // only the server gets serve buttons
+      if (isCurrentServerSlot(playerIndex)) {
+        const groups = [
+          {
+            category: 'Serve',
+            actions: [
+              { key: 'SERVE',     label: 'SERVE', variant: 'primary' },
+              { key: 'ACE',       label: 'ACE',   variant: 'success' },
+              { key: 'SERVE_ERR', label: 'ERR',   variant: 'danger' }
+            ]
+          }
+        ];
+        if (showRallyStart) {
+          groups.push({
+            category: 'Manual',
+            actions: [{ key: 'RALLY_START', label: 'Rally Start', variant: 'info' }]
+          });
+        }
+        return groups;
+      }
+      // non-server during our serve: at most show Rally Start
+      return showRallyStart
+        ? [{ category: 'Manual', actions: [{ key: 'RALLY_START', label: 'Rally Start', variant: 'info' }] }]
+        : [];
+    }
+
+    // opponent serve: reception actions for everyone (active)
+    const groups = [
+      {
+        category: 'Reception',
+        actions: [
+          { key: 'REC',     label: 'REC', variant: 'primary' },
+          { key: 'REC_ERR', label: 'ERR', variant: 'danger' }
+        ]
+      }
+    ];
+    if (showRallyStart) {
+      groups.push({
+        category: 'Manual',
+        actions: [{ key: 'RALLY_START', label: 'Rally Start', variant: 'info' }]
+      });
+    }
+    return groups;
+  }
+
+  // --- IN-PLAY STATE ---
+  if (ballState === 'inplay') {
+    const pos = getVolleyballPosition(playerIndex);
+
+    const groups = [
+      {
+        category: 'Defense',
+        actions: [
+          { key: 'DIG',     label: 'DIG', variant: 'primary' },
+          { key: 'DIG_ERR', label: 'ERR', variant: 'danger' }
+        ]
+      },
+      {
+        category: 'Setting',
+        actions: [
+          { key: 'SET',     label: 'SET',     variant: 'primary' },
+          { key: 'SET_ERR', label: 'ERR',     variant: 'danger' },
+          { key: 'ASSIST',  label: 'ASSIST',  variant: 'success' }
+        ]
+      },
+      {
+        category: 'Attack',
+        actions: [
+          { key: 'ATTACK',     label: 'Attack',    variant: 'primary' },
+          { key: 'KILL',       label: 'Kill',      variant: 'success' },
+          { key: 'FREE_BALL',  label: 'Free Ball', variant: 'primary' },
+          { key: 'ATTACK_ERR', label: 'ERR',       variant: 'danger' }
+        ]
+      }
+    ];
+
+    // Block only for front-row (2/3/4) and non-libero, and not when in block-assist mode UI
+    if (['2','3','4'].includes(pos) && !player.isLibero && !blockAssistMode) {
+      groups.push({
+        category: 'Block',
+        actions: [
+          { key: 'SOLO_BLOCK',   label: 'SOLO',   variant: 'success' },
+          { key: 'ASSIST_BLOCK', label: 'ASSIST', variant: 'success' },
+          { key: 'BLOCK_ERR',    label: 'ERR',    variant: 'danger' }
+        ]
+      });
+    }
+
+    return groups;
+  }
+
+  return [];
+};
+
+const handleAssistSelection = useCallback(async (assistPlayerIndex, killPlayerIndex) => {
+    const assistPlayer = courtPlayers[assistPlayerIndex];
+    const killPlayer = courtPlayers[killPlayerIndex];
+    
+    if (!assistPlayer || !killPlayer || !isPlayerActive(assistPlayerIndex) || !isPlayerActive(killPlayerIndex)) {
+      return;
+    }
+    
+    setAssistMode(false);
+    setSelectedAssistPlayer(null);
+    
+    // Award the assist and kill stats
+    await completeAssistKillSequence(assistPlayer, killPlayer);
+  }, [courtPlayers, isPlayerActive]);
+
+
+const completeAssistKillSequence = useCallback(async (assistPlayer, killPlayer, currentServeSideSnapshot = null) => {
+const effectiveServeSide = currentServeSideSnapshot || serveSideAtRallyStartRef.current || currentServeSide;
+   const wasOpponentServing = effectiveServeSide === "opponent";
+    console.log(`Was Opponent Serving? ${wasOpponentServing}`);
+    
+    // Log assist for the assisting player
+    await logAndSyncStat({
+      playerId: assistPlayer._id,
+      playerName: assistPlayer.name,
+      label: "Assist",
+      statKeys: ["sets", "assists"],
+      setActionLog,
+      setPlayerStats,
+      playerStats,
+      currentMatchId,
+      teamId: match?.teamName,
+    });
+    
+    // Log kill for the killing player
+    await logAndSyncStat({
+      playerId: killPlayer._id,
+      playerName: killPlayer.name,
+      label: "Kill",
+      statKeys: ["kills", "attacks", "points"],
+      setActionLog,
+      setPlayerStats,
+      playerStats,
+      currentMatchId,
+      teamId: match?.teamName,
+    });
+    
+    // Handle scoring (same as kill)
+    onOurPoint && onOurPoint();
+    setTeamStats && setTeamStats(prev => ({ ...prev, ourEarned: prev.ourEarned + 1 }));
+    
+    // Handle ball state changes (same as kill)
+    setBallState && setBallState("serve");
+    const newServeSide = "our"; // We scored, so serve goes to us
+    setCurrentServeSide && setCurrentServeSide(newServeSide);
+    setBallSide && setBallSide(newServeSide);
+    
+    // FIXED: Handle rotation ONLY if opponent was serving before we scored
+    // No need to check currentServeSide since it's already been updated above
+    if (wasOpponentServing) {
+      setTimeout(() => {
+        handleExpressRotation();
+      }, 100);
+    }
+    
+    // Add combined action log entry
+    setActionLog(prev => [
+      ...prev,
+      {
+        action: `Assist by ${assistPlayer.name} (#${assistPlayer.number}) → Kill by ${killPlayer.name} (#${killPlayer.number})`,
+        timestamp: new Date().toISOString(),
+        meta: {
+          type: 'assist_kill_combo',
+          assistPlayer: { id: assistPlayer._id, name: assistPlayer.name, number: assistPlayer.number },
+          killPlayer: { id: killPlayer._id, name: killPlayer.name, number: killPlayer.number }
+        }
+      }
+    ]);
+  }, [
+    currentServeSide, 
+    onOurPoint, 
+    setTeamStats, 
+    setBallState, 
+    setCurrentServeSide, 
+    setBallSide, 
+    setActionLog, 
+    playerStats, 
+    currentMatchId, 
+    match?.teamName, 
+    handleExpressRotation
+  ]);
+  const cancelAssist = useCallback(() => {
+    setAssistMode(false);
+    setSelectedAssistPlayer(null);
+  }, []);
+
+  // Updated styles for mobile-friendly design
+  const containerStyle = {
+    maxWidth: '1200px',
+    margin: '0 auto',
+    padding: '8px',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    backgroundColor: '#f8f9fa',
+    borderRadius: '8px',
+    paddingBottom: '100px' // Add padding to prevent content from being hidden behind sticky bar
+  };
+
+  const headerStyle = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '12px',
+    padding: '8px',
+    backgroundColor: '#ffffff',
+    borderRadius: '6px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+    flexWrap: 'wrap',
+    gap: '6px'
+  };
+
+  const ballStateStyle = {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+    flexWrap: 'wrap'
+  };
+
+  const stateIndicatorStyle = (isActive) => ({
+    padding: '4px 8px',
+    borderRadius: '12px',
+    fontWeight: '600',
+    fontSize: '10px',
+    backgroundColor: isActive ? '#007AFF' : '#e9ecef',
+    color: isActive ? '#ffffff' : '#6c757d',
+    marginLeft: '2px',
+    minHeight: '30px',
+    border: 'none',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+    transform: 'scale(1)',
+    boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
+  });
+
+  const playersGridStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    marginBottom: '12px'
+  };
+
+  const playerCardStyle = (isActive) => ({
+    backgroundColor: '#ffffff',
+    borderRadius: '8px',
+    padding: isActive ? '8px' : '4px',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.1)',
+    opacity: isActive ? 1 : 0.6,
+    border: isActive ? '2px solid #007AFF' : '2px solid transparent',
+    transition: 'all 0.2s ease',
+    display: 'flex',
+    alignItems: 'center',
+    gap: isActive ? '8px' : '4px',
+    minHeight: isActive ? '50px' : '25px',
+    width: '100%'
+  });
+
+  const playerHeaderStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    minWidth: '140px',
+    flexShrink: 0
+  };
+
+  const playerNameStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    cursor: 'pointer',
+    flex: 1,
+    minWidth: '80px'
+  };
+
+  const playerControlsStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    flexShrink: 0
+  };
+
+  const actionButtonsStyle = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '4px',
+    flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'center'
+  };
+
+  const actionButtonStyle = (variant = 'primary') => ({
+    padding: '4px 8px',
+    borderRadius: '4px',
+    border: 'none',
+    fontWeight: '600',
+    fontSize: '10px',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+    minWidth: '40px',
+    minHeight: '40px',
+    backgroundColor: variant === 'danger' ? '#dc3545' : variant === 'success' ? '#28a745' : '#007AFF',
+    color: '#ffffff',
+    whiteSpace: 'nowrap',
+    transform: 'scale(1)',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+  });
+
+  // NEW: Manual Position Control Section Style (Subdued)
+  const manualControlStyle = {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '12px',
+    marginBottom: '16px',
+    backgroundColor: '#ffffff',
+    borderRadius: '8px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+  };
+
+  const rotateButtonStyle = {
+    padding: '8px 16px',
+    borderRadius: '6px',
+    border: '1px solid #dee2e6',
+    backgroundColor: '#f8f9fa',
+    color: '#495057',
+    fontWeight: '500',
+    fontSize: '14px',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+    transform: 'scale(1)'
+  };
+
+  // NEW: Sticky Bottom Bar Styles
+  const stickyBottomBarStyle = {
+    position: 'fixed',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#ffffff',
+    border: '3px solid #007AFF', // Blue border matching the app design
+    borderRadius: '16px 16px 0 0',
+    padding: '12px 16px 20px 16px', // Extra bottom padding for mobile safe area
+    zIndex: 1000,
+    boxShadow: '0 -4px 12px rgba(0,0,0,0.1)'
+  };
+
+  const bottomBarContentStyle = {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '12px',
+    maxWidth: '500px',
+    margin: '0 auto'
+  };
+
+  const bottomBarSectionStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    alignItems: 'center'
+  };
+
+  const bottomBarLabelStyle = {
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#333',
+    textAlign: 'center'
+  };
+
+  const bottomBarButtonRowStyle = {
+    display: 'flex',
+    gap: '6px'
+  };
+
+  const bottomBarButtonStyle = (backgroundColor, textColor = '#ffffff') => ({
+    padding: '10px 12px',
+    borderRadius: '8px',
+    border: 'none',
+    backgroundColor,
+    color: textColor,
+    fontWeight: '600',
+    fontSize: '12px',
+    cursor: 'pointer',
+    transition: 'all 0.15s ease',
+    transform: 'scale(1)',
+    minWidth: '70px',
+    minHeight: '44px', // Touch-friendly size
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+  });
+
+  return (
+    <div style={containerStyle}>
+      {collaborativeMode && <CollaborativeStatusBar />}
+      <div style={headerStyle}>
+        <h2 style={{ margin: 0, color: '#333', fontSize: '18px' }}>Express Stat Logger</h2>
+        
+        <div style={{ 
+          fontSize: '10px', 
+          color: '#111', 
+          fontStyle: 'italic',
+          textAlign: 'center',
+          maxWidth: '250px'
+        }}>
+          💡 Positions move with players during Drag and Drop. Use ROTATE to change the players' court positions.  
+        </div>
+        
+        <div style={ballStateStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ marginRight: '4px', fontWeight: '600', fontSize: '12px' }}>Service Side:</span>
+            <button 
+              style={stateIndicatorStyle(ballSide === 'our')}
+              onMouseDown={(e) => {
+                e.target.style.transform = 'scale(0.95)';
+                e.target.style.opacity = '0.8';
+              }}
+              onMouseUp={(e) => {
+                e.target.style.transform = 'scale(1)';
+                e.target.style.opacity = '1';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.transform = 'scale(1)';
+                e.target.style.opacity = '1';
+              }}
+             onClick={() => {
+				if (ballSide !== 'our') {
+				setBallSide && setBallSide('our');
+				setCurrentServeSide && setCurrentServeSide('our');
+				setActionLog(prev => [
+					...prev,
+					{
+					action: "Service side manually changed to Our team (no rotation)",
+					timestamp: new Date().toISOString(),
+					}
+				]);
+				}
+				}}
+            >
+              Our
+            </button>
+            <button 
+              style={stateIndicatorStyle(ballSide === 'opponent')}
+              onMouseDown={(e) => {
+                e.target.style.transform = 'scale(0.95)';
+                e.target.style.opacity = '0.8';
+              }}
+              onMouseUp={(e) => {
+                e.target.style.transform = 'scale(1)';
+                e.target.style.opacity = '1';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.transform = 'scale(1)';
+                e.target.style.opacity = '1';
+              }}
+				onClick={() => {
+				if (ballSide !== 'opponent') {
+					setBallSide && setBallSide('opponent');
+					// ALWAYS update currentServeSide, not just when ballState === 'serve'
+					setCurrentServeSide && setCurrentServeSide('opponent');
+					setActionLog(prev => [
+					...prev,
+					{
+						action: "Service side manually changed to Opponent (no rotation)",
+						timestamp: new Date().toISOString(),
+					}
+					]);
+				}
+				}}
+            >
+              Opp
+            </button>
+          </div>
+          
+		
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ marginRight: '4px', fontWeight: '600', fontSize: '12px' }}>State:</span>
+            <button 
+              style={stateIndicatorStyle(ballState === 'serve')}
+              onMouseDown={(e) => {
+                e.target.style.transform = 'scale(0.95)';
+                e.target.style.opacity = '0.8';
+              }}
+              onMouseUp={(e) => {
+                e.target.style.transform = 'scale(1)';
+                e.target.style.opacity = '1';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.transform = 'scale(1)';
+                e.target.style.opacity = '1';
+              }}
+              onClick={() => {
+                if (ballState !== 'serve') {
+                  setBallState && setBallState('serve');
+                  setCurrentServeSide && setCurrentServeSide(ballSide);
+                  setActionLog(prev => [
+                    ...prev,
+                    {
+                      action: `Game state manually changed to Serve (${ballSide === 'our' ? 'Our' : 'Opponent'} serve)`,
+                      timestamp: new Date().toISOString(),
+                    }
+                  ]);
+                }
+              }}
+            >
+              Serve
+            </button>
+            <button 
+              style={stateIndicatorStyle(ballState === 'inplay')}
+              onMouseDown={(e) => {
+                e.target.style.transform = 'scale(0.95)';
+                e.target.style.opacity = '0.8';
+              }}
+              onMouseUp={(e) => {
+                e.target.style.transform = 'scale(1)';
+                e.target.style.opacity = '1';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.transform = 'scale(1)';
+                e.target.style.opacity = '1';
+              }}
+              onClick={() => {
+                if (ballState !== 'inplay') {
+                  setBallState && setBallState('inplay');
+                  setActionLog(prev => [
+                    ...prev,
+                    {
+                      action: "Game state manually changed to In Play (Rally)",
+                      timestamp: new Date().toISOString(),
+                    }
+                  ]);
+                }
+              }}
+            >
+              Rally
+            </button>
+          </div>
+        </div>
+      </div>
+     
+ {collaborativeMode && (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      padding: '4px 8px',
+      backgroundColor: isConnected ? 'rgba(40,167,69,0.1)' : 'rgba(220,53,69,0.1)',
+      borderRadius: '12px',
+      fontSize: '11px',
+      border: `1px solid ${isConnected ? '#28a745' : '#dc3545'}`
+    }}>
+      <div style={{
+        width: '6px',
+        height: '6px',
+        borderRadius: '50%',
+        backgroundColor: isConnected ? '#28a745' : '#dc3545'
+      }} />
+      Collaborative Mode
+      </div>
+  )}
+     
+	 
+	 {renderCollaborativeControls()}
+
+      {/* Player Assignment Modal */}
+      <PlayerAssignmentModal
+        isOpen={showAssignmentModal}
+        onClose={() => setShowAssignmentModal(false)}
+        courtPlayers={courtPlayers}
+        benchPlayers={benchPlayers}
+      />
+
+      {/* Players */}
+      <div style={playersGridStyle}>
+        {Array.isArray(courtPlayers) && courtPlayers.map((player, index) => {
+          const isActive = isPlayerActive(index);
+          const actionGroups = getAvailableActions(index);
+          const isServerPosition = isCurrentServerSlot(index);
+          const shouldHighlightServer = ballState === "serve" && currentServeSide === "our" && isServerPosition;
+          const trackingStatus = getTrackingStatus(player._id); 
+          return (
+            <DroppableSlot key={index} index={index}>
+              <DraggablePlayerCard player={player} index={index}>
+                <div style={{
+                  ...playerCardStyle(isActive),
+                  borderColor: shouldHighlightServer ? '#FFD700' : (isActive ? '#007AFF' : 'transparent'),
+                  borderWidth: shouldHighlightServer ? '3px' : '2px',
+                  backgroundColor: shouldHighlightServer ? '#FFF9E6' : '#ffffff',
+                  position: 'relative', 
+                  opacity: (collaborativeMode && trackingStatus?.isAssigned && !trackingStatus?.isMe) ? 0.6 : 1
+                }}>
+                  
+				   {collaborativeMode && player._id && (
+            <PlayerTrackingIndicator 
+              playerId={player._id} 
+              playerName={player.name} 
+            />
+          )}
+		  {collaborativeMode && trackingStatus?.isAssigned && !trackingStatus?.isMe && (
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              backgroundColor: 'rgba(0,122,255,0.9)',
+              color: '#fff',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              fontSize: '10px',
+              fontWeight: '600',
+              zIndex: 5,
+              pointerEvents: 'none'
+            }}>
+              Tracked by {trackingStatus.trackedBy}
+            </div>
+          )}
+				  {/* Player Info Section */}
+ <div style={playerHeaderStyle}>
+				   <div style={{ 
+  fontSize: '9px', 
+  color: '#007AFF', 
+  fontWeight: '600',
+  backgroundColor: 'rgba(0, 122, 255, 0.1)',
+  padding: '1px', // Minimal uniform padding
+  borderRadius: '3px',
+  width: 'auto',
+  marginTop: '2px',
+  transform: 'rotate(270deg)',
+  display: 'inline-block',
+  textAlign: 'center',
+  lineHeight: '1' // Tight line height
+}}>
+  Pos{getVolleyballPosition(index)}
+</div>
+                    <div 
+                      style={playerNameStyle}
+                      onClick={() => openRosterModal(index)}
+                    >
+                      
+					  {player && player.name !== "?" ? (
+                        <>
+                          <div style={{ fontWeight: '600', fontSize: '12px', lineHeight: '1.2' }}>
+                            <div style={{ fontWeight: '600' }}>{player.name.length > 15 ? player.name.substring(0, 15) + '...' : player.name}</div>
+                       
+                          </div>
+                          <div style={{ fontSize: '10px', color: '#666', lineHeight: '1' }}>
+                            #{player.number} {player.isLibero ? '(L)' : ''}
+                          </div>
+                         
+                        </>
+                      ) : (
+                        <div style={{ color: '#999', fontStyle: 'italic', fontSize: '11px' }}>
+                          Click to select
+                          {isServerPosition && (
+                            <span style={{ display: 'block', fontSize: '9px', color: '#B8860B' }}>
+                              (Position {getVolleyballPosition(index)} - Server)
+                            </span>
+                          )}
+                          <div style={{ 
+                            fontSize: '9px', 
+                            color: '#007AFF', 
+                            fontWeight: '600',
+                            backgroundColor: 'rgba(0, 122, 255, 0.1)',
+                            padding: '1px 4px',
+                            borderRadius: '3px',
+                            marginTop: '4px',
+                            fontStyle: 'normal'
+                          }}>
+                            Pos {getVolleyballPosition(index)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Player Controls */}
+                    {player && player.name !== "?" && (
+                      <div style={playerControlsStyle}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            togglePlayerActivation(index);
+                          }}
+                          onMouseDown={(e) => {
+                            e.target.style.transform = 'scale(0.95)';
+                            e.target.style.opacity = '0.8';
+                          }}
+                          onMouseUp={(e) => {
+                            e.target.style.transform = 'scale(1)';
+                            e.target.style.opacity = '1';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.transform = 'scale(1)';
+                            e.target.style.opacity = '1';
+                          }}
+                          style={{
+                            padding: '2px 4px',
+                            borderRadius: '3px',
+                            border: 'none',
+                            fontSize: '8px',
+                            backgroundColor: isActive ? '#dc3545' : '#28a745',
+                            color: '#ffffff',
+                            cursor: 'pointer',
+                            minWidth: '25px',
+                            minHeight: '25px',
+                            transition: 'all 0.15s ease',
+                            transform: 'scale(1)'
+                          }}
+                        >
+                          {isActive ? 'OFF' : 'ON'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action Buttons */}
+                  {isActive && actionGroups.length > 0 && (
+                    <div style={actionButtonsStyle}>
+                      {actionGroups.map((group, groupIndex) => (
+                        <React.Fragment key={group.category}>
+                          <div style={{
+                            fontSize: '8px',
+                            color: '#666',
+                            fontWeight: '600',
+                            textTransform: 'uppercase',
+                            transform: 'rotate(270deg)',
+                            padding: '0px 0px',
+                            alignSelf: 'flex-start',
+                            marginTop: '10px'
+                          }}>
+                            {group.category}
+                          </div>
+                          
+                          {group.actions.map(action => (
+                            <button
+                              key={action.key}
+                              onClick={() => handlePlayerAction(index, action.key)}
+                              onMouseDown={(e) => {
+                                e.target.style.transform = 'scale(0.95)';
+                                e.target.style.opacity = '0.8';
+                              }}
+                              onMouseUp={(e) => {
+                                e.target.style.transform = 'scale(1)';
+                                e.target.style.opacity = '1';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.target.style.transform = 'scale(1)';
+                                e.target.style.opacity = '1';
+                              }}
+                              onMouseEnter={(e) => {
+                                e.target.style.opacity = '0.9';
+                              }}
+                              style={actionButtonStyle(action.variant)}
+                            >
+                              {action.label}
+                            </button>
+                          ))}
+                          
+                          {groupIndex < actionGroups.length - 1 && (
+                            <div style={{
+                              width: '0px',
+                              height: '30px',
+                              backgroundColor: '#dee2e6',
+                              margin: '0 4px',
+                              alignSelf: 'center',
+                            }} />
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {isActive && actionGroups.length === 0 && (
+                    <div style={{
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#999',
+                      fontStyle: 'italic',
+                      fontSize: '10px',
+                      padding: '4px'
+                    }}>
+                      {ballState === "serve" && currentServeSide === "our" && !isCurrentServerSlot(index) ? 
+                        "Only server can act. NOT TRACKING THE SERVER? change the State to RALLY or manually change the score below." : 
+                        "No actions available"
+                      }
+                    </div>
+                  )}
+                  
+                  {!isActive && (
+                    <div style={{ flex: 1 }} />
+                  )}
+                </div>
+              </DraggablePlayerCard>
+            </DroppableSlot>
+          );
+        })}
+      </div>
+
+      {/* NEW: Manual Position Control Section (Subdued) */}
+      <div style={manualControlStyle}>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+          alignItems: 'center'
+        }}>
+          <div style={{
+            fontSize: '12px',
+            fontWeight: '500',
+            color: '#6c757d',
+            textAlign: 'center'
+          }}>
+            Manual Position Control
+          </div>
+          
+          <button
+            onClick={handleExpressRotation}
+            onMouseDown={(e) => {
+              e.target.style.transform = 'scale(0.97)';
+              e.target.style.backgroundColor = '#e9ecef';
+            }}
+            onMouseUp={(e) => {
+              e.target.style.transform = 'scale(1)';
+              e.target.style.backgroundColor = '#f8f9fa';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.transform = 'scale(1)';
+              e.target.style.backgroundColor = '#f8f9fa';
+            }}
+            style={rotateButtonStyle}
+          >
+            Rotate Positions
+          </button>
+        </div>
+      </div>
+
+      {/* Block Assist Mode Controls */}
+      {blockAssistMode && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9998
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '12px',
+            padding: '20px',
+            maxWidth: '500px',
+            width: '95%',
+            maxHeight: '80vh',
+            overflow: 'auto',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+          }}>
+            <h3 style={{ 
+              marginTop: 0, 
+              marginBottom: '16px',
+              fontSize: '18px',
+              color: '#333',
+              textAlign: 'center'
+            }}>
+              Block Assist
+            </h3>
+            
+            <p style={{
+              fontSize: '14px',
+              color: '#666',
+              textAlign: 'center',
+              marginBottom: '16px'
+            }}>
+              Click on the front row players who participated in the block assist.
+            </p>
+
+            {/* Front Row Players Selection */}
+            <div style={{
+              marginBottom: '16px',
+              padding: '12px',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '8px'
+            }}>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: '#333', marginBottom: '12px' }}>
+                Front Row Players (Positions 2, 3, 4):
+              </div>
+              
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
+                {courtPlayers.map((player, index) => {
+                  const currentPosition = getVolleyballPosition(index);
+                  const isActive = isPlayerActive(index);
+                  const isSelected = selectedBlockPlayers.has(index);
+                  
+                  // Only show front row players (positions 2, 3, 4) who are active and not liberos
+                  if (!isActive || !player || !player.name || player.name === "?" || 
+                      (currentPosition !== '2' && currentPosition !== '3' && currentPosition !== '4') ||
+                      player.isLibero) {
+                    return null;
+                  }
+                  
+                  return (
+                    <div
+                      key={index}
+                      onClick={() => handleBlockAssistSelection(index)}
+                      style={{
+                        padding: '12px',
+                        borderRadius: '8px',
+                        border: `2px solid ${isSelected ? '#28a745' : '#dee2e6'}`,
+                        backgroundColor: isSelected ? '#e8f5e8' : '#ffffff',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}
+                      onMouseOver={(e) => {
+                        if (!isSelected) {
+                          e.target.style.backgroundColor = '#f8f9fa';
+                          e.target.style.borderColor = '#007AFF';
+                        }
+                      }}
+                      onMouseOut={(e) => {
+                        if (!isSelected) {
+                          e.target.style.backgroundColor = '#ffffff';
+                          e.target.style.borderColor = '#dee2e6';
+                        }
+                      }}
+                    >
+                      <div>
+                        <div style={{ 
+                          fontWeight: '600', 
+                          fontSize: '14px',
+                          color: '#333'
+                        }}>
+						{player.name}
+                        </div>
+                        <div style={{ 
+                          fontSize: '12px', 
+                          color: '#666' 
+                        }}>
+                          #{player.number} • Position {currentPosition}
+                        </div>
+                      </div>
+                      
+                      <div style={{
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        backgroundColor: isSelected ? '#28a745' : '#6c757d',
+                        color: '#ffffff'
+                      }}>
+                        {isSelected ? 'SELECTED' : 'SELECT'}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            {/* Selected Players Summary */}
+            <div style={{
+              marginBottom: '16px',
+              padding: '12px',
+              backgroundColor: '#e8f5e8',
+              borderRadius: '8px',
+              border: '1px solid #28a745'
+            }}>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: '#333', marginBottom: '8px' }}>
+                Selected Players ({selectedBlockPlayers.size}):
+              </div>
+              {selectedBlockPlayers.size > 0 ? (
+                <div style={{ fontSize: '14px', color: '#155724' }}>
+                  {Array.from(selectedBlockPlayers).map(playerIndex => {
+                    const player = courtPlayers[playerIndex];
+                    return player ? `${player.name} (#${player.number})` : '';
+                  }).filter(Boolean).join(', ')}
+                </div>
+              ) : (
+                <div style={{ fontSize: '14px', color: '#999', fontStyle: 'italic' }}>
+                  No players selected yet
+                </div>
+              )}
+            </div>
+            
+            {/* Action Buttons */}
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              justifyContent: 'center'
+            }}>
+              <button
+                onClick={submitBlockAssist}
+                disabled={selectedBlockPlayers.size === 0}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: selectedBlockPlayers.size > 0 ? '#28a745' : '#6c757d',
+                  color: '#ffffff',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  cursor: selectedBlockPlayers.size > 0 ? 'pointer' : 'not-allowed',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                Submit Block Assist ({selectedBlockPlayers.size})
+              </button>
+              
+              <button
+                onClick={cancelBlockAssist}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: '#dc3545',
+                  color: '#ffffff',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assist Mode Modal */}
+      {assistMode && selectedAssistPlayer !== null && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9998
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '12px',
+            padding: '20px',
+            maxWidth: '500px',
+            width: '95%',
+            maxHeight: '80vh',
+            overflow: 'auto',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+          }}>
+            <h3 style={{ 
+              marginTop: 0, 
+              marginBottom: '16px',
+              fontSize: '18px',
+              color: '#333',
+              textAlign: 'center'
+            }}>
+              Who got the kill?
+            </h3>
+            
+            <div style={{
+              marginBottom: '16px',
+              padding: '12px',
+              backgroundColor: '#e8f5e8',
+              borderRadius: '8px',
+              border: '1px solid #28a745'
+            }}>
+              <div style={{ fontSize: '14px', color: '#155724', textAlign: 'center' }}>
+                <strong>Assisting Player:</strong> {courtPlayers[selectedAssistPlayer]?.name} (#{courtPlayers[selectedAssistPlayer]?.number})
+              </div>
+            </div>
+            
+            <p style={{
+              fontSize: '14px',
+              color: '#666',
+              textAlign: 'center',
+              marginBottom: '16px'
+            }}>
+              Select the player who got the kill from this assist.
+            </p>
+
+            {/* Other Players Selection */}
+            <div style={{
+              marginBottom: '16px',
+              padding: '12px',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '8px'
+            }}>
+              <div style={{ fontSize: '12px', fontWeight: '600', color: '#333', marginBottom: '12px' }}>
+                Available Players:
+              </div>
+              
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}>
+                {courtPlayers
+                  .map((player, index) => ({ player, index }))
+                  .filter(({ player, index }) => {
+                    return player && 
+                           player.name !== "?" && 
+                           player._id && 
+                           isPlayerActive(index) && 
+                           index !== selectedAssistPlayer;
+                  })
+                  .sort((a, b) => (a.player.number || 999) - (b.player.number || 999)) // Sort by number
+                  .map(({ player, index }) => (
+                    <div
+                      key={index}
+                      onClick={() => handleAssistSelection(selectedAssistPlayer, index)}
+                      style={{
+                        padding: '12px',
+                        borderRadius: '8px',
+                        border: '2px solid #dee2e6',
+                        backgroundColor: '#ffffff',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}
+                      onMouseOver={(e) => {
+                        e.target.style.backgroundColor = '#f8f9fa';
+                        e.target.style.borderColor = '#007AFF';
+                      }}
+                      onMouseOut={(e) => {
+                        e.target.style.backgroundColor = '#ffffff';
+                        e.target.style.borderColor = '#dee2e6';
+                      }}
+                    >
+                      <div>
+                        <div style={{ 
+                          fontWeight: '600', 
+                          fontSize: '14px',
+                          color: '#333'
+                        }}>
+                          {player.name}
+                        </div>
+                        <div style={{ 
+                          fontSize: '12px', 
+                          color: '#666' 
+                        }}>
+                          #{player.number} • Position {getVolleyballPosition(index)}
+                        </div>
+                      </div>
+                      
+                      <div style={{
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        fontWeight: '600',
+                        backgroundColor: '#28a745',
+                        color: '#ffffff'
+                      }}>
+                        SELECT
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+            
+{/* Action Buttons */}
+            <div style={{
+  display: 'flex',
+  gap: '12px',
+  justifyContent: 'center'
+}}>
+  <button
+    onClick={ignoreKill}
+    style={{
+      padding: '12px 24px',
+      borderRadius: '8px',
+      border: 'none',
+      backgroundColor: '#ffc107',
+      color: '#212529',
+      fontWeight: '600',
+      fontSize: '14px',
+      cursor: 'pointer',
+      transition: 'all 0.15s ease'
+    }}
+  >
+    Ignore Kill
+  </button>
+              <button
+                onClick={cancelAssist}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: '#dc3545',
+                  color: '#ffffff',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NEW: Sticky Bottom Bar for Critical Scoring Actions */}
+      <div style={stickyBottomBarStyle}>
+        <div style={bottomBarContentStyle}>
+          {/* Our Team Gets Point Section */}
+          <div style={bottomBarSectionStyle}>
+            <div style={bottomBarLabelStyle}>
+              Our Team Gets Point
+            </div>
+            
+            <div style={bottomBarButtonRowStyle}>
+              <button
+                onClick={() => handlePointAwarded('ourEarned')}
+                disabled={collaborativeMode && !isConnected}
+                style={{
+                  ...bottomBarButtonStyle('#28a745'),
+                  opacity: (collaborativeMode && !isConnected) ? 0.5 : 1
+                }}
+              >
+                We Earned
+              </button>
+              
+               <button
+                onClick={() => handlePointAwarded('opponentError')}
+                disabled={collaborativeMode && !isConnected}
+                style={{
+                  ...bottomBarButtonStyle('#ffc107', '#212529'),
+                  opacity: (collaborativeMode && !isConnected) ? 0.5 : 1
+                }}
+              >
+                Opp Error
+              </button>
+            </div>
+          </div>
+
+          {/* Opponent Gets Point Section */}
+
+            
+            <div style={bottomBarSectionStyle}>
+            <div style={bottomBarLabelStyle}>
+              Opponent Gets Point
+            </div>
+            
+            <div style={bottomBarButtonRowStyle}>
+              <button
+                onClick={() => handlePointAwarded('opponentEarned')}
+                disabled={collaborativeMode && !isConnected}
+                style={{
+                  ...bottomBarButtonStyle('#dc3545'),
+                  opacity: (collaborativeMode && !isConnected) ? 0.5 : 1
+                }}
+              >
+                They Earned
+              </button>
+              
+              <button
+                onClick={() => handlePointAwarded('ourError')}
+                disabled={collaborativeMode && !isConnected}
+                style={{
+                  ...bottomBarButtonStyle('#fd7e14'),
+                  opacity: (collaborativeMode && !isConnected) ? 0.5 : 1
+                }}
+              >
+                Our Error
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+  
+
+
+      {/* Roster Selection Modal */}
+      {showRosterModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '12px',
+            padding: '16px',
+            maxWidth: '500px',
+            width: '95%',
+            maxHeight: '80vh',
+            overflow: 'auto'
+          }}>
+            <h3 style={{ marginTop: 0, fontSize: '18px' }}>
+              Select Player for Position {selectedSlot !== null ? getVolleyballPosition(selectedSlot) : ''}
+              {selectedSlot !== null && isCurrentServerSlot(selectedSlot) ? ' (Server)' : ''}
+            </h3>
+            
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+              gap: '8px',
+              marginBottom: '12px'
+            }}>
+              {availableRoster
+                .filter(player => {
+                  const currentSlotPlayer = selectedSlot !== null ? courtPlayers[selectedSlot] : null;
+                  return !courtPlayers.some((assignedPlayer, index) => 
+                    assignedPlayer && assignedPlayer._id === player._id && index !== selectedSlot
+                  );
+                })
+                .map(player => (
+                <button
+                  key={player._id}
+                  onClick={() => selectPlayer(player)}
+                  style={{
+                    padding: '10px',
+                    borderRadius: '8px',
+                    border: '1px solid #dee2e6',
+                    backgroundColor: '#ffffff',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.2s ease',
+                    fontSize: '14px'
+                  }}
+                  onMouseOver={(e) => {
+                    e.target.style.backgroundColor = '#f8f9fa';
+                  }}
+                  onMouseOut={(e) => {
+                    e.target.style.backgroundColor = '#ffffff';
+                  }}
+                >
+                  <div style={{ fontWeight: '600' }}>{player.name}</div>
+                  <div style={{ fontSize: '12px', color: '#666' }}>
+                    #{player.number} {player.isLibero ? '(Libero)' : ''}
+                  </div>
+                </button>
+              ))}
+            </div>
+            
+            <button
+              onClick={() => setShowRosterModal(false)}
+              onMouseDown={(e) => {
+                e.target.style.transform = 'scale(0.97)';
+                e.target.style.opacity = '0.8';
+              }}
+              onMouseUp={(e) => {
+                e.target.style.transform = 'scale(1)';
+                e.target.style.opacity = '1';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.transform = 'scale(1)';
+                e.target.style.opacity = '1';
+              }}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '6px',
+                border: 'none',
+                backgroundColor: '#6c757d',
+                color: '#ffffff',
+                cursor: 'pointer',
+                fontSize: '14px',
+                transition: 'all 0.15s ease',
+                transform: 'scale(1)'
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ExpressStatLogger;

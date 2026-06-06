@@ -1,0 +1,47 @@
+import React, { useState, useCallback } from 'react';
+import useSimpleVoiceCommands from '../../hooks/useSimpleVoiceCommands';
+
+const VoiceCommandHandler = ({ 
+  children, 
+  courtPlayers, 
+  isSubscriber, 
+  user,
+  gameState,
+  onVoiceCommand 
+}) => {
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [voiceCommand, setVoiceCommand] = useState(null);
+  const [voiceConfidence, setVoiceConfidence] = useState(null);
+
+  const hasVoiceAccess = isSubscriber || user?.role === 'admin';
+
+  const handleVoiceCommand = useCallback((command) => {
+    setVoiceCommand(command);
+    setVoiceConfidence(command.confidence);
+    
+    setTimeout(() => {
+      setVoiceCommand(null);
+      setVoiceConfidence(null);
+    }, 3000);
+
+    onVoiceCommand(command);
+  }, [onVoiceCommand]);
+
+  const { isListening, lastCommand } = useSimpleVoiceCommands(
+    handleVoiceCommand,
+    courtPlayers,
+    voiceEnabled && hasVoiceAccess,
+    gameState
+  );
+
+  const voiceState = {
+    voiceEnabled, setVoiceEnabled,
+    voiceCommand, voiceConfidence,
+    isListening, lastCommand,
+    hasVoiceAccess
+  };
+
+  return children(voiceState);
+};
+
+export default VoiceCommandHandler;

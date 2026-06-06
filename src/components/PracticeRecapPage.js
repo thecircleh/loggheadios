@@ -1,0 +1,894 @@
+import React, { useEffect, useState } from "react";
+import axios from "axios";
+import { Link, useSearchParams } from "react-router-dom";
+import { useAuth } from "./AuthContext";
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
+const getApiUrl = () => {
+  if (window.location.hostname.startsWith("10.")) {
+    return `http://${window.location.hostname}:3000`;
+  }
+  return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
+};
+
+const API_URL = getApiUrl();
+
+const formatDate = (dateString) => {
+  if (!dateString) return "";
+  
+  // Handle date-only strings (YYYY-MM-DD) - create as local date
+  if (typeof dateString === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    const [year, month, day] = dateString.split('-').map(Number);
+    // Create date in local timezone (not UTC)
+    const date = new Date(year, month - 1, day);
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+    });
+  }
+  
+  // Handle full timestamps - display in user's timezone
+  const date = new Date(dateString);
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+  });
+};
+
+const formatTime = (dateString) => {
+  if (!dateString) return "";
+  const date = new Date(dateString);
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+  });
+};
+
+const formatDuration = (start, end) => {
+  if (!start || !end) return "";
+  
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  
+  // Calculate difference in milliseconds
+  let diff = endDate - startDate;
+  
+  // If negative, use absolute value
+  if (diff < 0) {
+    diff = Math.abs(diff);
+  }
+  
+  const minutes = Math.floor(diff / 60000);
+  
+  if (minutes === 0) return "< 1 min";
+  if (minutes < 60) return `${minutes} min`;
+  
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  
+  if (mins === 0) return `${hours}h`;
+  return `${hours}h ${mins}m`;
+};
+
+const formatTimeRange = (start, end) => {
+  if (!start || !end) return "";
+  
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  
+  // Ensure correct order
+  const earlier = startDate < endDate ? startDate : endDate;
+  const later = startDate < endDate ? endDate : startDate;
+  
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  
+  const earlierStr = earlier.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone
+  });
+  
+  const laterStr = later.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone
+  });
+  
+  return `${earlierStr} - ${laterStr}`;
+};
+
+const formatStatus = (status) => {
+  if (!status) return "";
+  return status.replaceAll("_", " ");
+};
+
+export default function PracticeRecapPage() {
+  const { token } = useAuth();
+  const [searchParams] = useSearchParams();
+
+  const sessionId = searchParams.get("sessionId");
+
+  const [recap, setRecap] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    if (!token || !sessionId) {
+      setMessage("Missing session information.");
+      setLoading(false);
+      return;
+    }
+
+    loadRecap();
+  }, [token, sessionId]);
+
+  const loadRecap = async () => {
+    try {
+      setLoading(true);
+      setMessage("");
+
+      const res = await axios.get(`${API_URL}/api/practice/recap`, {
+        params: { sessionId },
+        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true,
+      });
+
+      setRecap(res.data);
+    } catch (err) {
+      console.error("Failed to load practice recap:", err);
+      setMessage(err.response?.data?.message || "Failed to load practice recap.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const exportPDF = () => {
+    setExporting(true);
+    
+    const doc = new jsPDF();
+    const img = new Image();
+    img.src = "/web-app-manifest-512x512.png";
+    
+    img.onload = () => {
+      // Add logo
+      doc.addImage(img, "PNG", 14, 10, 18, 18);
+      
+      // Loggerhead green branding
+      const loggerheadGreen = "#2e7d32";
+      doc.setTextColor(loggerheadGreen);
+      doc.setFontSize(14);
+      doc.setFont(undefined, 'bold');
+      doc.text("Loggerhead Practice Recap", 36, 16);
+      
+      doc.setFontSize(11);
+      doc.setFont(undefined, 'normal');
+      doc.text(recap.teamName, 36, 22);
+      doc.text(formatDate(recap.sessionDate), 36, 27);
+      
+      // Reset to black for body
+      doc.setTextColor(0);
+      doc.setFontSize(10);
+      
+      let yPos = 40;
+      
+      // Practice Summary Section
+      doc.setFontSize(11);
+      doc.setFont(undefined, 'bold');
+      doc.text("Practice Summary", 14, yPos);
+      yPos += 6;
+      
+      doc.setFontSize(9);
+      doc.setFont(undefined, 'normal');
+      
+      if (recap.practiceStartTime && recap.practiceEndTime) {
+        doc.text(`Duration: ${formatDuration(recap.practiceStartTime, recap.practiceEndTime)}`, 14, yPos);
+        yPos += 5;
+        doc.text(`Time: ${formatTimeRange(recap.practiceStartTime, recap.practiceEndTime)}`, 14, yPos);
+        yPos += 5;
+      }
+      
+      doc.text(`Total Drills: ${recap.totalDrills}`, 14, yPos);
+      yPos += 5;
+      doc.text(`Planned Minutes: ${recap.totalPlannedMinutes}`, 14, yPos);
+      yPos += 5;
+      doc.text(`Players Attended: ${recap.attendance.length}`, 14, yPos);
+      yPos += 10;
+      
+      // Attendance Section
+      if (recap.attendance.length > 0) {
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'bold');
+        doc.text(`Attendance (${recap.attendance.length})`, 14, yPos);
+        yPos += 6;
+        
+        const attendanceData = recap.attendance
+          .sort((a, b) => {
+            const aNum = typeof a.playerNumber === "number" ? a.playerNumber : 999;
+            const bNum = typeof b.playerNumber === "number" ? b.playerNumber : 999;
+            if (aNum !== bNum) return aNum - bNum;
+            return (a.playerName || "").localeCompare(b.playerName || "");
+          })
+          .map(player => [
+            player.playerNumber ? `#${player.playerNumber}` : "",
+            player.playerName
+          ]);
+        
+        autoTable(doc, {
+          startY: yPos,
+          head: [['#', 'Player']],
+          body: attendanceData,
+          headStyles: {
+            fillColor: [46, 125, 50],
+            textColor: [255, 255, 255],
+            fontStyle: 'bold',
+            fontSize: 9
+          },
+          styles: { fontSize: 9, cellPadding: 2 },
+          theme: 'grid',
+          margin: { left: 14 }
+        });
+        
+        yPos = doc.lastAutoTable.finalY + 10;
+      }
+      
+      // Drills Section
+      if (recap.drills.length > 0) {
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'bold');
+        doc.text("Drills", 14, yPos);
+        yPos += 6;
+        
+        recap.drills.forEach((drill, index) => {
+          // Check if we need a new page
+          if (yPos > 250) {
+            doc.addPage();
+            yPos = 20;
+          }
+          
+          doc.setFontSize(10);
+          doc.setFont(undefined, 'bold');
+          doc.text(`${index + 1}. ${drill.title || "Untitled"}`, 14, yPos);
+          yPos += 5;
+          
+          doc.setFontSize(9);
+          doc.setFont(undefined, 'normal');
+          const meta = `${formatStatus(drill.category)} • ${drill.durationMinutes} min • ${formatStatus(drill.status)}`;
+          doc.text(meta, 14, yPos);
+          yPos += 5;
+          
+          // Notes (if any)
+          if (drill.notes && drill.notes.trim()) {
+            doc.setFontSize(8);
+            doc.setTextColor(60);
+            const notesLines = doc.splitTextToSize(`Notes: ${drill.notes}`, 180);
+            doc.text(notesLines, 14, yPos);
+            yPos += notesLines.length * 4;
+            doc.setTextColor(0);
+          }
+          
+          // Player stats for this drill (if any)
+          if (drill.playerStats && drill.playerStats.length > 0) {
+            const playersWithStats = drill.playerStats.filter(ps => {
+              const stats = ps.stats || {};
+              return Object.values(stats).some(v => Number(v) > 0);
+            });
+            
+            if (playersWithStats.length > 0) {
+              // Get all unique stat keys from this drill
+              const allStatKeys = new Set();
+              playersWithStats.forEach(ps => {
+                Object.entries(ps.stats || {})
+                  .filter(([_, value]) => Number(value) > 0)
+                  .forEach(([key]) => allStatKeys.add(key));
+              });
+              const statKeys = Array.from(allStatKeys).sort();
+              
+              // Create table data with dynamic columns
+              const statsData = playersWithStats.map(ps => {
+                const row = [
+                  ps.playerNumber ? `#${ps.playerNumber}` : "",
+                  ps.playerName
+                ];
+                // Add each stat column
+                statKeys.forEach(key => {
+                  row.push(ps.stats?.[key] || "-");
+                });
+                return row;
+              });
+              
+              yPos += 3;
+              autoTable(doc, {
+                startY: yPos,
+                head: [['#', 'Player', ...statKeys]],
+                body: statsData,
+                headStyles: {
+                  fillColor: [220, 220, 220],
+                  textColor: [0, 0, 0],
+                  fontStyle: 'bold',
+                  fontSize: 8
+                },
+                styles: { fontSize: 8, cellPadding: 1.5 },
+                theme: 'grid',
+                margin: { left: 20, right: 14 }
+              });
+              
+              yPos = doc.lastAutoTable.finalY + 8;
+            }
+          }
+          
+          yPos += 2;
+        });
+      }
+      
+      // Aggregate Stats Section
+      if (recap.aggregateStats && recap.aggregateStats.length > 0) {
+        // Check if we need a new page
+        if (yPos > 200) {
+          doc.addPage();
+          yPos = 20;
+        }
+        
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'bold');
+        doc.text("Player Stats Summary", 14, yPos);
+        yPos += 6;
+        
+        const aggregateData = recap.aggregateStats
+          .filter(player => {
+            const stats = player.stats || {};
+            return Object.values(stats).some(v => Number(v) > 0);
+          })
+          .sort((a, b) => {
+            const aNum = typeof a.playerNumber === "number" ? a.playerNumber : 999;
+            const bNum = typeof b.playerNumber === "number" ? b.playerNumber : 999;
+            if (aNum !== bNum) return aNum - bNum;
+            return (a.playerName || "").localeCompare(b.playerName || "");
+          })
+          .map(player => {
+            const statsText = Object.entries(player.stats || {})
+              .filter(([_, value]) => Number(value) > 0)
+              .map(([key, value]) => `${key}: ${value}`)
+              .join(", ");
+            
+            return [
+              player.playerNumber ? `#${player.playerNumber}` : "",
+              player.playerName,
+              player.drillsParticipated || 0,
+              statsText
+            ];
+          });
+        
+        if (aggregateData.length > 0) {
+          autoTable(doc, {
+            startY: yPos,
+            head: [['#', 'Player', 'Drills', 'Total Stats']],
+            body: aggregateData,
+            headStyles: {
+              fillColor: [46, 125, 50],
+              textColor: [255, 255, 255],
+              fontStyle: 'bold',
+              fontSize: 9
+            },
+            styles: { fontSize: 8, cellPadding: 2 },
+            theme: 'grid',
+            margin: { left: 14 }
+          });
+        }
+      }
+      
+      // Save PDF
+      const safeTeam = recap.teamName.replace(/\s+/g, '_');
+      const safeDate = recap.sessionDate.replace(/\//g, '-');
+      doc.save(`Practice_Recap_${safeTeam}_${safeDate}.pdf`);
+      
+      setMessage("PDF exported successfully!");
+      setTimeout(() => setMessage(""), 3000);
+      setExporting(false);
+    };
+    
+    img.onerror = () => {
+      // If logo fails, generate without it
+      console.warn("Logo not found, generating PDF without logo");
+      const loggerheadGreen = "#2e7d32";
+      doc.setTextColor(loggerheadGreen);
+      doc.setFontSize(14);
+      doc.setFont(undefined, 'bold');
+      doc.text("Loggerhead Practice Recap", 14, 20);
+      // ... continue with simplified version
+      
+      const safeTeam = recap.teamName.replace(/\s+/g, '_');
+      const safeDate = recap.sessionDate.replace(/\//g, '-');
+      doc.save(`Practice_Recap_${safeTeam}_${safeDate}.pdf`);
+      setExporting(false);
+    };
+  };
+
+  if (loading) {
+    return <div style={styles.page}>Loading practice recap...</div>;
+  }
+
+  if (!recap) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.wrap}>
+          <h1 style={styles.title}>Practice Recap</h1>
+          <p style={styles.error}>{message || "Practice recap not found."}</p>
+          <Link to="/coaches-corner/practice" style={styles.link}>
+            Back to Practice Home
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={styles.page}>
+      <div style={styles.wrap}>
+        <div style={styles.headerRow}>
+          <div>
+            <h1 style={styles.title}>Practice Recap</h1>
+            <p style={styles.subtext}>
+              {recap.teamName} • {formatDate(recap.sessionDate)}
+            </p>
+          </div>
+
+          <div style={styles.headerButtons}>
+            <Link to="/coaches-corner/practice" style={styles.linkButton}>
+              Practice Home
+            </Link>
+            <button 
+              onClick={exportPDF} 
+              style={styles.exportButton}
+              disabled={exporting}
+            >
+              {exporting ? "Exporting..." : "Export PDF"}
+            </button>
+          </div>
+        </div>
+
+        {message && <p style={styles.message}>{message}</p>}
+
+        {/* Session Summary */}
+        <div style={styles.summaryGrid}>
+          <div style={styles.summaryCard}>
+            <div style={styles.summaryLabel}>Total Drills</div>
+            <div style={styles.summaryValue}>{recap.totalDrills}</div>
+          </div>
+
+          <div style={styles.summaryCard}>
+            <div style={styles.summaryLabel}>Planned Minutes</div>
+            <div style={styles.summaryValue}>{recap.totalPlannedMinutes}</div>
+          </div>
+
+          <div style={styles.summaryCard}>
+            <div style={styles.summaryLabel}>Players Attended</div>
+            <div style={styles.summaryValue}>{recap.attendance.length}</div>
+          </div>
+
+          {recap.practiceStartTime && recap.practiceEndTime && (
+            <div style={styles.summaryCard}>
+              <div style={styles.summaryLabel}>Duration</div>
+              <div style={styles.summaryValue}>
+                {formatDuration(recap.practiceStartTime, recap.practiceEndTime)}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Attendance */}
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>Attendance ({recap.attendance.length})</h2>
+          <div style={styles.playerGrid}>
+            {recap.attendance
+              .sort((a, b) => {
+                const aNum = typeof a.playerNumber === "number" ? a.playerNumber : 999;
+                const bNum = typeof b.playerNumber === "number" ? b.playerNumber : 999;
+                if (aNum !== bNum) return aNum - bNum;
+                return (a.playerName || "").localeCompare(b.playerName || "");
+              })
+              .map((player, index) => (
+                <div key={index} style={styles.playerChip}>
+                  <span style={styles.playerName}>{player.playerName}</span>
+                  {player.playerNumber && (
+                    <span style={styles.playerNumber}>#{player.playerNumber}</span>
+                  )}
+                </div>
+              ))}
+          </div>
+        </div>
+
+        {/* Drills */}
+        <div style={styles.section}>
+          <h2 style={styles.sectionTitle}>Drills ({recap.drills.length})</h2>
+          <div style={styles.drillList}>
+            {recap.drills.map((drill, index) => (
+              <div key={drill.id || index} style={styles.drillCard}>
+                <div style={styles.drillHeader}>
+                  <div style={styles.drillNumber}>{index + 1}</div>
+                  <div style={styles.drillInfo}>
+                    <div style={styles.drillTitle}>{drill.title || "Untitled Drill"}</div>
+                    <div style={styles.drillMeta}>
+                      {formatStatus(drill.category)} • {drill.durationMinutes} min •{" "}
+                      {formatStatus(drill.status)}
+                    </div>
+                  </div>
+                </div>
+
+                {drill.notes && drill.notes.trim() && (
+                  <div style={styles.drillNotes}>
+                    <strong>Notes:</strong> {drill.notes}
+                  </div>
+                )}
+
+                {drill.playerStats && drill.playerStats.length > 0 && (() => {
+                  // Filter players with stats
+                  const playersWithStats = drill.playerStats.filter((ps) => {
+                    const stats = ps.stats || {};
+                    return Object.values(stats).some((v) => Number(v) > 0);
+                  });
+                  
+                  if (playersWithStats.length === 0) return null;
+                  
+                  // Get all unique stat keys from this drill
+                  const allStatKeys = new Set();
+                  playersWithStats.forEach(ps => {
+                    Object.entries(ps.stats || {})
+                      .filter(([_, value]) => Number(value) > 0)
+                      .forEach(([key]) => allStatKeys.add(key));
+                  });
+                  const statKeys = Array.from(allStatKeys).sort();
+                  
+                  return (
+                    <div style={styles.drillStats}>
+                      <div style={styles.statsLabel}>Player Stats:</div>
+                      <div style={styles.statsTableWrapper}>
+                        <table style={styles.statsTable}>
+                          <thead>
+                            <tr>
+                              <th style={styles.statsTableHeader}>#</th>
+                              <th style={styles.statsTableHeader}>Player</th>
+                              {statKeys.map(key => (
+                                <th key={key} style={styles.statsTableHeader}>{key}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {playersWithStats.map((ps, i) => (
+                              <tr key={i} style={i % 2 === 0 ? styles.statsTableRowEven : styles.statsTableRowOdd}>
+                                <td style={styles.statsTableCell}>
+                                  {ps.playerNumber ? `#${ps.playerNumber}` : ""}
+                                </td>
+                                <td style={styles.statsTableCell}>{ps.playerName}</td>
+                                {statKeys.map(key => (
+                                  <td key={key} style={styles.statsTableCellNum}>
+                                    {ps.stats?.[key] || "-"}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Aggregate Stats */}
+        {recap.aggregateStats && recap.aggregateStats.length > 0 && (
+          <div style={styles.section}>
+            <h2 style={styles.sectionTitle}>Player Stats Summary</h2>
+            <div style={styles.aggregateList}>
+              {recap.aggregateStats
+                .sort((a, b) => {
+                  const aNum = typeof a.playerNumber === "number" ? a.playerNumber : 999;
+                  const bNum = typeof b.playerNumber === "number" ? b.playerNumber : 999;
+                  if (aNum !== bNum) return aNum - bNum;
+                  return (a.playerName || "").localeCompare(b.playerName || "");
+                })
+                .map((player, index) => {
+                  const statsEntries = Object.entries(player.stats || {}).filter(
+                    ([_, value]) => Number(value) > 0
+                  );
+
+                  if (statsEntries.length === 0) return null;
+
+                  return (
+                    <div key={index} style={styles.aggregateCard}>
+                      <div style={styles.aggregateHeader}>
+                        <span style={styles.aggregateName}>
+                          {player.playerName}{" "}
+                          {player.playerNumber ? `#${player.playerNumber}` : ""}
+                        </span>
+                        <span style={styles.aggregateDrills}>
+                          {player.drillsParticipated} drills
+                        </span>
+                      </div>
+                      <div style={styles.aggregateStats}>
+                        {statsEntries.map(([key, value]) => (
+                          <div key={key} style={styles.aggregateStat}>
+                            <span style={styles.statKey}>{key}:</span>
+                            <span style={styles.statValue}>{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const styles = {
+  page: {
+    minHeight: "100vh",
+    background: "#F2F2F7",
+    padding: 16,
+    fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
+  },
+  wrap: {
+    maxWidth: 1000,
+    margin: "0 auto",
+  },
+  headerRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 16,
+    flexWrap: "wrap",
+  },
+  title: {
+    margin: 0,
+    fontSize: 30,
+    fontWeight: 700,
+  },
+  subtext: {
+    marginTop: 6,
+    color: "#666",
+  },
+  headerButtons: {
+    display: "flex",
+    gap: 12,
+    flexWrap: "wrap",
+  },
+  linkButton: {
+    padding: "12px 16px",
+    borderRadius: 14,
+    background: "#E5E5EA",
+    color: "#111",
+    textDecoration: "none",
+    fontWeight: 600,
+    fontSize: 15,
+  },
+  exportButton: {
+    padding: "12px 20px",
+    borderRadius: 14,
+    border: "none",
+    background: "#007AFF",
+    color: "#fff",
+    fontWeight: 600,
+    fontSize: 15,
+    cursor: "pointer",
+  },
+  message: {
+    marginBottom: 12,
+    color: "#1a7f37",
+    padding: 12,
+    background: "#d4edda",
+    borderRadius: 10,
+  },
+  error: {
+    color: "#b00020",
+  },
+  link: {
+    color: "#007AFF",
+    textDecoration: "none",
+    fontWeight: 600,
+  },
+  summaryGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+    gap: 12,
+    marginBottom: 20,
+  },
+  summaryCard: {
+    background: "#fff",
+    borderRadius: 16,
+    padding: 20,
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+  },
+  summaryLabel: {
+    fontSize: 13,
+    color: "#666",
+    marginBottom: 6,
+  },
+  summaryValue: {
+    fontSize: 28,
+    fontWeight: 700,
+    color: "#111",
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: 700,
+    marginBottom: 12,
+  },
+  playerGrid: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  playerChip: {
+    background: "#fff",
+    borderRadius: 20,
+    padding: "8px 14px",
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    boxShadow: "0 2px 6px rgba(0,0,0,0.06)",
+  },
+  playerName: {
+    fontWeight: 600,
+    fontSize: 14,
+  },
+  playerNumber: {
+    color: "#666",
+    fontSize: 13,
+  },
+  drillList: {
+    display: "grid",
+    gap: 12,
+  },
+  drillCard: {
+    background: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+  },
+  drillHeader: {
+    display: "flex",
+    gap: 12,
+    marginBottom: 8,
+  },
+  drillNumber: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    background: "#007AFF",
+    color: "#fff",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 700,
+    flexShrink: 0,
+  },
+  drillInfo: {
+    flex: 1,
+  },
+  drillTitle: {
+    fontSize: 18,
+    fontWeight: 700,
+    marginBottom: 4,
+  },
+  drillMeta: {
+    fontSize: 14,
+    color: "#666",
+  },
+  drillNotes: {
+    marginTop: 12,
+    padding: 12,
+    background: "#F8F8FA",
+    borderRadius: 10,
+    fontSize: 14,
+    lineHeight: 1.5,
+  },
+  drillStats: {
+    marginTop: 12,
+    padding: 12,
+    background: "#F0F8FF",
+    borderRadius: 10,
+  },
+  statsLabel: {
+    fontWeight: 700,
+    fontSize: 13,
+    marginBottom: 8,
+    color: "#007AFF",
+  },
+  statsTableWrapper: {
+    overflowX: "auto",
+  },
+  statsTable: {
+    width: "100%",
+    borderCollapse: "collapse",
+    fontSize: 13,
+  },
+  statsTableHeader: {
+    background: "#E5E5EA",
+    padding: "8px 12px",
+    textAlign: "left",
+    fontWeight: 700,
+    borderBottom: "2px solid #D1D1D6",
+    whiteSpace: "nowrap",
+  },
+  statsTableCell: {
+    padding: "8px 12px",
+    borderBottom: "1px solid #E5E5EA",
+    textAlign: "left",
+  },
+  statsTableCellNum: {
+    padding: "8px 12px",
+    borderBottom: "1px solid #E5E5EA",
+    textAlign: "center",
+  },
+  statsTableRowEven: {
+    background: "#fff",
+  },
+  statsTableRowOdd: {
+    background: "#F8F8FA",
+  },
+  aggregateList: {
+    display: "grid",
+    gap: 12,
+  },
+  aggregateCard: {
+    background: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+  },
+  aggregateHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottom: "2px solid #F2F2F7",
+  },
+  aggregateName: {
+    fontSize: 18,
+    fontWeight: 700,
+  },
+  aggregateDrills: {
+    fontSize: 13,
+    color: "#666",
+    fontWeight: 600,
+  },
+  aggregateStats: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+    gap: 10,
+  },
+  aggregateStat: {
+    display: "flex",
+    justifyContent: "space-between",
+    padding: "8px 12px",
+    background: "#F8F8FA",
+    borderRadius: 8,
+  },
+  statKey: {
+    fontSize: 13,
+    color: "#666",
+  },
+  statValue: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: "#111",
+  },
+};

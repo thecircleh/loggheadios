@@ -1,0 +1,41 @@
+import React from 'react';
+import PropTypes from 'prop-types';
+
+/**
+ * Component for selecting a team
+ */
+const TeamSelector = ({ teams, selectedTeam, onSelectTeam, isLoading }) => {
+  return (
+    <div>
+      <label>Team: </label>
+      <select 
+        value={selectedTeam} 
+        onChange={(e) => onSelectTeam(e.target.value)}
+        disabled={isLoading}
+      >
+        {teams.length === 0 && (
+          <option value="">No teams available</option>
+        )}
+        {teams.map(team => (
+          <option key={team} value={team}>{team}</option>
+        ))}
+      </select>
+      {isLoading && <span style={{ marginLeft: 8, fontSize: 14, color: '#666' }}>Loading...</span>}
+    </div>
+  );
+};
+
+TeamSelector.propTypes = {
+  teams: PropTypes.arrayOf(PropTypes.string).isRequired,
+  selectedTeam: PropTypes.string,
+  onSelectTeam: PropTypes.func.isRequired,
+  isLoading: PropTypes.bool
+};
+
+TeamSelector.defaultProps = {
+  teams: [],
+  selectedTeam: '',
+  isLoading: false
+};
+
+export default TeamSelector;

@@ -1,0 +1,106 @@
+import axios from "axios";
+
+const getApiUrl = () => {
+  if (window.location.hostname.startsWith("10.")) {
+    return `http://${window.location.hostname}:3000`;
+  }
+  return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
+};
+
+const API_URL = getApiUrl(); 
+
+const logAndSyncStat = async ({
+  playerId,
+  playerName,
+  label,
+  statKeys,
+  setActionLog,
+  setPlayerStats,
+  playerStats,
+  currentMatchId,
+  teamId,
+  delta = 1,
+}) => {
+  try {
+    // ✅ Locally update playerStats (in UI)
+    if (typeof setPlayerStats === 'function') {
+      setPlayerStats((prev) => {
+        const updated = { ...prev };
+
+        if (!updated[currentMatchId]) updated[currentMatchId] = {};
+        if (!updated[currentMatchId][playerId]) {
+          updated[currentMatchId][playerId] = {
+            name: playerName,
+            teamId,
+            digs: 0,
+            kills: 0,
+            attacks: 0,
+            attackErrors: 0,
+            assists: 0,
+            sets: 0,
+            setErrors: 0,
+            receptions: 0,
+            receiveErrors: 0,
+            blocks: 0,
+            blockErrors: 0,
+            blockSolo: 0,
+            blockAssist: 0,
+            serveErrors: 0,
+            aces: 0,
+            freeballs: 0,
+            points: 0,
+            zeroBlocks: 0,
+            zeroSets: 0,
+            zeroAttacks: 0,
+            freeballKills: 0,
+            freeballErrors: 0,
+            zeroServes: 0,
+            serves: 0,
+            bhes: 0,
+          };
+        }
+
+        statKeys.forEach((key) => {
+          const oldVal = updated[currentMatchId][playerId][key] || 0;
+          updated[currentMatchId][playerId][key] = Math.max(0, oldVal + delta);
+		  console.log(` - ${key}: ${oldVal} → ${newVal}`);
+        });
+
+        return updated;
+      });
+    }
+
+    // ✅ Send stat delta to raw stat log
+    const statPayload = {
+      statKeys: statKeys.map((key) => ({ key, delta })),
+      playerId,
+      matchId: currentMatchId,
+    };
+	
+	
+
+
+    // ✅ Also sync to PlayerMatchStats
+    const matchStatPayload = {};
+    statKeys.forEach((key) => {
+      matchStatPayload[key] = delta;
+    });
+
+ await axios.post(`${API_URL}/api/playerMatchStats/log`, {
+      playerId,
+      matchId: currentMatchId,
+      teamId,
+      stats: matchStatPayload,
+    });
+
+    await axios.post(`${API_URL}/api/stats/log`, statPayload);
+
+
+    console.log(`✅ Match stat ${delta > 0 ? 'added' : 'reversed'} for ${playerId}`);
+
+  } catch (error) {
+    console.error("❌ Failed to log and sync stat:", error.message);
+  }
+};
+
+export default logAndSyncStat;

@@ -1,0 +1,19 @@
+import React from 'react';
+import { Link } from 'react-router-dom';
+
+const About = () => (
+  <div style={{ padding: '20px' }}>
+    <h1>About Loggerhead</h1>
+    <p>
+      Loggerhead is a modern stat-tracking app for volleyball teams. Built by a 30-year developer, 4-year volleyball dad, and first-year referee with love for
+      the sport and a passion for clean data. Loggerhead is meant to solve the question: What is the best stat tracking app for Volleyball?
+    </p>
+    <p>
+      We're in beta and evolving fast—thank you for being part of our early journey!
+    </p>
+
+
+  </div>
+);
+
+export default About;

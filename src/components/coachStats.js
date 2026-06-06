@@ -1,0 +1,930 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import axios from 'axios';
+import { useAuth } from './AuthContext';
+// Added Recharts components for the illustration
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine, Legend } from 'recharts';
+
+const getApiUrl = () => {
+  if (window.location.hostname.startsWith("10.")) return `http://${window.location.hostname}:3000`;
+  return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
+};
+
+const API_URL = getApiUrl();
+const romanByIndex = ["I", "II", "III", "IV", "V", "VI"];
+
+function PlayerSlot({ pos, player }) {
+  const number = player?.number ? `#${player.number}` : "—";
+  const name = player?.name || " ";
+
+  return (
+    <div style={slotStyles.wrap}>
+      <div style={slotStyles.posBadge}>
+        <div style={slotStyles.posLabel}>POS</div>
+        <div style={slotStyles.posNum}>{pos}</div>
+      </div>
+      <div style={slotStyles.number}>{number}</div>
+      <div style={slotStyles.name}>{name}</div>
+    </div>
+  );
+}
+
+const slotStyles = {
+  wrap: { minHeight: 150, display: "grid", gridTemplateRows: "74px 44px 28px", justifyItems: "center", alignContent: "start" },
+  posBadge: { width: 86, height: 74, borderRadius: 16, border: "2px solid #0ea5e9", background: "#f0f9ff", display: "grid", placeItems: "center" },
+  posLabel: { fontSize: 11, fontWeight: 800, color: "#64748b", letterSpacing: 0.8 },
+  posNum: { fontSize: 28, fontWeight: 900, color: "#0f172a", lineHeight: "28px" },
+  number: { fontSize: 34, fontWeight: 900, color: "#0f172a", lineHeight: "40px", marginTop: 6 },
+  name: { fontSize: 14, fontWeight: 700, color: "#334155", lineHeight: "18px", maxWidth: 120, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+};
+
+const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName }) => {
+  const { user, token } = useAuth();
+  const [selectedTeam, setSelectedTeam] = useState(propTeamName || "");
+  const [selectedMatchId, setSelectedMatchId] = useState(propMatchId || "all");
+  const [teams, setTeams] = useState([]);
+  const [filteredMatches, setFilteredMatches] = useState([]);
+  const [coachAnalytics, setCoachAnalytics] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [viewMode, setViewMode] = useState("rotation");
+  const [activeRot, setActiveRot] = useState(null);
+  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [selectedSubSet, setSelectedSubSet] = useState(null);
+  const [selectedSubPlayer, setSelectedSubPlayer] = useState("all");
+  const [selectedRotSet, setSelectedRotSet] = useState(1);
+
+  useEffect(() => {
+    const fetchUserTeams = async () => {
+      if (!user?.id || !token) return;
+      try {
+        const res = await axios.get(`${API_URL}/api/users/${user.id}`, { headers: { Authorization: `Bearer ${token}` } });
+        setTeams(res.data.teams || []);
+        if (res.data.teams?.length > 0 && !selectedTeam) setSelectedTeam(res.data.teams[0]);
+      } catch (err) { console.error("Team Fetch Error", err); }
+    };
+    fetchUserTeams();
+  }, [user?.id, token]);
+
+  useEffect(() => {
+    const getUsefulMatches = async () => {
+      if (!selectedTeam || !token) return;
+      try {
+        const [aRes, mRes] = await Promise.all([
+          axios.get(`${API_URL}/api/coach-match-analytics/team/${encodeURIComponent(selectedTeam)}`, { headers: { Authorization: `Bearer ${token}` } }),
+          axios.get(`${API_URL}/api/matches/team?teamName=${encodeURIComponent(selectedTeam)}`, { headers: { Authorization: `Bearer ${token}` } })
+        ]);
+        const validIds = new Set(aRes.data.map(a => a.matchId));
+        setFilteredMatches(mRes.data.filter(m => validIds.has(m._id)));
+      } catch (err) { console.error("Filter error", err); }
+    };
+    getUsefulMatches();
+  }, [selectedTeam, token]);
+
+  useEffect(() => {
+    const loadData = async () => {
+      if (!selectedTeam || !token) return;
+      setLoading(true);
+      try {
+        const endpoint = selectedMatchId === "all" 
+          ? `${API_URL}/api/coach-match-analytics/team/${encodeURIComponent(selectedTeam)}`
+          : `${API_URL}/api/coach-match-analytics/${selectedMatchId}`;
+        const res = await axios.get(endpoint, { headers: { Authorization: `Bearer ${token}` } });
+        const rawData = selectedMatchId === "all" ? res.data : (res.data.data ? [res.data.data] : []);
+        let validEnrichedSets = [];
+        rawData.forEach(matchDoc => {
+          const opponent = filteredMatches.find(m => m._id === matchDoc.matchId)?.opponentName;
+          if (!opponent || opponent === "Unknown Opponent") return;
+          const sets = [...(matchDoc.completedSets || []), matchDoc.currentSet ? { ...matchDoc.currentSet, isLive: true } : null].filter(Boolean);
+          sets.forEach(s => {
+            const ourScore = s.setScore?.our || 0;
+            const theirScore = s.setScore?.their || 0;
+            if ((ourScore + theirScore > 0)) {
+              validEnrichedSets.push({ ...s, opponentName: opponent, matchId: matchDoc.matchId, ourScore, theirScore });
+            }
+          });
+        });
+        setCoachAnalytics({ sets: validEnrichedSets });
+      } catch (err) { console.error("Data Load Error", err); }
+      finally { setLoading(false); }
+    };
+    loadData();
+  }, [selectedMatchId, selectedTeam, token, filteredMatches]);
+
+ const stats = useMemo(() => {
+    const sets = coachAnalytics?.sets || [];
+    const rotDetails = romanByIndex.map((label, i) => ({ label, idx: i, total: 0, playerBreakdown: {}, currentLineup: [] }));
+    const playerMap = {};
+    let totalEarned = 0, totalErrors = 0, setsWon = 0;
+
+    sets.forEach(set => {
+      if (set.winner === 'our') setsWon++;
+      const analytics = set.analytics || {};
+      totalEarned += (analytics.ourPointsEarned || 0);
+      totalErrors += (analytics.theirPointsByOurErrors || 0);
+      (set.rotationPlusMinus || []).forEach((rotData) => {
+        const i = rotData.rotationIndex;
+        if (rotDetails[i]) {
+          const pmValue = rotData.plusMinus || 0;
+          rotDetails[i].total += pmValue;
+          if (rotData.players?.length > 0) rotDetails[i].currentLineup = rotData.players;
+          (rotData.players || []).forEach((p, posIdx) => {
+            if (!playerMap[p.name]) playerMap[p.name] = { name: p.name, num: p.number, total: 0, sets: 0, rotationsPlayed: 0, posStats: { 1:0, 2:0, 3:0, 4:0, 5:0, 6:0 } };
+            if (!rotDetails[i].playerBreakdown[p.name]) rotDetails[i].playerBreakdown[p.name] = { name: p.name, num: p.number, pm: 0, frequency: 0 };
+            rotDetails[i].playerBreakdown[p.name].pm += pmValue;
+            rotDetails[i].playerBreakdown[p.name].frequency += 1;
+            const courtPosMap = [4, 3, 2, 5, 6, 1];
+            const courtPos = courtPosMap[posIdx];
+            playerMap[p.name].rotationsPlayed += 1;
+            playerMap[p.name].posStats[courtPos] += pmValue;
+            playerMap[p.name].total += pmValue;
+          });
+        }
+      });
+      (set.playerPlusMinus || []).forEach(p => { if (playerMap[p.name]) playerMap[p.name].sets += 1; });
+    });
+
+    const playerList = Object.values(playerMap).map(p => ({
+      ...p,
+      avgPm: p.total / (p.rotationsPlayed || 1)
+    })).sort((a, b) => b.total - a.total || b.avgPm - a.avgPm);
+
+    // Logic for Player of the Game with Tie-breaking
+    let topPlayerDisplay = "N/A";
+    if (playerList.length > 0) {
+      const maxTotal = playerList[0].total;
+      // Filter for players who have the highest Total +/-
+      const tiedTotal = playerList.filter(p => p.total === maxTotal);
+
+      if (tiedTotal.length === 1) {
+        topPlayerDisplay = tiedTotal[0].name;
+      } else {
+        // Tiebreaker: Check the Average PM among those tied for Total
+        const maxAvg = Math.max(...tiedTotal.map(p => p.avgPm));
+        const tiedAvg = tiedTotal.filter(p => p.avgPm === maxAvg);
+
+        if (tiedAvg.length === 1) {
+          topPlayerDisplay = tiedAvg[0].name;
+        } else {
+          topPlayerDisplay = `${tiedAvg.length} Players Tied`;
+        }
+      }
+    }
+
+    const bestRot = [...rotDetails].sort((a,b) => b.total - a.total)[0];
+
+    return { 
+      rotations: rotDetails, 
+      players: playerList, 
+      setList: sets, 
+      insights: { 
+        winLoss: `${setsWon}-${sets.length - setsWon}`, 
+        pointsPerSet: (totalEarned / (sets.length || 1)).toFixed(1), 
+        errorRate: (totalErrors / (sets.length || 1)).toFixed(1), 
+        bestRot: bestRot?.total !== 0 ? `Rot ${bestRot.label}` : "N/A", 
+        topPlayer: topPlayerDisplay
+      } 
+    };
+  }, [coachAnalytics]);
+  
+  const subAnalysis = useMemo(() => {
+    const sets = coachAnalytics?.sets || [];
+    const subImpacts = [];
+    
+    sets.forEach(setIndex => {
+      let subEvents = (setIndex.substitutionLog || []).filter(e => e.type === "substitution");
+      
+      // Sort events chronologically by timestamp
+      subEvents = [...subEvents].sort((a, b) => {
+        const tsA = new Date(a.ts).getTime();
+        const tsB = new Date(b.ts).getTime();
+        return tsA - tsB;
+      });
+      
+      const setEndScore = setIndex.ourScore || 0;
+      const setEndOppScore = setIndex.theirScore || 0;
+      
+      // Track which exit indices we've already used
+      const usedExitIndices = new Set();
+      
+      subEvents.forEach((event, idx) => {
+        const entryOurScore = event.ourScore || 0;
+        const entryOppScore = event.opponentScore || 0;
+        const entryTimestamp = new Date(event.ts).getTime();
+        
+        // Find when this player exits: look for an event where they appear as "out" AFTER this entry
+        let exitOurScore = setEndScore;
+        let exitOppScore = setEndOppScore;
+        let exitTimestamp = entryTimestamp;
+        let foundExplicitExit = false;
+        
+        // Look through events AFTER this one to find when this player exits
+        for (let i = idx + 1; i < subEvents.length; i++) {
+          // Only match an exit if we haven't already used it
+          if (!usedExitIndices.has(i) && subEvents[i].outName === event.inName && subEvents[i].outNumber === event.inNumber) {
+            // Found when they came out
+            exitOurScore = subEvents[i].ourScore || setEndScore;
+            exitOppScore = subEvents[i].opponentScore || setEndOppScore;
+            exitTimestamp = new Date(subEvents[i].ts).getTime();
+            usedExitIndices.add(i); // Mark this exit as used
+            foundExplicitExit = true;
+            break;
+          }
+        }
+        
+        // If no explicit exit found, player stayed until set end - use a high timestamp to group at end
+        if (!foundExplicitExit && (exitOurScore === setEndScore && exitOppScore === setEndOppScore)) {
+          exitTimestamp = Number.MAX_VALUE;
+        }
+        
+        // Only include this substitution if exit scores are >= entry scores
+        if (exitOurScore >= entryOurScore && exitOppScore >= entryOppScore) {
+          const ourChange = exitOurScore - entryOurScore;
+          const oppChange = exitOppScore - entryOppScore;
+          const impact = ourChange - oppChange;
+          
+          subImpacts.push({
+            player: `${event.inName || 'Unknown'}`,
+            playerNum: event.inNumber || '?',
+            replaced: `${event.outName || 'Unknown'}`,
+            replacedNum: event.outNumber || '?',
+            impact: impact,
+            scoreAtEntry: `${entryOurScore}-${entryOppScore}`,
+            scoreAtExit: `${exitOurScore}-${exitOppScore}`,
+            match: setIndex.opponentName || 'Unknown',
+            set: setIndex.setNumber || 1,
+            matchId: setIndex.matchId || '',
+            entryOurScore,
+            entryOppScore,
+            exitOurScore,
+            exitOppScore,
+            entryTimestamp,
+            exitTimestamp
+          });
+        }
+      });
+    });
+    
+    return subImpacts;
+  }, [coachAnalytics]);
+
+  // Auto-select first set when a specific match is selected, reset for season stats
+  useEffect(() => {
+    if (selectedMatchId !== "all" && subAnalysis.length > 0) {
+      const sets = [...new Set(subAnalysis.map(s => s.set))].sort((a, b) => a - b);
+      if (sets.length > 0) {
+        setSelectedSubSet(sets[0]);
+      }
+    } else {
+      setSelectedSubSet(null);
+    }
+  }, [selectedMatchId, subAnalysis]);
+
+  const getPmColor = (val) => val > 0 ? '#059669' : val < 0 ? '#dc2626' : '#4b5563';
+
+  return (
+    <div style={{ 
+      padding: '24px', 
+      maxWidth: '1200px', 
+      margin: '0 auto', 
+      fontFamily: 'Inter, sans-serif', 
+      backgroundColor: '#f3f4f6', 
+      minHeight: '100vh',
+      userSelect: 'none',
+      WebkitUserSelect: 'none',
+      MozUserSelect: 'none',
+      msUserSelect: 'none'
+    }}>
+      <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>OUR TEAM</label>
+          <select value={selectedTeam} onChange={e => setSelectedTeam(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e0', fontWeight: '600' }}>
+            {teams.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>OPPONENT / MATCH</label>
+          <select value={selectedMatchId} onChange={e => setSelectedMatchId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e0', fontWeight: '600' }}>
+            <option value="all">Season Average (all matches)</option>
+            {filteredMatches.filter(m => m.opponentName !== "Unknown Opponent").map(m => <option key={m._id} value={m._id}>{m.opponentName}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '24px' }}>
+        <div>
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+            {['rotation', 'player', 'subs', 'sets'].map(m => (
+              <button key={m} onClick={() => setViewMode(m)} style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', background: viewMode === m ? '#2563eb' : '#fff', color: viewMode === m ? '#fff' : '#475569', fontWeight: 'bold' }}>{m.toUpperCase()}</button>
+            ))}
+          </div>
+
+          {loading ? <p>Loading Data...</p> : (
+            <>
+ {viewMode === "rotation" && (
+  <div style={styles.rotWrap}>
+    {/* Set Selection / Season Heatmap Header */}
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '8px' }}>
+        {selectedMatchId === "all" ? (
+          <div style={{ padding: '8px 16px', background: '#1e293b', color: '#38bdf8', borderRadius: '20px', fontSize: '12px', fontWeight: '800' }}>
+            SEASON HEATMAP (AGGREGATED)
+          </div>
+        ) : (
+          stats.setList.map((set) => (
+            <button 
+              key={set.setNumber}
+              onClick={() => {
+                setSelectedRotSet(set.setNumber);
+                setActiveRot(null); // Reset to force fresh data lookup
+              }}
+              style={{
+                padding: '8px 16px', borderRadius: '20px', fontSize: '12px', fontWeight: '700', border: 'none', cursor: 'pointer',
+                backgroundColor: selectedRotSet === set.setNumber ? '#2563eb' : '#fff',
+                color: selectedRotSet === set.setNumber ? '#fff' : '#64748b',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+              }}
+            >
+              SET {set.setNumber}
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+
+    {/* Rotation Grid */}
+    <div style={styles.rotGrid}>
+      {stats.rotations.map((r) => {
+        // Fetch specific data for the selected set or the season total
+        const setSpecificData = coachAnalytics?.sets
+          ?.find(s => s.setNumber === selectedRotSet)
+          ?.rotationPlusMinus?.find(rp => rp.rotationIndex === r.idx);
+
+        const displayPm = selectedMatchId === "all" ? r.total : (setSpecificData?.plusMinus || 0);
+        const isActive = activeRot?.label === r.label;
+        
+        // Heatmap color logic based on +/- performance
+        const getHeatmapColor = (val) => {
+          if (val > 5) return '#dcfce7'; 
+          if (val > 0) return '#f0fdf4'; 
+          if (val < -5) return '#fee2e2'; 
+          if (val < 0) return '#fef2f2'; 
+          return '#fff';
+        };
+
+        return (
+          <button 
+            key={r.label} 
+            onClick={() => {
+              // Capture the EXACT player lineup for this specific set
+              setActiveRot({
+                ...r,
+                currentLineup: selectedMatchId === "all" ? r.currentLineup : (setSpecificData?.players || [])
+              });
+            }} 
+            style={{
+              ...styles.rotCard(isActive),
+              backgroundColor: getHeatmapColor(displayPm),
+              borderColor: isActive ? '#2563eb' : '#e2e8f0',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <div style={styles.rotLabel}>ROT {r.label}</div>
+            <div style={styles.rotTotal(getPmColor(displayPm))}>
+              {displayPm > 0 ? `+${displayPm}` : displayPm}
+            </div>
+            <div style={{ fontSize: '10px', color: '#64748b', marginTop: '4px', fontWeight: '600' }}>
+              {selectedMatchId === "all" ? 'SEASON AVG' : `SET ${selectedRotSet}`}
+            </div>
+          </button>
+        );
+      })}
+    </div>
+
+    {/* Court Snapshot with Fixed Slot Mapping */}
+    {activeRot && (
+      <div style={styles.snapshot}>
+        <h4 style={styles.snapshotTitle}>
+          {selectedMatchId === "all" ? 'Typical Season Lineup' : `Set ${selectedRotSet} Lineup`}: Rotation {activeRot.label}
+        </h4>
+        <div style={styles.court}>
+          <div style={styles.courtInnerBorder} />
+          <div style={styles.netHeader}>
+            <div style={styles.netLabel}>NET</div>
+            <div style={styles.netLine} />
+          </div>
+          
+          {/* FRONT ROW: Slot 0=Pos 4, Slot 1=Pos 3, Slot 2=Pos 2 */}
+          <div style={styles.rowGrid}>
+            {[
+              { idx: 0, pos: "4" }, 
+              { idx: 1, pos: "3" }, 
+              { idx: 2, pos: "2" }
+            ].map((slot) => (
+              <PlayerSlot 
+                key={slot.pos} 
+                pos={slot.pos} 
+                player={activeRot.currentLineup?.[slot.idx]} 
+              />
+            ))}
+          </div>
+          
+          <div style={styles.centerDivider} />
+          
+          {/* BACK ROW: Slot 3=Pos 5, Slot 4=Pos 6, Slot 5=Pos 1 */}
+          <div style={styles.rowGrid}>
+            {[
+              { idx: 3, pos: "5" }, 
+              { idx: 4, pos: "6" }, 
+              { idx: 5, pos: "1" }
+            ].map((slot) => (
+              <PlayerSlot 
+                key={slot.pos} 
+                pos={slot.pos} 
+                player={activeRot.currentLineup?.[slot.idx]} 
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+)}
+
+              {viewMode === 'subs' && selectedMatchId === "all" && (
+                <div style={{ background: '#fff', padding: '40px', borderRadius: '12px', textAlign: 'center', color: '#64748b', boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1)' }}>
+                  <p style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>Select a specific match to view substitutions</p>
+                  <p style={{ fontSize: '14px' }}>Substitution analytics are only available for individual matches, not season averages.</p>
+                </div>
+              )}
+              {viewMode === 'subs' && selectedMatchId !== "all" && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  {/* SELECTORS: Set and Player filters */}
+                  {subAnalysis.length > 0 && selectedSubSet !== null && (
+                    <div style={{ display: 'flex', gap: '16px', background: '#fff', padding: '16px', borderRadius: '12px', boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1)' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '6px' }}>SELECT SET</label>
+                        <select 
+                          value={selectedSubSet || ""} 
+                          onChange={e => setSelectedSubSet(parseInt(e.target.value))}
+                          style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e0', fontSize: '13px', fontWeight: '600' }}
+                        >
+                          {[...new Set(subAnalysis.map(s => s.set))].sort((a, b) => a - b).map(setNum => (
+                            <option key={setNum} value={setNum}>Set {setNum}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '6px' }}>SELECT PLAYER</label>
+                        <select 
+                          value={selectedSubPlayer} 
+                          onChange={e => setSelectedSubPlayer(e.target.value)}
+                          style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e0', fontSize: '13px', fontWeight: '600' }}
+                        >
+                          <option value="all">All Players</option>
+                          {[...new Set(subAnalysis.map(s => `${s.playerNum}|${s.player}`))].map(key => {
+                            const [num, name] = key.split('|');
+                            return <option key={key} value={name}>#{num} {name}</option>;
+                          })}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                  {/* CHART: Cumulative Points Timeline with Substitutions */}
+                  <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', height: '480px', boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1)' }}>
+                    <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', color: '#1e293b' }}>Points Timeline - Cumulative Growth During Substitutions</h3>
+                    {subAnalysis.length === 0 ? (
+                      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>No substitution data available</div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={(() => {
+                          // Filter subs based on selected set and player
+                          let filteredSubs = subAnalysis;
+                          
+                          if (selectedSubSet !== null) {
+                            filteredSubs = filteredSubs.filter(s => s.set === selectedSubSet);
+                          }
+                          
+                          if (selectedSubPlayer !== "all") {
+                            filteredSubs = filteredSubs.filter(s => s.player === selectedSubPlayer);
+                          }
+                          
+                          // Get set end score
+                          const currentSet = coachAnalytics?.sets?.find(s => s.setNumber === selectedSubSet);
+                          const setEndScore = currentSet?.ourScore || 0;
+                          const setEndOppScore = currentSet?.theirScore || 0;
+                          
+                          // Sort subs chronologically by timestamp
+                          const sortedSubs = [...filteredSubs].sort((a, b) => {
+                            return a.entryTimestamp - b.entryTimestamp;
+                          });
+                          
+                          // Create timeline showing all score points (both entries and exits)
+                          const timelineData = [];
+                          
+                          // Add starting point
+                          timelineData.push({
+                            time: '0. Start',
+                            label: 'Start',
+                            'Our Points': 0,
+                            'Opp Points': 0
+                          });
+                          
+                          // Create list of all IN and OUT events with their scores
+                          const allEvents = [];
+                          let eventCounter = 0;
+                          
+                          sortedSubs.forEach((sub, idx) => {
+                            eventCounter++;
+                            allEvents.push({
+                              type: 'IN',
+                              label: `${eventCounter}. ${sub.player} IN`,
+                              player: sub.player,
+                              ourScore: sub.entryOurScore,
+                              oppScore: sub.entryOppScore,
+                              order: idx,
+                              timestamp: sub.entryTimestamp || 0
+                            });
+                            eventCounter++;
+                            allEvents.push({
+                              type: 'OUT',
+                              label: `${eventCounter}. ${sub.player} OUT`,
+                              player: sub.player,
+                              ourScore: sub.exitOurScore,
+                              oppScore: sub.exitOppScore,
+                              order: idx,
+                              timestamp: sub.exitTimestamp || 0
+                            });
+                          });
+                          
+                          // Sort all events chronologically by timestamp
+                          allEvents.sort((a, b) => {
+                            // Handle MAX_VALUE timestamps - they go at the end
+                            if (a.timestamp === Number.MAX_VALUE && b.timestamp === Number.MAX_VALUE) return 0;
+                            if (a.timestamp === Number.MAX_VALUE) return 1;
+                            if (b.timestamp === Number.MAX_VALUE) return -1;
+                            return a.timestamp - b.timestamp;
+                          });
+                          
+                          // Add sorted events to timeline
+                          allEvents.forEach((event) => {
+                            timelineData.push({
+                              time: event.label,
+                              label: event.label,
+                              player: event.player,
+                              'Our Points': event.ourScore,
+                              'Opp Points': event.oppScore
+                            });
+                          });
+                          
+                          // Add final score if different from last event
+                          const lastPoint = timelineData[timelineData.length - 1];
+                          if (lastPoint && (lastPoint['Our Points'] !== setEndScore || lastPoint['Opp Points'] !== setEndOppScore)) {
+                            timelineData.push({
+                              time: 'Final',
+                              label: 'Final',
+                              'Our Points': setEndScore,
+                              'Opp Points': setEndOppScore
+                            });
+                          }
+                          
+                          return timelineData;
+                        })()}>
+                          <XAxis 
+                            dataKey="label" 
+                            fontSize={9} 
+                            tick={{fill: '#64748b'}}
+                            angle={-45}
+                            textAnchor="end"
+                            height={140}
+                          />
+                          <YAxis 
+                            fontSize={12} 
+                            tick={{fill: '#64748b'}} 
+                            label={{ value: 'Cumulative Points', angle: -90, position: 'insideLeft' }} 
+                          />
+                          <Tooltip 
+                            cursor={{stroke: '#cbd5e0', strokeWidth: 2}}
+                            contentStyle={{fontSize: '12px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '8px 12px'}}
+                            content={({ active, payload }) => {
+                              if (active && payload && payload[0]) {
+                                const data = payload[0].payload;
+                                return (
+                                  <div style={{ fontSize: '12px' }}>
+                                    <p style={{ margin: '0 0 4px 0', fontWeight: 'bold', color: '#1e293b' }}>{data.label}</p>
+                                    <p style={{ margin: '0 0 2px 0', fontSize: '11px', color: '#64748b' }}>{data.player}</p>
+                                    <p style={{ margin: '0', color: '#10b981' }}>Our: {data['Our Points']}</p>
+                                    <p style={{ margin: '0', color: '#3b82f6' }}>Opp: {data['Opp Points']}</p>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            }}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="Our Points" 
+                            stroke="#10b981" 
+                            strokeWidth={3}
+                            dot={{ fill: '#10b981', r: 6 }}
+                            activeDot={{ r: 8 }}
+                            isAnimationActive={true}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="Opp Points" 
+                            stroke="#3b82f6" 
+                            strokeWidth={3}
+                            dot={{ fill: '#3b82f6', r: 6 }}
+                            activeDot={{ r: 8 }}
+                            isAnimationActive={true}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    )}
+                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '12px', display: 'flex', gap: '24px', justifyContent: 'center' }}>
+                      <div><span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '14px' }}>●</span> <span style={{ marginLeft: '6px' }}>{selectedTeam || 'Our Team'}</span></div>
+                      <div><span style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: '14px' }}>●</span> <span style={{ marginLeft: '6px' }}>{(() => {
+                        const currentSet = coachAnalytics?.sets?.find(s => s.setNumber === selectedSubSet);
+                        return currentSet?.opponentName || 'Opponent';
+                      })()}</span></div>
+                    </div>
+                  </div>
+
+                  {/* TABLE: Substitution Impact Details */}
+                  <div style={{ background: '#fff', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1)' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead style={{ background: '#f8fafc' }}>
+                        <tr style={{ textAlign: 'left', fontSize: '12px', color: '#64748b', fontWeight: '700' }}>
+                          <th style={{ padding: '15px' }}>SUB IN</th>
+                          <th>FOR</th>
+                          <th>MATCH/SET</th>
+                          <th>ENTRY SCORE</th>
+                          <th>EXIT SCORE</th>
+                          <th>STINT +/-</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          // Filter subs based on selected set and player
+                          let filteredSubs = subAnalysis;
+                          
+                          if (selectedSubSet !== null) {
+                            filteredSubs = filteredSubs.filter(s => s.set === selectedSubSet);
+                          }
+                          
+                          if (selectedSubPlayer !== "all") {
+                            filteredSubs = filteredSubs.filter(s => s.player === selectedSubPlayer);
+                          }
+                          
+                          return filteredSubs.length === 0 ? (
+                            <tr><td colSpan="6" style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>No substitutions for this selection</td></tr>
+                          ) : (
+                            filteredSubs.map((s, i) => (
+                              <tr key={i} style={{ borderTop: '1px solid #f1f5f9' }}>
+                                <td style={{ padding: '15px', fontWeight: 'bold' }}><span style={{ color: '#0f172a' }}>#{s.playerNum}</span> {s.player}</td>
+                                <td style={{ fontSize: '13px', color: '#64748b' }}><span style={{ color: '#0f172a' }}>#{s.replacedNum}</span> {s.replaced}</td>
+                                <td style={{ fontSize: '13px' }}>{s.match} (S{s.set})</td>
+                                <td style={{ fontSize: '13px', fontWeight: '600', color: '#2563eb' }}>{s.scoreAtEntry}</td>
+                                <td style={{ fontSize: '13px', fontWeight: '600', color: '#2563eb' }}>{s.scoreAtExit}</td>
+                                <td style={{ fontSize: '13px', fontWeight: '900', color: getPmColor(s.impact) }}>{s.impact > 0 ? `+${s.impact}` : s.impact}</td>
+                              </tr>
+                            ))
+                          );
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {viewMode === 'sets' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                
+
+                  {/* CARD GRID: Set Details */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '20px' }}>
+                    {stats.setList.map((set, i) => {
+                      const analytics = set.analytics || {};
+                      return (
+                        <div key={i} style={{ background: 'white', padding: '20px', borderRadius: '16px', border: set.isLive ? '2px solid #2563eb' : '1px solid #e2e8f0' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', fontWeight: 'bold', color: '#64748b' }}>
+                            <span>SET {set.setNumber}</span>
+                            <span style={{ color: '#2563eb' }}>{set.isLive ? 'LIVE' : 'FINAL'}</span>
+                          </div>
+                          <div style={{ margin: '10px 0', fontWeight: '800' }}>vs {set.opponentName}</div>
+                          <div style={{ fontSize: '32px', fontWeight: '900', textAlign: 'center', color: '#1e293b', marginBottom: '15px' }}>
+                            {set.ourScore} - {set.theirScore}
+                          </div>
+                          
+                          <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '12px', fontSize: '12px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                              <div style={{ background: '#f0fdf4', padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
+                                <div style={{ fontSize: '10px', color: '#4b7c0f', fontWeight: 'bold' }}>PTS EARNED</div>
+                                <div style={{ fontSize: '16px', fontWeight: '900', color: '#15803d' }}>{analytics.ourPointsEarned || 0}</div>
+                              </div>
+                              <div style={{ background: '#f0fdf4', padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
+                                <div style={{ fontSize: '10px', color: '#4b7c0f', fontWeight: 'bold' }}>PTS BY ERR</div>
+                                <div style={{ fontSize: '16px', fontWeight: '900', color: '#15803d' }}>{analytics.ourPointsByTheirErrors || 0}</div>
+                              </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                              <div style={{ background: '#fef2f2', padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
+                                <div style={{ fontSize: '10px', color: '#7c2d12', fontWeight: 'bold' }}>OPP EARNED</div>
+                                <div style={{ fontSize: '16px', fontWeight: '900', color: '#dc2626' }}>{analytics.theirPointsEarned || 0}</div>
+                              </div>
+                              <div style={{ background: '#fef2f2', padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
+                                <div style={{ fontSize: '10px', color: '#7c2d12', fontWeight: 'bold' }}>OUR ERR</div>
+                                <div style={{ fontSize: '16px', fontWeight: '900', color: '#dc2626' }}>{analytics.theirPointsByOurErrors || 0}</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* CHART: Team Analytics Comparison - Stacked Columns */}
+                  {stats.setList.length > 0 && selectedMatchId !== "all" && (
+                    <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', height: '420px', boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1)' }}>
+                      <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', color: '#1e293b' }}>Points by Set: Earned (Base) + Errors (Top)</h3>
+                      <ResponsiveContainer width="100%" height="85%">
+                        <BarChart data={(() => {
+                          const chartData = [];
+                          stats.setList.forEach((s, i) => {
+                            const setNum = s.setNumber || i+1;
+                            // Us - one column
+                            chartData.push({
+                              xAxis: `Our Team Set ${setNum}`,
+                              group: setNum,
+                              label: 'Us',
+                              'Earned': s.analytics?.ourPointsEarned || 0,
+                              'Errors': s.analytics?.ourPointsByTheirErrors || 0,
+                              total: (s.analytics?.ourPointsEarned || 0) + (s.analytics?.ourPointsByTheirErrors || 0)
+                            });
+                            // Them - one column
+                            chartData.push({
+                              xAxis: `Opponent Set ${setNum}`,
+                              group: setNum,
+                              label: 'Them',
+                              'Earned': s.analytics?.theirPointsEarned || 0,
+                              'Errors': s.analytics?.theirPointsByOurErrors || 0,
+                              total: (s.analytics?.theirPointsEarned || 0) + (s.analytics?.theirPointsByOurErrors || 0)
+                            });
+                          });
+                          return chartData;
+                        })()}>
+                          <XAxis 
+                            dataKey="xAxis" 
+                            fontSize={12} 
+                            tick={{fill: '#64748b'}}
+                          />
+                          <YAxis fontSize={12} tick={{fill: '#64748b'}} label={{ value: 'Total Points', angle: -90, position: 'insideLeft' }} />
+                          <Tooltip 
+                            cursor={{fill: '#f8fafc'}}
+                            contentStyle={{fontSize: '12px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px'}}
+                            formatter={(value, name) => [value, name === 'Earned' ? 'Points Earned' : 'Points from Errors']}
+                            labelFormatter={(label) => `${label}`}
+                          />
+                          <Bar dataKey="Earned" stackId="stack" fill="#15803d" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="Errors" stackId="stack" fill="#dc2626" radius={[0, 0, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: '16px', display: 'flex', gap: '32px', justifyContent: 'center' }}>
+                        <div>
+                          <span style={{ color: '#15803d', fontWeight: 'bold', fontSize: '14px' }}>■</span>
+                          <span style={{ marginLeft: '8px' }}>Earned Points</span>
+                        </div>
+                        <div>
+                          <span style={{ color: '#dc2626', fontWeight: 'bold', fontSize: '14px' }}>■</span>
+                          <span style={{ marginLeft: '8px' }}>Points from Errors</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+				  
+				  
+                      {viewMode === 'player' && (
+  <div style={{ background: '#fff', borderRadius: '12px', overflow: 'hidden' }}>
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <thead style={{ background: '#f8fafc' }}>
+        <tr style={{ textAlign: 'left', fontSize: '12px', color: '#64748b' }}>
+          <th style={{ padding: '15px' }}>PLAYER</th>
+          <th>SETS</th>
+          <th>ROTATIONS</th>
+          <th>AVG +/- (PER ROT)</th>
+          <th>TOTAL +/-</th>
+        </tr>
+      </thead>
+      <tbody>
+        {stats.players.map((p, i) => {
+          const isSelected = selectedPlayer && selectedPlayer.name === p.name && selectedPlayer.num === p.num;
+          return (
+            <tr 
+              key={i} 
+              onClick={() => setSelectedPlayer(p)}
+              style={{ 
+                borderTop: '1px solid #f1f5f9', 
+                cursor: 'pointer',
+                backgroundColor: isSelected ? '#eff6ff' : 'transparent',
+                borderLeft: isSelected ? '4px solid #2563eb' : '4px solid transparent',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (!isSelected) e.currentTarget.style.backgroundColor = '#f8fafc';
+              }}
+              onMouseLeave={(e) => {
+                if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              <td style={{ padding: '15px', fontWeight: '700' }}>#{p.num} {p.name}</td>
+              <td>{p.sets}</td>
+              <td>{p.rotationsPlayed}</td>
+              <td style={{ fontWeight: 'bold' }}>
+                {(p.total / (p.rotationsPlayed || 1)).toFixed(2)}
+              </td>
+              <td style={{ fontWeight: '900', color: getPmColor(p.total) }}>
+                {p.total > 0 ? `+${p.total}` : p.total}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+	{selectedPlayer && (
+  <div style={{ marginTop: '30px', background: '#fff', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+      <h3 style={{ margin: 0 }}>#{selectedPlayer.num} {selectedPlayer.name}: +/- by Position</h3>
+      <button onClick={() => setSelectedPlayer(null)} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontWeight: 'bold' }}>Close Detail</button>
+    </div>
+
+    <div style={{ padding: '20px', borderRadius: '16px', border: '4px solid #8b6914', maxWidth: '400px', margin: '0 auto' }}>
+      {/* Front Row */}
+      <div style={{ display: 'flex', justifyContent: 'space-around', marginBottom: '20px' }}>
+        {[4, 3, 2].map(pos => (
+          <div key={pos} style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b' }}>POS {pos}</div>
+            <div style={{ width: '60px', height: '60px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: getPmColor(selectedPlayer.posStats[pos]), color: '#fff', fontWeight: 'bold', fontSize: '18px' }}>
+              {selectedPlayer.posStats[pos] > 0 ? `+${selectedPlayer.posStats[pos]}` : selectedPlayer.posStats[pos]}
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* Back Row */}
+      <div style={{ display: 'flex', justifyContent: 'space-around' }}>
+        {[5, 6, 1].map(pos => (
+          <div key={pos} style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b' }}>POS {pos}</div>
+            <div style={{ width: '60px', height: '60px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: getPmColor(selectedPlayer.posStats[pos]), color: '#fff', fontWeight: 'bold', fontSize: '18px' }}>
+              {selectedPlayer.posStats[pos] > 0 ? `+${selectedPlayer.posStats[pos]}` : selectedPlayer.posStats[pos]}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </div>
+)}
+  </div>
+)}   
+            </>
+          )}
+        </div>
+
+        <div style={{ background: '#1e293b', color: '#fff', padding: '25px', borderRadius: '16px', height: 'fit-content', position: 'sticky', top: '24px' }}>
+          <h3 style={{ color: '#38bdf8', marginBottom: '20px' }}>Team Insights</h3>
+          {[
+            { label: 'Set Record', value: stats.insights.winLoss },
+            { label: 'Best Rotation', value: stats.insights.bestRot },
+            { label: 'Pts Earned/Set', value: stats.insights.pointsPerSet },
+            { label: 'Errors/Set', value: stats.insights.errorRate },
+            { label: 'Top Player', value: stats.insights.topPlayer }
+          ].map((insight, idx) => (
+            <div key={idx} style={{ marginBottom: '20px', borderBottom: '1px solid #334155', paddingBottom: '10px' }}>
+              <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>{insight.label}</div>
+              <div style={{ fontSize: '20px', fontWeight: '700' }}>{insight.value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const styles = {
+  centerDivider: { zIndex: 1, height: 2, width: "100%", background: "rgba(148,163,184,0.35)", borderRadius: 2 },
+  rotWrap: { display: "flex", flexDirection: "column", gap: 20 },
+  rotGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 15 },
+  rotCard: (isActive) => ({ padding: 20, textAlign: "center", borderRadius: 12, cursor: "pointer", border: isActive ? "2px solid #2563eb" : "1px solid #e2e8f0", background: "#fff", width: "100%" }),
+  rotLabel: { fontSize: 12, color: "#64748b", fontWeight: 800 },
+  rotTotal: (color) => ({ fontSize: 28, fontWeight: 900, color }),
+  snapshot: { background: "#fff", padding: 24, borderRadius: 16, borderLeft: "6px solid #2563eb" },
+  snapshotTitle: { margin: "0 0 20px 0" },
+  court: { position: "relative", maxWidth: 520, margin: "0 auto", background: "#fff", borderRadius: 18, border: "4px solid #8b6914", boxShadow: "0 10px 22px rgba(0,0,0,0.10)", padding: 18, minHeight: 420, display: "grid", gridTemplateRows: "auto 1fr auto 1fr", rowGap: 14 },
+  courtInnerBorder: { position: "absolute", inset: 14, border: "2px solid #8b6914", borderRadius: 12, pointerEvents: "none" },
+  netLabel: { fontSize: 12, fontWeight: 900, color: "#8b6914", letterSpacing: 2, marginBottom: 6 },
+  netLine: { width: "86%", height: 2, background: "#8b6914", borderRadius: 2, opacity: 0.9 },
+  netHeader: { position: "relative", display: "grid", placeItems: "center", paddingTop: 2, paddingBottom: 6, zIndex: 1 },
+  rowGrid: { zIndex: 1, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, alignItems: "start" },
+};
+
+export default CoachStats;

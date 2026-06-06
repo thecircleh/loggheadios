@@ -1,0 +1,553 @@
+import { useEffect, useRef, useState } from "react";
+
+const useMobileOptimizedVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameState = {}) => {
+  const [isListening, setIsListening] = useState(false);
+  const [lastCommand, setLastCommand] = useState("");
+  const [connectionStatus, setConnectionStatus] = useState("disconnected");
+  const [isMobile, setIsMobile] = useState(false);
+  
+  const recognitionRef = useRef(null);
+  const timeoutRef = useRef(null);
+  const handleCommandRef = useRef(handleCommand);
+  const courtPlayersRef = useRef(courtPlayers);
+  const gameStateRef = useRef(gameState);
+  const sessionActiveRef = useRef(false);
+  const lastStartTime = useRef(0);
+  const restartAttempts = useRef(0);
+
+  // Detect mobile device
+  useEffect(() => {
+    const checkMobile = () => {
+      const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+      const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent) ||
+                           (navigator.maxTouchPoints && navigator.maxTouchPoints > 2 && /MacIntel/.test(navigator.platform));
+      setIsMobile(isMobileDevice);
+      console.log("🎙️ Device detection:", isMobileDevice ? "Mobile" : "Desktop");
+    };
+    
+    checkMobile();
+  }, []);
+
+  // Update refs without triggering re-renders
+  useEffect(() => {
+    handleCommandRef.current = handleCommand;
+    courtPlayersRef.current = courtPlayers;
+    gameStateRef.current = gameState;
+  }, [handleCommand, courtPlayers, gameState]);
+
+  // Enhanced command parsing with mobile-specific improvements
+  const parseSimpleCommand = (transcript) => {
+    const originalText = transcript.toLowerCase().trim();
+    const gameState = gameStateRef.current;
+    
+    console.log("🎙️ Mobile parsing:", originalText, {
+      ballState: gameState.ballState,
+      currentServeSide: gameState.currentServeSide,
+      showServeZoneOverlay: gameState.showServeZoneOverlay,
+      isMobile
+    });
+
+    // Mobile-optimized number conversion with more flexible matching
+    const forceToInteger = (text) => {
+      let cleaned = text.toLowerCase().trim();
+      
+      // More aggressive cleaning for mobile speech recognition
+      cleaned = cleaned.replace(/[:\-;,\.!?]/g, ' ')
+                      .replace(/\s+/g, ' ')
+                      .replace(/\band\b/g, ' ')  // Remove "and" 
+                      .replace(/\bthen\b/g, ' ') // Remove "then"
+                      .trim();
+      
+      // Enhanced word-to-digit map with more variations
+      const mobileNumberMap = {
+        'zero': '0', 'oh': '0',
+        'one': '1', 'won': '1', 'wan': '1',
+        'two': '2', 'to': '2', 'too': '2', 'tu': '2',
+        'three': '3', 'tree': '3', 'free': '3',
+        'four': '4', 'for': '4', 'fore': '4',
+        'five': '5', 'fife': '5',
+        'six': '6', 'sex': '6', 'sicks': '6',
+        'seven': '7', 'severin': '7',
+        'eight': '8', 'ate': '8', 'ait': '8',
+        'nine': '9', 'niner': '9', 'nin': '9',
+        'ten': '10', 'teen': '10',
+        'eleven': '11', 'lebben': '11',
+        'twelve': '12', 'tolv': '12',
+        'thirteen': '13', 'fourteen': '14', 'fifteen': '15',
+        'sixteen': '16', 'seventeen': '17', 'eighteen': '18',
+        'nineteen': '19', 'twenty': '20'
+      };
+      
+      // Convert words to numbers
+      const words = cleaned.split(/\s+/);
+      let converted = [];
+      
+      for (const word of words) {
+        if (mobileNumberMap[word]) {
+          converted.push(mobileNumberMap[word]);
+        } else if (/^\d+$/.test(word)) {
+          converted.push(word);
+        } else if (!['the', 'um', 'uh', 'er'].includes(word)) {
+          converted.push(word);
+        }
+      }
+      
+      return converted.join(' ');
+    };
+
+    // Convert text for better mobile recognition
+    const convertedText = forceToInteger(originalText);
+    
+    // Priority 1: Handle modal contexts first
+    if (gameState.showAceTargetModal) {
+      if (originalText.match(/^(unsure|not\s+sure|don'?t\s+know)$/)) {
+        return { type: "ace_target", action: "unsure" };
+      }
+      
+      const numberMatch = convertedText.match(/^(\d+)$/);
+      if (numberMatch) {
+        const playerNumber = parseInt(numberMatch[1]);
+        const player = courtPlayersRef.current.find(p => parseInt(p.number) === playerNumber);
+        if (player) {
+          const slotIndex = courtPlayersRef.current.findIndex(p => p === player);
+          return {
+            type: "ace_target",
+            action: "select_player",
+            slotIndex: slotIndex,
+            playerNumber: playerNumber
+          };
+        }
+      }
+    }
+
+    // Priority 2: Single numbers for player touches
+    const singleNumberMatch = convertedText.match(/^(\d+)$/);
+    if (singleNumberMatch) {
+      const playerNumber = parseInt(singleNumberMatch[1]);
+      const player = courtPlayersRef.current.find(p => parseInt(p.number) === playerNumber);
+      if (player) {
+        const slotIndex = courtPlayersRef.current.findIndex(p => p === player);
+        return {
+          type: "player_touch",
+          slotIndex,
+          player,
+          number: playerNumber
+        };
+      }
+    }
+
+    // Priority 3: Serve zone commands (only when overlay is showing)
+    if (gameState.showServeZoneOverlay && gameState.ballState === "serve") {
+      const zoneMatch = originalText.match(/^(?:zone\s+)?(\d+(?:-\d+)?)(?:\s+zone)?$/);
+      if (zoneMatch) {
+        return {
+          type: "serve_zone",
+          action: "select_zone",
+          zone: zoneMatch[1]
+        };
+      }
+      
+      if (originalText.match(/^(unsure|not\s+sure|don'?t\s+know)$/)) {
+        return { type: "serve_zone", action: "unsure" };
+      }
+    }
+
+    // Priority 4: Error types (more flexible matching for mobile)
+    if (originalText.match(/^(out|net|in\s*net|foot\s*fault)$/)) {
+      if (gameState.showErrorTypeModal || gameState.showServeZoneOverlay) {
+        const errorType = originalText.includes("net") ? "In Net" :
+                         originalText.includes("foot") ? "Foot Fault" : "Out";
+        return {
+          type: "serve_zone",
+          action: "service_error",
+          errorType: errorType
+        };
+      }
+    }
+
+    // Priority 5: Simple actions with mobile-friendly matching
+    const mobileActions = {
+      'ace': { type: 'serve_action', action: 'Ace' },
+      'aced': { type: 'serve_action', action: 'Ace' },
+      'ace them': { type: 'serve_action', action: 'Ace' },
+      'kill': { type: 'rally_action', action: 'Kill' },
+      'killed': { type: 'rally_action', action: 'Kill' },
+      'kill it': { type: 'rally_action', action: 'Kill' },
+      'error': { type: 'contextual', action: 'Error' },
+      'out': { type: 'rally_action', action: 'Error' },
+      'net': { type: 'rally_action', action: 'Error' },
+      'in play': { type: 'contextual', action: 'InPlay' },
+      'inplay': { type: 'contextual', action: 'InPlay' },
+      'good': { type: 'contextual', action: 'InPlay' },
+      'rotate': { type: 'court_action', action: 'rotate' },
+      'rotation': { type: 'court_action', action: 'rotate' },
+      'switch': { type: 'court_action', action: 'switch_serve' },
+      'switch serve': { type: 'court_action', action: 'switch_serve' },
+      'undo': { type: 'court_action', action: 'undo' },
+      'replay': { type: 'court_action', action: 'replay' }
+    };
+
+    for (const [phrase, command] of Object.entries(mobileActions)) {
+      if (originalText === phrase || originalText.includes(phrase)) {
+        // Handle contextual actions
+        if (command.type === 'contextual') {
+          if (gameState.ballState === 'serve') {
+            return { type: 'serve_action', action: command.action };
+          } else if (gameState.ballState === 'inplay') {
+            return { type: 'rally_action', action: command.action };
+          }
+        }
+        
+        // Validate context for specific actions
+        if (command.type === 'serve_action' && gameState.ballState === 'serve') {
+          return command;
+        }
+        if (command.type === 'rally_action' && gameState.ballState === 'inplay') {
+          return command;
+        }
+        if (command.type === 'court_action') {
+          return command;
+        }
+      }
+    }
+
+    // Priority 6: Number sequences (simplified for mobile)
+    const allowSequence = (gameState.ballState === "inplay" && !gameState.showServeZoneOverlay) ||
+                         (gameState.ballState === "serve" && gameState.currentServeSide === "opponent");
+    
+    if (allowSequence) {
+      // Look for sequence with result
+      const sequenceMatch = originalText.match(/^(.+?)\s+(kill|error|ace|in\s+play|good)$/);
+      if (sequenceMatch) {
+        const numberPart = forceToInteger(sequenceMatch[1]);
+        const result = sequenceMatch[2] === 'good' ? 'in play' : sequenceMatch[2];
+        
+        // Parse space-separated numbers
+        const numbers = numberPart.split(/\s+/)
+          .map(s => parseInt(s))
+          .filter(n => !isNaN(n) && courtPlayersRef.current.some(p => parseInt(p.number) === n));
+        
+        if (numbers.length >= 2) {
+          return {
+            type: "sequence",
+            numbers: numbers,
+            result: result
+          };
+        }
+      }
+    }
+
+    console.log("❌ No mobile command found for:", originalText);
+    return null;
+  };
+
+  // Mobile-optimized recognition setup
+  useEffect(() => {
+    if (!voiceEnabled) {
+      console.log("🎙️ Voice disabled - cleaning up");
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+          recognitionRef.current = null;
+        } catch (error) {
+          console.log("🎙️ Error stopping recognition:", error.message);
+        }
+      }
+      setIsListening(false);
+      setConnectionStatus("disabled");
+      sessionActiveRef.current = false;
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.warn("Speech recognition not supported");
+      setConnectionStatus("not_supported");
+      return;
+    }
+
+    if (recognitionRef.current && sessionActiveRef.current) {
+      console.log("🎙️ Recognition session already active");
+      return;
+    }
+
+    console.log("🎙️ Setting up mobile-optimized voice recognition");
+    const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
+
+    // Mobile-optimized configuration
+    recognition.continuous = !isMobile; // Disable continuous on mobile
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+    
+    // Mobile-specific settings
+    if (isMobile) {
+      recognition.maxAlternatives = 1;
+      // Don't set timeout properties as they're not well supported
+    }
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setConnectionStatus("connected");
+      sessionActiveRef.current = true;
+      lastStartTime.current = Date.now();
+      restartAttempts.current = 0;
+      console.log("🎙️ Mobile voice recognition started");
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      sessionActiveRef.current = false;
+      console.log("🎙️ Mobile voice recognition ended");
+      
+      // On mobile, don't auto-restart - require manual activation
+      if (isMobile) {
+        console.log("🎙️ Mobile mode - manual restart required");
+        setConnectionStatus("disconnected");
+        return;
+      }
+      
+      // Desktop auto-restart logic (simplified)
+      if (voiceEnabled && restartAttempts.current < 3) {
+        restartAttempts.current++;
+        setTimeout(() => {
+          if (voiceEnabled && recognitionRef.current) {
+            try {
+              recognition.start();
+            } catch (error) {
+              console.log("🎙️ Desktop restart failed:", error.message);
+              setConnectionStatus("failed");
+            }
+          }
+        }, 1000);
+      } else {
+        setConnectionStatus("disconnected");
+      }
+    };
+
+    recognition.onresult = (event) => {
+      const result = event.results[event.results.length - 1];
+      if (!result.isFinal) return;
+
+      const transcript = result[0].transcript.trim();
+      console.log("🎙️ Mobile heard:", transcript);
+
+      // Show what we heard
+      setLastCommand(transcript);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => setLastCommand(""), 3000);
+
+      // Parse and execute command
+      const command = parseSimpleCommand(transcript);
+      if (command) {
+        console.log("✅ Mobile executing:", command);
+        handleCommandRef.current(command);
+        
+        // On mobile, provide haptic feedback if available
+        if (isMobile && navigator.vibrate) {
+          navigator.vibrate(50);
+        }
+      } else {
+        console.log("❌ No mobile command found");
+      }
+
+      // On mobile, automatically restart for next command
+      if (isMobile && voiceEnabled) {
+        setTimeout(() => {
+          if (voiceEnabled && recognitionRef.current && !sessionActiveRef.current) {
+            try {
+              recognition.start();
+            } catch (error) {
+              console.log("🎙️ Mobile auto-restart failed:", error.message);
+            }
+          }
+        }, 500);
+      }
+    };
+
+    recognition.onerror = (event) => {
+      console.log("🎙️ Mobile error:", event.error);
+      sessionActiveRef.current = false;
+      
+      if (event.error === 'not-allowed') {
+        setConnectionStatus("mic_denied");
+        return;
+      }
+      
+      if (event.error === 'no-speech') {
+        console.log("🎙️ No speech - normal on mobile");
+        if (isMobile) {
+          setConnectionStatus("disconnected"); // Show user they need to restart
+        }
+        return;
+      }
+      
+      if (event.error === 'aborted') {
+        setConnectionStatus("disconnected");
+        return;
+      }
+      
+      // For other errors on mobile, require manual restart
+      if (isMobile) {
+        setConnectionStatus("failed");
+      } else {
+        // Desktop can try auto-restart
+        setConnectionStatus("failed");
+        if (voiceEnabled && restartAttempts.current < 2) {
+          setTimeout(() => {
+            if (voiceEnabled) {
+              manualRestart();
+            }
+          }, 2000);
+        }
+      }
+    };
+
+    // Start recognition
+    try {
+      recognition.start();
+      setConnectionStatus("connecting");
+    } catch (error) {
+      console.error("🎙️ Failed to start mobile recognition:", error);
+      setConnectionStatus("failed");
+      sessionActiveRef.current = false;
+    }
+
+    // Cleanup
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (error) {
+          console.log("🎙️ Stop failed:", error);
+        }
+        recognitionRef.current = null;
+      }
+      setIsListening(false);
+      setConnectionStatus("disconnected");
+      sessionActiveRef.current = false;
+    };
+  }, [voiceEnabled, isMobile]);
+
+  // Manual restart function optimized for mobile
+  const manualRestart = () => {
+    console.log("🎙️ Manual restart requested (mobile-optimized)");
+    
+    if (!voiceEnabled) {
+      console.log("🎙️ Cannot restart - voice commands are disabled");
+      return false;
+    }
+    
+    // Prevent rapid restarts
+    const now = Date.now();
+    const timeSinceLastStart = now - lastStartTime.current;
+    if (timeSinceLastStart < 1000) {
+      console.log(`🎙️ Restart too soon (${timeSinceLastStart}ms ago)`);
+      return false;
+    }
+    
+    // Force cleanup
+    sessionActiveRef.current = false;
+    setConnectionStatus("connecting");
+    
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      } catch (error) {
+        console.log("🎙️ Error stopping for restart:", error.message);
+      }
+    }
+    
+    // Restart after cleanup
+    setTimeout(() => {
+      if (voiceEnabled) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+          try {
+            const recognition = new SpeechRecognition();
+            recognitionRef.current = recognition;
+            
+            // Reconfigure
+            recognition.continuous = !isMobile;
+            recognition.interimResults = false;
+            recognition.lang = "en-US";
+            
+            // Re-attach handlers (same as in useEffect)
+            recognition.onstart = () => {
+              setIsListening(true);
+              setConnectionStatus("connected");
+              sessionActiveRef.current = true;
+              lastStartTime.current = Date.now();
+            };
+            
+            recognition.onend = () => {
+              setIsListening(false);
+              sessionActiveRef.current = false;
+              if (isMobile) {
+                setConnectionStatus("disconnected");
+              }
+            };
+            
+            recognition.onresult = (event) => {
+              const result = event.results[event.results.length - 1];
+              if (!result.isFinal) return;
+              
+              const transcript = result[0].transcript.trim();
+              setLastCommand(transcript);
+              
+              const command = parseSimpleCommand(transcript);
+              if (command) {
+                handleCommandRef.current(command);
+                if (isMobile && navigator.vibrate) {
+                  navigator.vibrate(50);
+                }
+              }
+              
+              // Auto-restart on mobile
+              if (isMobile && voiceEnabled) {
+                setTimeout(() => {
+                  if (voiceEnabled && !sessionActiveRef.current) {
+                    manualRestart();
+                  }
+                }, 500);
+              }
+            };
+            
+            recognition.onerror = (event) => {
+              sessionActiveRef.current = false;
+              if (event.error === 'not-allowed') {
+                setConnectionStatus("mic_denied");
+              } else {
+                setConnectionStatus("failed");
+              }
+            };
+            
+            recognition.start();
+            return true;
+          } catch (error) {
+            console.log("🎙️ Manual restart failed:", error.message);
+            setConnectionStatus("failed");
+            return false;
+          }
+        }
+      }
+      return false;
+    }, 100);
+    
+    return true;
+  };
+
+  return {
+    isListening,
+    lastCommand,
+    connectionStatus,
+    manualRestart,
+    isMobile
+  };
+};
+
+export default useMobileOptimizedVoiceCommands;

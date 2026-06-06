@@ -1,0 +1,187 @@
+/**
+ * Utility functions for MatchModeSelector integration
+ */
+
+/**
+ * Calculate the age of a match in minutes
+ * @param {string|Date} updatedAt - The last update timestamp
+ * @returns {number} Age in minutes
+ */
+export const calculateMatchAge = (updatedAt) => {
+  if (!updatedAt) return 0;
+  
+  const updated = new Date(updatedAt);
+  const now = new Date();
+  const ageMilliseconds = now - updated;
+  const ageMinutes = Math.floor(ageMilliseconds / 1000 / 60);
+  
+  return ageMinutes;
+};
+
+/**
+ * Format match age into human-readable string
+ * @param {number} minutes - Age in minutes
+ * @returns {string} Formatted age string
+ */
+export const formatMatchAge = (minutes) => {
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)} hr ago`;
+  return `${Math.floor(minutes / 1440)} days ago`;
+};
+
+/**
+ * Check if a match mode is compatible with a page
+ * @param {string} matchMode - The mode of the match (e.g., "gameflow", "express", "coach")
+ * @param {string} currentPage - The current page ("classic", "statbook", "match")
+ * @returns {boolean} Whether the modes are compatible
+ */
+export const isMatchModeCompatible = (matchMode, currentPage) => {
+  // IMPORTANT: These match the exact capitalization stored in your MongoDB database
+  // Includes both current and legacy mode names for backward compatibility
+  const MODE_MAPPINGS = {
+    classic: ["Classic", "Gameflow"],  // Gameflow is legacy
+    statbook: ["Statbook", "Collab"],  // Collab is legacy
+    match: ["Match", "Coach"],         // Coach is legacy
+  };
+
+  const compatibleModes = MODE_MAPPINGS[currentPage] || [];
+  return compatibleModes.includes(matchMode);
+};
+
+/**
+ * Determine if MatchModeSelector should be shown
+ * @param {object} options - Configuration options
+ * @param {string} options.currentMatchId - Current match ID
+ * @param {string} options.currentMatchMode - Current match mode
+ * @param {string} options.currentPage - Current page identifier
+ * @param {number} options.currentMatchAge - Match age in minutes
+ * @param {number} options.ageThreshold - Age threshold in minutes (default: 60)
+ * @returns {boolean} Whether to show the selector
+ */
+export const shouldShowMatchSelector = ({
+  currentMatchId,
+  currentMatchMode,
+  currentPage,
+  currentMatchAge,
+  ageThreshold = 60,
+}) => {
+  // Always show if no current match
+  if (!currentMatchId) return true;
+
+  // Show if current match mode doesn't match this page
+  if (!isMatchModeCompatible(currentMatchMode, currentPage)) return true;
+
+  // Show if match is older than threshold
+  if (currentMatchAge > ageThreshold) return true;
+
+  return false;
+};
+
+/**
+ * Custom hook for managing match state with age calculation
+ * @param {object} initialMatch - Initial match data
+ * @returns {object} Match state and setters
+ */
+export const useMatchState = (initialMatch = null) => {
+  const [currentMatchId, setCurrentMatchId] = React.useState(
+    initialMatch?.matchId || null
+  );
+  const [currentMatchMode, setCurrentMatchMode] = React.useState(
+    initialMatch?.mode || null
+  );
+  const [matchData, setMatchData] = React.useState(initialMatch);
+  const [currentMatchAge, setCurrentMatchAge] = React.useState(0);
+
+  // Update age periodically
+  React.useEffect(() => {
+    const updateAge = () => {
+      if (matchData?.updatedAt) {
+        const age = calculateMatchAge(matchData.updatedAt);
+        setCurrentMatchAge(age);
+      }
+    };
+
+    // Initial calculation
+    updateAge();
+
+    // Update every minute
+    const interval = setInterval(updateAge, 60000);
+
+    return () => clearInterval(interval);
+  }, [matchData?.updatedAt]);
+
+  const updateMatch = (newMatchData) => {
+    setCurrentMatchId(newMatchData.matchId);
+    setCurrentMatchMode(newMatchData.mode);
+    setMatchData({
+      ...newMatchData,
+      updatedAt: new Date().toISOString(),
+    });
+  };
+
+  const clearMatch = () => {
+    setCurrentMatchId(null);
+    setCurrentMatchMode(null);
+    setMatchData(null);
+    setCurrentMatchAge(0);
+  };
+
+  return {
+    currentMatchId,
+    currentMatchMode,
+    currentMatchAge,
+    matchData,
+    updateMatch,
+    clearMatch,
+    setCurrentMatchId,
+    setCurrentMatchMode,
+    setMatchData,
+  };
+};
+
+/**
+ * Extract match configuration from API response
+ * @param {object} match - Match object from API
+ * @returns {object} Normalized match config
+ */
+export const extractMatchConfig = (match) => {
+  return {
+    matchId: match._id,
+    opponentName: match.opponentName || match.matchData?.opponentName,
+    teamName: match.teamName,
+    sets: match.totalSets || match.matchData?.sets,
+    points: match.pointsNonDeciding || match.matchData?.points,
+    decidingSetPoints: match.pointsDeciding || match.matchData?.decidingSetPoints,
+    playAllSets: match.playAllSets || match.matchData?.playAllSets,
+    mode: match.mode,
+    updatedAt: match.updatedAt,
+  };
+};
+
+/**
+ * Get display name for a match mode
+ * @param {string} mode - Match mode
+ * @returns {string} Display name
+ */
+export const getModeName = (mode) => {
+  // IMPORTANT: Keys match the exact capitalization from MongoDB
+  // Includes both current and legacy mode names
+  const MODE_NAMES = {
+    Classic: "Classic",
+    Gameflow: "Gameflow (Classic)",  // Legacy
+    Statbook: "Stat Book",
+    Collab: "Collaborative (Stat Book)",  // Legacy
+    Match: "Match Tracking",
+    Coach: "Coach (Match Tracking)",  // Legacy
+  };
+
+  return MODE_NAMES[mode] || mode;
+};
+
+/**
+ * React Hook version (if not using React, ignore this)
+ */
+if (typeof React !== "undefined") {
+  exports.useMatchState = useMatchState;
+}

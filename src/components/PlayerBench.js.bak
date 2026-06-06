@@ -1,0 +1,103 @@
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import PlayerIcon from "./PlayerIcon";
+import { motion } from "framer-motion";
+
+const PlayerBench = ({
+  players = [],
+  courtPlayers = [],
+  onCreatePlayer,
+  onResetBench,
+  onRecallBench,
+  onDeletePlayer,
+  getAllPlayers,
+  addPlayerToCourt,
+  maxLiberos,
+}) => {
+  const [newPlayerName, setNewPlayerName] = useState("");
+  const [newPlayerNumber, setNewPlayerNumber] = useState("");
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 480);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const handleCreatePlayer = async (e) => {
+    e.preventDefault();
+    if (!newPlayerName || !newPlayerNumber) return;
+    try {
+      await onCreatePlayer({ name: newPlayerName, number: parseInt(newPlayerNumber, 10) });
+      setNewPlayerName("");
+      setNewPlayerNumber("");
+      getAllPlayers();
+    } catch (error) {
+      console.error("Error creating player:", error);
+    }
+  };
+
+  const handleDelete = async (playerId) => {
+    if (!window.confirm("Are you sure you want to delete this player?")) return;
+    try {
+      await onDeletePlayer(playerId);
+      getAllPlayers();
+    } catch (error) {
+      console.error("Error deleting player:", error);
+    }
+  };
+
+  const handleMoveToCourt = async (playerId) => {
+    try {
+      await axios.put(`/api/players/${playerId}`, { isOnCourt: true });
+      const player = players.find((p) => p._id === playerId);
+      if (player) addPlayerToCourt(player);
+      getAllPlayers();
+    } catch (error) {
+      console.error("Error moving player to court:", error);
+    }
+  };
+
+  const handleToggleLibero = async (player, currentStatus) => {
+    if (!currentStatus && courtPlayers.filter((p) => p.isLibero).length >= maxLiberos) {
+      alert("Maximum 2 liberos allowed.");
+      return;
+    }
+    try {
+      await axios.put(`/api/players/${player._id}`, { isLibero: !currentStatus });
+      getAllPlayers();
+    } catch (error) {
+      console.error("Error updating libero status:", error);
+    }
+  };
+
+  return (
+    <div className="ios-card">
+      <h2 className="ios-header">Bench</h2>
+      <div className="ios-grid">
+        {players.map((player) => (
+          <motion.div key={player._id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <PlayerIcon playerId={player._id} playerName={player.name} playerNumber={player.number} isLibero={player.isLibero} />
+            <div className="ios-button-group">
+              <button className="ios-button green" onClick={() => handleMoveToCourt(player._id)}>Move to Court</button>
+              <button className="ios-button red" onClick={() => handleDelete(player._id)}>Delete</button>
+              <button className="ios-button blue" onClick={() => handleToggleLibero(player, player.isLibero)}>Toggle Libero</button>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+      <div className="ios-button-group">
+        <button className="ios-button red" onClick={onResetBench}>Reset Bench</button>
+        <button className="ios-button blue" onClick={onRecallBench}>Recall Bench</button>
+      </div>
+      <form className="ios-form" onSubmit={handleCreatePlayer}>
+        <input type="text" placeholder="Name" value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} />
+        <input type="number" placeholder="Number" value={newPlayerNumber} onChange={(e) => setNewPlayerNumber(e.target.value)} />
+        <button className="ios-button green" type="submit">Create</button>
+      </form>
+    </div>
+  );
+};
+
+export default PlayerBench;
