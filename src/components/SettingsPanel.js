@@ -850,6 +850,16 @@ const canJoin = isOwner || hasPremium || canJoinAsNonPremium;
 
   const handleTeamSelect = async (teamName) => {
     setSelectedTeam(teamName);
+
+    // If there is an active match in progress, do NOT overwrite its teamName.
+    // Just load the roster for browsing and show a suggestion to start a new match.
+    if (currentMatchId && matchSettings?.teamName && matchSettings.teamName !== teamName) {
+      await handleRecallBench(teamName);
+      // Don't call setMatchSettings — leave the active match untouched
+      return;
+    }
+
+    // No active match — safe to update matchSettings
     setMatchSettings((prev) => ({ ...prev, teamName: teamName }));
     await handleRecallBench(teamName);
   };
@@ -2159,6 +2169,24 @@ const groupedFinalByEvent = groupByEvent(finalMatches);
           <p>Loading teams...</p>
         ) : (
           <>
+            {/* Warning banner when browsing a different team while a match is active */}
+            {currentMatchId && matchSettings?.teamName && selectedTeam && selectedTeam !== matchSettings.teamName && (
+              <div style={{
+                background: '#FFF9E6',
+                border: '1.5px solid #F59E0B',
+                borderRadius: 10,
+                padding: '10px 14px',
+                marginBottom: 10,
+                fontSize: 13,
+                color: '#92400E',
+                lineHeight: 1.5,
+              }}>
+                <strong>Active match is using "{matchSettings.teamName}".</strong>
+                <br />
+                Switching here only loads this team's roster for browsing.
+                To play with <strong>{selectedTeam}</strong>, start a new match from this page in steps 2 and 3 below.
+              </div>
+            )}
             <select
               value={selectedTeam}
               onChange={(e) => handleTeamSelect(e.target.value)}

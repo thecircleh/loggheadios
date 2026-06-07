@@ -108,9 +108,9 @@ export default function StatBookContainer({
       const matchData = response.data;
       console.log('📥 StatBook: Loaded new match data:', matchData);
 
-      // Update match state
+      // Update match state — force mode to Statbook regardless of what API returns
       setCurrentMatchId(config.matchId);
-      setMatch(matchData);
+      setMatch({ ...matchData, mode: config.mode });
 
       // Initialize match settings if needed
       if (setMatchSettings) {
@@ -155,14 +155,14 @@ export default function StatBookContainer({
       const matchData = response.data;
       console.log('📥 StatBook: Loaded resumed match data:', matchData);
 
-      // Update match state
+      // Update match state — force mode to Statbook regardless of what API returns
       setCurrentMatchId(config.matchId);
-      setMatch(matchData);
+      setMatch({ ...matchData, mode: config.mode });
 
       // Restore match settings
       if (setMatchSettings) {
         setMatchSettings({
-          mode: matchData.mode, // Restore the mode!
+          mode: config.mode, // Force correct mode!
           teamName: matchData.teamName,
           opponentName: matchData.opponentName || matchData.matchData?.opponentName,
           sets: matchData.totalSets || matchData.matchData?.sets,

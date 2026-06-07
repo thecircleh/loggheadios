@@ -63,6 +63,9 @@ export default function MatchTrackingContainer({
   // Refs
   matchFinalizedRef,
   setEndingInProgressRef,
+
+  // Match restore state
+  isRestoringMatch,
   
   // Other props
   coachCourtKey,
@@ -212,6 +215,7 @@ export default function MatchTrackingContainer({
         currentMatchAge={currentMatchAge}
         onStartNewMatch={handleStartNewMatch}
         onResumeMatch={handleResumeMatch}
+        isRestoringMatch={isRestoringMatch}
       />
 
       {/* CoachCourt - only render when we have a match */}

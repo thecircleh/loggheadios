@@ -99,13 +99,15 @@ export default function MatchModeSelector({
       return false;
     }
 
-    // Show if current match mode doesn't match this page
-    if (!isCompatibleMode) {
-      console.log("⚠️ Showing selector: Incompatible mode");
-      return true;
+    // If user has an active recent match in a DIFFERENT mode, also hide the selector.
+    // They navigated here from another mode — don't interrupt them with the selector.
+    // They can start a new match from the page if they want.
+    if (!isCompatibleMode && isRecentMatch) {
+      console.log("✅ Hiding selector: User has recent match in different mode, not interrupting");
+      return false;
     }
 
-    // Show if match is older than threshold
+    // Show if match is older than threshold (stale match)
     if (currentMatchAge > MATCH_AGE_THRESHOLD_MINUTES) {
       console.log("⚠️ Showing selector: Match too old");
       return true;

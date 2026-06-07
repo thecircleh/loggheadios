@@ -738,6 +738,7 @@ const [setEndingDialog, setSetEndingDialog] = useState({
 const saveInFlightRef = useRef(false);
 
 const { isMobile, isPortrait, isTouch } = useDevice();
+const isNativeApp = !!(window.Capacitor?.isNativePlatform?.());
 
   // Collaborative hooks
   const {
@@ -3872,23 +3873,19 @@ useEffect(() => {
         }
       } catch (err) {
         console.error("Fetch match ID failed:", err);
-        // Don't clear match state on network errors - iOS may not be ready yet
-        // Only clear if we got a definitive auth failure
-        if (err?.response?.status === 401 || err?.response?.status === 403) {
-          clearAllMatchState();
-        }
+        clearAllMatchState();
       } finally {
         if (isMounted) setMatchRestored(true);
       }
     };
 
-    const timeoutId = setTimeout(restoreMatchIdFromUser, 500);
+    const timeoutId = setTimeout(restoreMatchIdFromUser, 100);
     
     return () => { 
       clearTimeout(timeoutId);
       isMounted = false; 
     };
-  }, [user?.id, JSON.stringify(user?.teams), token, clearAllMatchState, setMatchId]);
+  }, [user?.id, user?.teams, token, clearAllMatchState, setMatchId]);
 
     useEffect(() => {
     const loadMatch = async () => {
@@ -5394,6 +5391,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
         onOurPoint={onOurPoint}
         onOpponentPoint={onOpponentPoint}
         updatePlayersOnCourt={updateCourtPositions}
+        isRestoringMatch={isRestoringMatch}
       />
     </PrivateRoute>
   }
@@ -5452,6 +5450,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
         matchFinalizedRef={matchFinalizedRef}
         setEndingInProgressRef={setEndingInProgressRef}
         coachCourtKey={coachCourtKey}
+        isRestoringMatch={isRestoringMatch}
       />
     </SubscriptionRoute>
   }
@@ -5580,6 +5579,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
       token={token}
       isMatchOwner={isMatchOwner}
       updatePlayersOnCourt={updateCourtPositions}
+      isRestoringMatch={isRestoringMatch}
     />
   </SubscriptionRoute>
 } />

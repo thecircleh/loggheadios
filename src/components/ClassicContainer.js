@@ -92,6 +92,9 @@ export default function ClassicContainer({
   // UI preferences
   cardDisplayMode,
   setCardDisplayMode,
+
+  // Match restore state
+  isRestoringMatch,
   
   // Other functions
   onOurPoint,
@@ -260,6 +263,7 @@ export default function ClassicContainer({
         currentMatchAge={currentMatchAge}
         onStartNewMatch={handleStartNewMatch}
         onResumeMatch={handleResumeMatch}
+        isRestoringMatch={isRestoringMatch}
       />
 
       {/* VolleyballCourt - only render when we have a match */}
