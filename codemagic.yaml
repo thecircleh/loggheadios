@@ -16,6 +16,8 @@ workflows:
         XCODE_SCHEME: "App"
         BUNDLE_ID: "com.loggerheadstat.app"
         REACT_APP_API_URL: "https://api.loggerhead.app"
+        APP_VERSION: "1.1"
+        BUILD_NUMBER: "2"
       node: v22.0.0
 
     scripts:
@@ -47,7 +49,6 @@ workflows:
           SPLASH_SRC=$CM_BUILD_DIR/ios-assets/SplashScreen/splash.png
           SPLASH_DEST_DIR=$CM_BUILD_DIR/ios/App/App/Assets.xcassets/Splash.imageset
 
-          # Copy app icons
           if [ -d "$ICONS_SRC" ]; then
             cp -r $ICONS_SRC/. $ICONS_DEST/
             echo "✅ App icons injected"
@@ -55,11 +56,9 @@ workflows:
             echo "⚠️ No ios-assets/AppIcons folder found, skipping"
           fi
 
-          # Copy splash screen
           if [ -f "$SPLASH_SRC" ]; then
             mkdir -p $SPLASH_DEST_DIR
             cp $SPLASH_SRC $SPLASH_DEST_DIR/splash.png
-            # Create Contents.json for the splash imageset if missing
             cat > $SPLASH_DEST_DIR/Contents.json << JSON
           {
             "images": [
@@ -74,6 +73,12 @@ workflows:
           else
             echo "⚠️ No ios-assets/SplashScreen/splash.png found, skipping"
           fi
+
+      - name: Set version and build number
+        script: |
+          cd $CM_BUILD_DIR/ios/App
+          agvtool new-marketing-version $APP_VERSION
+          agvtool new-version -all $BUILD_NUMBER
 
       - name: Set up keychain and signing
         script: |
@@ -123,6 +128,8 @@ workflows:
             DEVELOPMENT_TEAM=46W6UT654D \
             PRODUCT_BUNDLE_IDENTIFIER=com.loggerheadstat.app \
             PROVISIONING_PROFILE_SPECIFIER="Loggerhead App Store" \
+            MARKETING_VERSION=$APP_VERSION \
+            CURRENT_PROJECT_VERSION=$BUILD_NUMBER \
             archive
           xcodebuild \
             -exportArchive \
