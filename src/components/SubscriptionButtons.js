@@ -322,9 +322,7 @@ const styles = {
   },
 };
 
-const isNative = !!(window.Capacitor?.isNativePlatform?.());
-
-const SubscriptionButtons = () => {
+const SubscriptionButtons = ({ isNative }) => {
   const auth = useAuth();
   const token = auth?.token;
   const user = auth?.user;

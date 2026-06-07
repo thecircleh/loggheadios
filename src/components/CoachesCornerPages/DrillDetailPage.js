@@ -6,9 +6,7 @@ import { getDrillById, rateDrill } from "./coachDrillsApi";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-const isNative = !!(window.Capacitor?.isNativePlatform?.());
-
-const savePDF = async (doc, filename) => {
+const savePDF = async (doc, filename, isNative) => {
   if (isNative) {
     try {
       const { Filesystem, Directory } = await import('@capacitor/filesystem');
@@ -101,7 +99,7 @@ function metaLine(d) {
   return `Age: ${age} • Level: ${level} • ${mins} min • Goal: ${goal}`;
 }
 
-export default function DrillDetailPage() {
+export default function DrillDetailPage({ isNative }) {
   const { token } = useAuth();
   const { drillId } = useParams();
 
@@ -303,7 +301,7 @@ const normalizePdfText = (s) => {
     }
 
     const safeTitle = safe(drill.title, "drill").replace(/[^a-zA-Z0-9]+/g, "_").slice(0, 40);
-    await savePDF(doc, `Loggerhead_CoachesCorner_${safeTitle}.pdf`);
+    await savePDF(doc, `Loggerhead_CoachesCorner_${safeTitle}.pdf`, isNative);
   };
 
   img.onerror = async () => {
@@ -314,7 +312,7 @@ const normalizePdfText = (s) => {
     doc.text(`Exported: ${new Date().toLocaleString()}`, 14, 26);
     const lines = doc.splitTextToSize(drill.drillText, 180);
     doc.text(lines, 14, 40);
-    await savePDF(doc, "Loggerhead_CoachesCorner_Drill.pdf");
+    await savePDF(doc, "Loggerhead_CoachesCorner_Drill.pdf", isNative);
   };
 };
 

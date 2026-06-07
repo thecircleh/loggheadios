@@ -17,7 +17,7 @@ const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const { setToken, setUser } = useAuth();
+  const { setToken } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -58,24 +58,8 @@ const Login = () => {
       });
 
       if (!response.data.token) throw new Error('No token received from server.');
-      setToken(response.data.token);
-
-      const profileResponse = await axios.get(`${API_URL}/auth/profile`, {
-        headers: { Authorization: `Bearer ${response.data.token}` },
-      });
-
-      if (profileResponse.data && (profileResponse.data.id || profileResponse.data._id)) {
-        setUser({
-          id: profileResponse.data.id || profileResponse.data._id,
-          email: profileResponse.data.email,
-          displayName: profileResponse.data.displayName || '',
-          googleId: profileResponse.data.googleId || null,
-          role: profileResponse.data.role,
-        });
-        navigate('/');
-      } else {
-        setError('Failed to retrieve user information.');
-      }
+      await setToken(response.data.token);
+      navigate('/');
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Please try again.');
     }

@@ -5264,7 +5264,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
 
               {/* /coaches-corner/drills */}
               <Route path="drills" element={<SavedDrillsPage />} />
-              <Route path="drills/:drillId" element={<DrillDetailPage />} />
+              <Route path="drills/:drillId" element={<DrillDetailPage isNative={isNativeApp} />} />
               <Route path="drills/:drillId/edit" element={<EditDrillPage />} />
 
               {/* /coaches-corner/practice routes */}
@@ -5296,7 +5296,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
               path="/" 
               element={
                 <PrivateRoute>
-                  <HomePage matchSettings={matchSettings} />
+                  <HomePage matchSettings={matchSettings} isMobile={isMobile} />
                 </PrivateRoute>
               } 
             />
@@ -5306,7 +5306,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
               path="/profile" 
               element={
                 <PrivateRoute>
-                  <Profile setCurrentMatchId={setCurrentMatchId} />
+                  <Profile setCurrentMatchId={setCurrentMatchId} isNative={isNativeApp} />
                 </PrivateRoute>
               } 
             />
@@ -5597,6 +5597,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
                     currentMatchId={currentMatchId}
                     teamName={matchSettings?.teamName}
                     opponentName={matchSettings?.opponentName || "Opponent"}
+                    isNative={isNativeApp}
                   />
                 </PrivateRoute>
               }
@@ -5608,7 +5609,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
           </Routes>
-        <BottomTabBar isNative={!!(window.Capacitor?.isNativePlatform?.())} isMobile={isMobile} />
+        <BottomTabBar isNative={isNativeApp} isMobile={isMobile} />
         </>
       </DndProvider>
  

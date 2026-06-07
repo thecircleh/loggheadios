@@ -7,8 +7,6 @@ import "./Profile.css";
 import SubscriptionButtons from "./SubscriptionButtons";
 import TeamNameBuilder from "./TeamNameBuilder";
 
-const isNative = !!(window.Capacitor?.isNativePlatform?.());
-
 const getApiUrl = () => {
   if (window.location.hostname.startsWith("10.")) {
     return `http://${window.location.hostname}:3000`;
@@ -18,7 +16,7 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl();
 
-const Profile = () => {
+const Profile = ({ setCurrentMatchId, isNative }) => {
   const { user, token, removeToken, loading, refreshUser, hasGiftSubscription } =
     useAuth();
   const navigate = useNavigate();
@@ -595,7 +593,7 @@ const Profile = () => {
             🎁 Gift Subscription Active
           </div>
         )}
-        <SubscriptionButtons />
+        <SubscriptionButtons isNative={isNative} />
       </div>
 
       {/* Logout at the bottom */}

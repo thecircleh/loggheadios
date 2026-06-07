@@ -1,5 +1,5 @@
 // client/src/PlayerBench.js
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import axios from "axios";
 import PlayerIcon from "./PlayerIcon";
 
@@ -12,19 +12,11 @@ const PlayerBench = ({
   onDeletePlayer,
   getAllPlayers,
   addPlayerToCourt,
-  maxLiberos // maximum allowed liberos (e.g. 2)
+  maxLiberos, // maximum allowed liberos (e.g. 2)
+  isMobile = false,
 }) => {
   const [newPlayerName, setNewPlayerName] = useState("");
   const [newPlayerNumber, setNewPlayerNumber] = useState("");
-
-  // Responsive: determine if the device is mobile (width < 480px)
-  const [isMobile, setIsMobile] = useState(false);
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 480);
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
 
   // Compute total liberos from bench and court on every render.
   const benchLiberoCount = players.filter((p) => p.isLibero).length;

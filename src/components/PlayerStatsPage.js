@@ -7,9 +7,7 @@ import AdCourtBottom from './AdCourtBottom';
 import { Link } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
 
-const isNative = !!(window.Capacitor?.isNativePlatform?.());
-
-const savePDF = async (doc, filename) => {
+const savePDF = async (doc, filename, isNative) => {
   if (isNative) {
     try {
       const { Filesystem, Directory } = await import('@capacitor/filesystem');
@@ -45,7 +43,7 @@ const API_URL = getApiUrl();
  
  
  
-const PlayerStatsPage = ({ currentMatchId: propMatchId, teamName: propTeamName, opponentName }) => {
+const PlayerStatsPage = ({ currentMatchId: propMatchId, teamName: propTeamName, opponentName, isNative }) => {
   const { user, token } = useAuth();
   const [searchParams] = useSearchParams();
  
@@ -911,7 +909,7 @@ const hasAnyAssistStats =
           : new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }).replace(/\//g, '');
  
         const safeTeam = selectedTeam.replace(/\s+/g, '');
-        await savePDF(doc, `${safeTeam}_${opponentName}_${date}.pdf`);
+        await savePDF(doc, `${safeTeam}_${opponentName}_${date}.pdf`, isNative);
       }
     };
   };
@@ -1622,7 +1620,7 @@ const exportPremiumPDF = async () => {
       ? 'SeasonStats' 
       : (match?.opponentName || 'Unknown').replace(/[^a-zA-Z0-9]/g, '');
     
-    await savePDF(doc, `Loggerhead_${safeTeam}_${safeOpponent}_${date}.pdf`);
+    await savePDF(doc, `Loggerhead_${safeTeam}_${safeOpponent}_${date}.pdf`, isNative);
   };
   
   // Error handling if image fails to load

@@ -1,21 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 
-const HomePage = ({ matchSettings }) => {
+const HomePage = ({ matchSettings, isMobile }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [expandedCard, setExpandedCard] = useState(null);
-
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   const loggingModes = [
     {

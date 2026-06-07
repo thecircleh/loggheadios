@@ -5,8 +5,6 @@ import { useDrag, useDrop } from "react-dnd";
 import { useAuth } from "./AuthContext";
 import { useNavigate } from "react-router-dom";
 
-const isMobile = typeof window !== "undefined" && window.innerWidth < 480;
-
 // Slot labels aligned to your existing convention
 // Index 0..5 => positions: 4,3,2,5,6,1
 const positionLabels = ["4", "3", "2", "5", "6", "1"];
@@ -270,6 +268,7 @@ export default function CoachCourt({
   showAlert,
   ensureMatchIsFinalAndNavigate,
   matchFinalizedRef,
+  isMobile = false,
 }) {
   // Get auth token directly from useAuth hook
   const { token } = useAuth();

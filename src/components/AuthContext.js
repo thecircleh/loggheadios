@@ -219,7 +219,10 @@ export const AuthProvider = ({ children }) => {
         });
       } catch (error) {
         console.error("Error loading user:", error);
-        await clearAllUserData();
+        if (error.response?.status === 401) {
+          await clearAllUserData();
+        }
+        // Network errors or 5xx — keep the token, don't log the user out
       } finally {
         setLoading(false);
       }
