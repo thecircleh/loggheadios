@@ -22,7 +22,17 @@ const API_URL = getApiUrl();
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [token, setToken] = useState(Cookies.get("token") || null);
+  const isNative = !!(window.Capacitor?.isNativePlatform?.());
+
+  // On native iOS, cookies are unreliable — use localStorage as primary storage
+  const getStoredToken = () => {
+    if (isNative) {
+      return localStorage.getItem("token") || Cookies.get("token") || null;
+    }
+    return Cookies.get("token") || localStorage.getItem("token") || null;
+  };
+
+  const [token, setToken] = useState(getStoredToken);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pendingNotifications, setPendingNotifications] = useState([]);
@@ -96,6 +106,7 @@ export const AuthProvider = ({ children }) => {
 
     if (tokenFromUrl) {
       Cookies.set("token", tokenFromUrl, { expires: 7 });
+      localStorage.setItem("token", tokenFromUrl);
       setToken(tokenFromUrl);
       window.history.replaceState({}, document.title, window.location.pathname);
     }
@@ -127,6 +138,7 @@ export const AuthProvider = ({ children }) => {
     }
 
     Cookies.remove("token");
+    localStorage.removeItem("token");
     setToken(null);
     setUser(null);
     setPendingNotifications([]);
@@ -154,6 +166,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       Cookies.set("token", newToken, { expires: 7 });
+      localStorage.setItem("token", newToken);
       setToken(newToken);
 
       try {

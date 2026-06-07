@@ -6,6 +6,33 @@ import autoTable from 'jspdf-autotable';
 import AdCourtBottom from './AdCourtBottom';
 import { Link } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
+
+const isNative = !!(window.Capacitor?.isNativePlatform?.());
+
+const savePDF = async (doc, filename) => {
+  if (isNative) {
+    try {
+      const { Filesystem, Directory } = await import('@capacitor/filesystem');
+      const { Share } = await import('@capacitor/share');
+      const base64 = doc.output('datauristring').split(',')[1];
+      await Filesystem.writeFile({
+        path: filename,
+        data: base64,
+        directory: Directory.Cache,
+      });
+      const fileUri = await Filesystem.getUri({
+        directory: Directory.Cache,
+        path: filename,
+      });
+      await Share.share({ title: filename, url: fileUri.uri });
+    } catch (err) {
+      console.error('PDF share failed:', err);
+      doc.save(filename);
+    }
+  } else {
+    doc.save(filename);
+  }
+};
  
 const getApiUrl = () => {
   if (window.location.hostname.startsWith("10.")) {
@@ -710,12 +737,12 @@ const hasAnyAssistStats =
     }
   }, [statExplanation]);
  
-  const exportPDF = () => {
+  const exportPDF = async () => {
     const doc = new jsPDF();
     const img = new Image();
     img.src = "/web-app-manifest-512x512.png"; // From public/
  
-    img.onload = () => {
+    img.onload = async () => {
       doc.addImage(img, "PNG", 14, 10, 18, 18);
  
       // Use Loggerhead green
@@ -884,12 +911,12 @@ const hasAnyAssistStats =
           : new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' }).replace(/\//g, '');
  
         const safeTeam = selectedTeam.replace(/\s+/g, '');
-        doc.save(`${safeTeam}_${opponentName}_${date}.pdf`);
+        await savePDF(doc, `${safeTeam}_${opponentName}_${date}.pdf`);
       }
     };
   };
   
-const exportPremiumPDF = () => {
+const exportPremiumPDF = async () => {
   const doc = new jsPDF();
   
   // Loggerhead brand colors
@@ -901,7 +928,7 @@ const exportPremiumPDF = () => {
   const img = new Image();
   img.src = "/web-app-manifest-512x512.png";
   
-  img.onload = () => {
+  img.onload = async () => {
     // Logo and branding header
     doc.addImage(img, "PNG", 14, 10, 20, 20);
     
@@ -1595,7 +1622,7 @@ const exportPremiumPDF = () => {
       ? 'SeasonStats' 
       : (match?.opponentName || 'Unknown').replace(/[^a-zA-Z0-9]/g, '');
     
-    doc.save(`Loggerhead_${safeTeam}_${safeOpponent}_${date}.pdf`);
+    await savePDF(doc, `Loggerhead_${safeTeam}_${safeOpponent}_${date}.pdf`);
   };
   
   // Error handling if image fails to load

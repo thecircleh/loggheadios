@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkvolleyball_logger_client=self.webpackChunkvolleyball_logger_client||[]).push([[590],{5209(e,l,n){n.d(l,{Share:()=>h});const h=(0,n(5403).F3)("Share",{web:()=>n.e(851).then(n.bind(n,7851)).then(e=>new e.ShareWeb)})}}]);
+//# sourceMappingURL=590.69923b41.chunk.js.map

@@ -4925,7 +4925,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
 )}
 
 
-  {showHeader && (
+  {showHeader && !isNativeApp && (
             <header className="ios-header-bar" key={location.pathname}>
               <div className="ios-header-content">
                 <div className="ios-logo-title">
