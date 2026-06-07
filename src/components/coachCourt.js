@@ -269,6 +269,7 @@ export default function CoachCourt({
   ensureMatchIsFinalAndNavigate,
   matchFinalizedRef,
   isMobile = false,
+  isPortrait = false,
 }) {
   // Get auth token directly from useAuth hook
   const { token } = useAuth();
@@ -2446,6 +2447,9 @@ const SubTrackerCompact = ({ subCount, maxSubs, setMaxSubs }) => {
             boxShadow: "0 3px 10px rgba(0,0,0,0.08)",
             overflowY: "auto",
             maxHeight: "100vh",
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
           }}
         >
           {/* Bench Section */}
@@ -2455,6 +2459,7 @@ const SubTrackerCompact = ({ subCount, maxSubs, setMaxSubs }) => {
               borderRadius: 16,
               padding: 12,
               boxShadow: "0 3px 10px rgba(0,0,0,0.08)",
+              order: isMobile ? 2 : 0,
             }}
           >
             <div
@@ -2565,9 +2570,18 @@ const SubTrackerCompact = ({ subCount, maxSubs, setMaxSubs }) => {
                 )}
               </DroppableLiberoArea>
             </div>
+          </div>
 
-
-			
+          {/* Sub Tracker + Log */}
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: 16,
+              padding: 12,
+              boxShadow: "0 3px 10px rgba(0,0,0,0.08)",
+              order: isMobile ? 1 : 0,
+            }}
+          >
 		<SubTrackerCompact
             subCount={subCount}
             maxSubs={maxSubs}
@@ -2668,7 +2682,7 @@ const SubTrackerCompact = ({ subCount, maxSubs, setMaxSubs }) => {
               padding: 16,
               boxShadow: "0 3px 10px rgba(0,0,0,0.08)",
               position: "relative",
-              minHeight: "100vh",
+              minHeight: isMobile || isPortrait ? "auto" : "100vh",
             }}
           >
 
