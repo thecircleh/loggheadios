@@ -17,7 +17,6 @@ workflows:
         BUNDLE_ID: "com.loggerheadstat.app"
         REACT_APP_API_URL: "https://api.loggerhead.app"
         APP_VERSION: "1.1"
-        BUILD_NUMBER: "2"
       node: v22.0.0
 
     scripts:
@@ -79,6 +78,7 @@ workflows:
           cd $CM_BUILD_DIR/ios/App
           agvtool new-marketing-version $APP_VERSION
           agvtool new-version -all $BUILD_NUMBER
+          echo "✅ Version: $APP_VERSION ($BUILD_NUMBER)"
 
       - name: Set up keychain and signing
         script: |
