@@ -63,6 +63,7 @@ import PracticeHomePage from "./components/PracticeHomePage";
 import PracticePlannerPage from "./components/PracticePlannerPage";
 import PracticeLivePage from "./components/PracticeLivePage";
 import PracticeRecapPage from "./components/PracticeRecapPage";
+import BottomTabBar from "./components/BottomTabBar";
 
 
 // Constants
@@ -3871,19 +3872,23 @@ useEffect(() => {
         }
       } catch (err) {
         console.error("Fetch match ID failed:", err);
-        clearAllMatchState();
+        // Don't clear match state on network errors - iOS may not be ready yet
+        // Only clear if we got a definitive auth failure
+        if (err?.response?.status === 401 || err?.response?.status === 403) {
+          clearAllMatchState();
+        }
       } finally {
         if (isMounted) setMatchRestored(true);
       }
     };
 
-    const timeoutId = setTimeout(restoreMatchIdFromUser, 100);
+    const timeoutId = setTimeout(restoreMatchIdFromUser, 500);
     
     return () => { 
       clearTimeout(timeoutId);
       isMounted = false; 
     };
-  }, [user?.id, user?.teams, token, clearAllMatchState, setMatchId]);
+  }, [user?.id, JSON.stringify(user?.teams), token, clearAllMatchState, setMatchId]);
 
     useEffect(() => {
     const loadMatch = async () => {
@@ -5004,12 +5009,14 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
      
 
+      {!isNativeApp && (
       <button
         className="ios-menu-toggle"
         onClick={() => setShowMobileMenu((prev) => !prev)}
       >
         Menu
       </button>
+      )}
     </div>
 )}
               </div>
@@ -5601,6 +5608,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
           </Routes>
+        <BottomTabBar isNative={!!(window.Capacitor?.isNativePlatform?.())} isMobile={isMobile} />
         </>
       </DndProvider>
  

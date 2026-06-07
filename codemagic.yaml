@@ -40,6 +40,41 @@ workflows:
           cd $CM_BUILD_DIR
           npx cap copy ios
 
+      - name: Inject app icons and splash screen
+        script: |
+          ICONS_SRC=$CM_BUILD_DIR/ios-assets/AppIcons
+          ICONS_DEST=$CM_BUILD_DIR/ios/App/App/Assets.xcassets/AppIcon.appiconset
+          SPLASH_SRC=$CM_BUILD_DIR/ios-assets/SplashScreen/splash.png
+          SPLASH_DEST_DIR=$CM_BUILD_DIR/ios/App/App/Assets.xcassets/Splash.imageset
+
+          # Copy app icons
+          if [ -d "$ICONS_SRC" ]; then
+            cp -r $ICONS_SRC/. $ICONS_DEST/
+            echo "✅ App icons injected"
+          else
+            echo "⚠️ No ios-assets/AppIcons folder found, skipping"
+          fi
+
+          # Copy splash screen
+          if [ -f "$SPLASH_SRC" ]; then
+            mkdir -p $SPLASH_DEST_DIR
+            cp $SPLASH_SRC $SPLASH_DEST_DIR/splash.png
+            # Create Contents.json for the splash imageset if missing
+            cat > $SPLASH_DEST_DIR/Contents.json << JSON
+          {
+            "images": [
+              { "idiom": "universal", "filename": "splash.png", "scale": "1x" },
+              { "idiom": "universal", "filename": "splash.png", "scale": "2x" },
+              { "idiom": "universal", "filename": "splash.png", "scale": "3x" }
+            ],
+            "info": { "version": 1, "author": "xcode" }
+          }
+          JSON
+            echo "✅ Splash screen injected"
+          else
+            echo "⚠️ No ios-assets/SplashScreen/splash.png found, skipping"
+          fi
+
       - name: Set up keychain and signing
         script: |
           keychain initialize
