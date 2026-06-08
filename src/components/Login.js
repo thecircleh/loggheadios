@@ -74,7 +74,6 @@ const Login = () => {
             alt="Loggerhead Logo"
             className="login-logo"
           />   
-          <meta name="viewport" content="width=device-width, initial-scale=1" />
           <h2 className="login-header">Loggerhead Login</h2>
           
           {/* Success message from password reset */}
