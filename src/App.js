@@ -5171,15 +5171,19 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
               <nav style={{
                 display: "flex",
                 justifyContent: "center",
+                flexWrap: "wrap",
                 backgroundColor: "#333",
                 color: "#fff",
-                padding: "10px",
-                gap: "20px",
-                fontSize: "16px"
+                paddingTop: isNativeApp ? "max(env(safe-area-inset-top), 10px)" : "10px",
+                paddingBottom: "10px",
+                paddingLeft: "10px",
+                paddingRight: "10px",
+                gap: isMobile ? "12px" : "20px",
+                fontSize: isMobile ? "13px" : "16px"
               }}>
                 <Link to="/beta-admin" style={{ color: "#fff", textDecoration: "none" }}>Admin</Link>
                 <Link to="/env" style={{ color: "#fff", textDecoration: "none" }}>Env Check</Link>
-				<Link to="/viewer" style={{ color: "#fff", textDecoration: "none" }}>Viewer</Link>
+                <Link to="/viewer" style={{ color: "#fff", textDecoration: "none" }}>Viewer</Link>
                 <Link to="/admin/blogs" style={{ color: "#fff", textDecoration: "none" }}>Blog Approvals</Link>
               </nav>
             </header>
@@ -5260,7 +5264,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
               <Route path="drill-generator" element={<CoachesCorner />} />
 
               {/* /coaches-corner/stats */}
-              <Route path="stats" element={<CoachStats />} />
+              <Route path="stats" element={<CoachStats isMobile={isMobile} />} />
 
               {/* /coaches-corner/drills */}
               <Route path="drills" element={<SavedDrillsPage />} />

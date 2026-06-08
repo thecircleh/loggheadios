@@ -37,7 +37,7 @@ const slotStyles = {
   name: { fontSize: 14, fontWeight: 700, color: "#334155", lineHeight: "18px", maxWidth: 120, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
 };
 
-const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName }) => {
+const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName, isMobile = false }) => {
   const { user, token } = useAuth();
   const [selectedTeam, setSelectedTeam] = useState(propTeamName || "");
   const [selectedMatchId, setSelectedMatchId] = useState(propMatchId || "all");
@@ -281,39 +281,59 @@ const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName }) => 
   const getPmColor = (val) => val > 0 ? '#059669' : val < 0 ? '#dc2626' : '#4b5563';
 
   return (
-    <div style={{ 
-      padding: '24px', 
-      maxWidth: '1200px', 
-      margin: '0 auto', 
-      fontFamily: 'Inter, sans-serif', 
-      backgroundColor: '#f3f4f6', 
+    <div style={{
+      padding: isMobile ? '12px' : '24px',
+      maxWidth: '1200px',
+      margin: '0 auto',
+      fontFamily: 'Inter, sans-serif',
+      backgroundColor: '#f3f4f6',
       minHeight: '100vh',
       userSelect: 'none',
       WebkitUserSelect: 'none',
       MozUserSelect: 'none',
       msUserSelect: 'none'
     }}>
-      <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
+      {/* Selectors */}
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '10px' : '20px', marginBottom: '16px' }}>
         <div style={{ flex: 1 }}>
-          <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>OUR TEAM</label>
-          <select value={selectedTeam} onChange={e => setSelectedTeam(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e0', fontWeight: '600' }}>
+          <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '6px' }}>OUR TEAM</label>
+          <select value={selectedTeam} onChange={e => setSelectedTeam(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e0', fontWeight: '600' }}>
             {teams.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
         <div style={{ flex: 1 }}>
-          <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>OPPONENT / MATCH</label>
-          <select value={selectedMatchId} onChange={e => setSelectedMatchId(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e0', fontWeight: '600' }}>
+          <label style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '6px' }}>OPPONENT / MATCH</label>
+          <select value={selectedMatchId} onChange={e => setSelectedMatchId(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e0', fontWeight: '600' }}>
             <option value="all">Season Average (all matches)</option>
             {filteredMatches.filter(m => m.opponentName !== "Unknown Opponent").map(m => <option key={m._id} value={m._id}>{m.opponentName}</option>)}
           </select>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '24px' }}>
+      {/* Team Insights strip — portrait only, shown above tabs */}
+      {isMobile && (
+        <div style={{ display: 'flex', overflowX: 'auto', gap: '8px', marginBottom: '16px', paddingBottom: '4px' }}>
+          {[
+            { label: 'W-L', value: stats.insights.winLoss },
+            { label: 'BEST ROT', value: stats.insights.bestRot },
+            { label: 'PTS/SET', value: stats.insights.pointsPerSet },
+            { label: 'ERR/SET', value: stats.insights.errorRate },
+            { label: 'TOP', value: stats.insights.topPlayer },
+          ].map((ins, idx) => (
+            <div key={idx} style={{ flex: '0 0 auto', background: '#1e293b', color: '#fff', borderRadius: '12px', padding: '10px 14px', textAlign: 'center', minWidth: '80px' }}>
+              <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: '800', letterSpacing: 0.5, marginBottom: '4px' }}>{ins.label}</div>
+              <div style={{ fontSize: '14px', fontWeight: '700', color: '#38bdf8', whiteSpace: 'nowrap' }}>{ins.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 320px', gap: '24px' }}>
         <div>
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+          {/* Tab nav */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' }}>
             {['rotation', 'player', 'subs', 'sets'].map(m => (
-              <button key={m} onClick={() => setViewMode(m)} style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', background: viewMode === m ? '#2563eb' : '#fff', color: viewMode === m ? '#fff' : '#475569', fontWeight: 'bold' }}>{m.toUpperCase()}</button>
+              <button key={m} onClick={() => setViewMode(m)} style={{ padding: isMobile ? '8px 14px' : '10px 20px', borderRadius: '8px', border: 'none', cursor: 'pointer', background: viewMode === m ? '#2563eb' : '#fff', color: viewMode === m ? '#fff' : '#475569', fontWeight: 'bold', fontSize: isMobile ? '12px' : '14px' }}>{m.toUpperCase()}</button>
             ))}
           </div>
 
@@ -651,7 +671,8 @@ const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName }) => 
 
                   {/* TABLE: Substitution Impact Details */}
                   <div style={{ background: '#fff', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1)' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <div style={{ overflowX: isMobile ? 'auto' : 'visible' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '560px' : 'unset' }}>
                       <thead style={{ background: '#f8fafc' }}>
                         <tr style={{ textAlign: 'left', fontSize: '12px', color: '#64748b', fontWeight: '700' }}>
                           <th style={{ padding: '15px' }}>SUB IN</th>
@@ -692,6 +713,7 @@ const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName }) => 
                         })()}
                       </tbody>
                     </table>
+                  </div>
                   </div>
                 </div>
               )}
@@ -806,7 +828,8 @@ const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName }) => 
 				  
                       {viewMode === 'player' && (
   <div style={{ background: '#fff', borderRadius: '12px', overflow: 'hidden' }}>
-    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <div style={{ overflowX: isMobile ? 'auto' : 'visible' }}>
+    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '420px' : 'unset' }}>
       <thead style={{ background: '#f8fafc' }}>
         <tr style={{ textAlign: 'left', fontSize: '12px', color: '#64748b' }}>
           <th style={{ padding: '15px' }}>PLAYER</th>
@@ -851,6 +874,7 @@ const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName }) => 
         })}
       </tbody>
     </table>
+    </div>
 	{selectedPlayer && (
   <div style={{ marginTop: '30px', background: '#fff', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -890,21 +914,23 @@ const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName }) => 
           )}
         </div>
 
-        <div style={{ background: '#1e293b', color: '#fff', padding: '25px', borderRadius: '16px', height: 'fit-content', position: 'sticky', top: '24px' }}>
-          <h3 style={{ color: '#38bdf8', marginBottom: '20px' }}>Team Insights</h3>
-          {[
-            { label: 'Set Record', value: stats.insights.winLoss },
-            { label: 'Best Rotation', value: stats.insights.bestRot },
-            { label: 'Pts Earned/Set', value: stats.insights.pointsPerSet },
-            { label: 'Errors/Set', value: stats.insights.errorRate },
-            { label: 'Top Player', value: stats.insights.topPlayer }
-          ].map((insight, idx) => (
-            <div key={idx} style={{ marginBottom: '20px', borderBottom: '1px solid #334155', paddingBottom: '10px' }}>
-              <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>{insight.label}</div>
-              <div style={{ fontSize: '20px', fontWeight: '700' }}>{insight.value}</div>
-            </div>
-          ))}
-        </div>
+        {!isMobile && (
+          <div style={{ background: '#1e293b', color: '#fff', padding: '25px', borderRadius: '16px', height: 'fit-content', position: 'sticky', top: '24px' }}>
+            <h3 style={{ color: '#38bdf8', marginBottom: '20px' }}>Team Insights</h3>
+            {[
+              { label: 'Set Record', value: stats.insights.winLoss },
+              { label: 'Best Rotation', value: stats.insights.bestRot },
+              { label: 'Pts Earned/Set', value: stats.insights.pointsPerSet },
+              { label: 'Errors/Set', value: stats.insights.errorRate },
+              { label: 'Top Player', value: stats.insights.topPlayer }
+            ].map((insight, idx) => (
+              <div key={idx} style={{ marginBottom: '20px', borderBottom: '1px solid #334155', paddingBottom: '10px' }}>
+                <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>{insight.label}</div>
+                <div style={{ fontSize: '20px', fontWeight: '700' }}>{insight.value}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
