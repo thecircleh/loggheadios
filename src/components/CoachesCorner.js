@@ -853,6 +853,7 @@ const generate = async () => {
               >
                 <option value="chatgpt">ChatGPT</option>
                 <option value="kimi">KIMI</option>
+                <option value="claude">Claude</option>
               </select>
             </div>
           ) : null}
