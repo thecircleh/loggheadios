@@ -1675,11 +1675,11 @@ const handleAnalyzeMatchLog = async () => {
         eventName: match.eventName,
         location: match.location,
         setScores: match.setScores,
-		winnner: winner,
+        winnner: winner,
         date: match.timestamp
       },
-	  tone
-    });
+      tone
+    }, { headers: { Authorization: `Bearer ${token}` } });
  
     const result = aiRes.data?.parsed;
     if (result) {
@@ -1688,7 +1688,7 @@ const handleAnalyzeMatchLog = async () => {
       alert("AI responded but no content was returned.");
     }
   } catch (err) {
-    console.error("❌ Failed to analyze match:", err.message);
+    console.error("❌ Failed to analyze match:", err.response?.data || err.message);
     alert("Failed to analyze match log. Make sure your subscription is active and you have selected a match.");
   } finally {
     setIsAnalyzing(false); // End loading indicator
