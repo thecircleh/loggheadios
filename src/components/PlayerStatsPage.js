@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from './AuthContext';
 import { jsPDF } from 'jspdf';
@@ -66,7 +66,13 @@ const PlayerStatsPage = ({ currentMatchId: propMatchId, teamName: propTeamName, 
   const [teams, setTeams] = useState([]);
  
   const [matches, setMatches] = useState([]);
- 
+
+  const selectedMatchHasActionLog = useMemo(() => {
+    if (!selectedMatchId || selectedMatchId === "all") return false;
+    const m = matches.find(match => match._id === selectedMatchId);
+    return Array.isArray(m?.actionLog) && m.actionLog.length > 0;
+  }, [selectedMatchId, matches]);
+
   const [players, setPlayers] = useState([]);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState([]);
   const [selectedPosition, setSelectedPosition] = useState("All");
@@ -3762,7 +3768,7 @@ const handleSaveInsights = async () => {
       <AdCourtBottom />
   )}		
 		
- {!aiInsights && !isAnalyzing && (
+ {!aiInsights && !isAnalyzing && selectedMatchHasActionLog && (
           <><label htmlFor="tone-select" style={{ fontWeight: 800 }}>AI INSIGHTS GENERATION - </label> 
 		  
             <label htmlFor="tone-select" style={{ fontWeight: 600 }}>Tone:</label>
