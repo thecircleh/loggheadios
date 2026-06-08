@@ -5231,7 +5231,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
             <Route path="/contact" element={<Contact />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsOfService />} />
-            <Route path="/beta-admin" element={<PrivateRoute requiredRole="admin"><BetaAdminPage /></PrivateRoute>} />
+            <Route path="/beta-admin" element={<PrivateRoute requiredRole="admin"><BetaAdminPage isMobile={isMobile} isNative={isNativeApp} /></PrivateRoute>} />
             <Route path="/blogs" element={<BlogList />} />
             <Route path="/blogs/:id" element={<BlogPostPage />} />
             <Route path="/blogs/submit" element={<PrivateRoute><SubmitBlog /></PrivateRoute>} />

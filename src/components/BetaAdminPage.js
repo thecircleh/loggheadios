@@ -95,7 +95,7 @@ const escapeHtml = (s = "") =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-const BetaAdminPage = () => {
+const BetaAdminPage = ({ isMobile = false, isNative = false }) => {
   const { token, user } = useAuth();
 
   const [users, setUsers] = useState([]);
@@ -155,6 +155,19 @@ const BetaAdminPage = () => {
     searchEmail: "",
     volleyballRole: "all",
   });
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  // Reset to page 1 whenever filters or sort change
+  const prevFiltersRef = React.useRef(filters);
+  useEffect(() => {
+    if (prevFiltersRef.current !== filters) {
+      setCurrentPage(1);
+      prevFiltersRef.current = filters;
+    }
+  }, [filters]);
 
   // Data loading states
   const [loadingPlayers, setLoadingPlayers] = useState(false);
@@ -745,7 +758,13 @@ const handleSendEmails = async () => {
   };
 
   return (
-    <div style={{ padding: 20, maxWidth: 1400, margin: "0 auto" }}>
+    <div style={{
+      padding: isMobile ? 12 : 20,
+      paddingTop: isNative ? "max(env(safe-area-inset-top), 12px)" : (isMobile ? 12 : 20),
+      paddingBottom: isNative ? "max(env(safe-area-inset-bottom), 20px)" : 20,
+      maxWidth: 1400,
+      margin: "0 auto",
+    }}>
       <div
         style={{
           display: "flex",
@@ -757,7 +776,7 @@ const handleSendEmails = async () => {
         }}
       >
         <div>
-          <h1 style={{ margin: 0 }}>Beta Admin Dashboard</h1>
+          <h1 style={{ margin: 0, fontSize: isMobile ? 20 : 28 }}>User Admin</h1>
           <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
             {formatLastRefresh()}
           </div>
@@ -1532,8 +1551,116 @@ const handleSendEmails = async () => {
         </div>
       )}
 
-      {/* User Table */}
-      <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 30 }}>
+      {/* Pagination controls — top */}
+      {(() => {
+        const total = sortedUsers.length;
+        const totalPages = pageSize === "all" ? 1 : Math.ceil(total / pageSize);
+        const pagedUsers = pageSize === "all" ? sortedUsers : sortedUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+        const pageSizes = [25, 50, 100, "all"];
+        return (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+              <span style={{ fontSize: 13, color: "#555" }}>
+                {pageSize === "all"
+                  ? `Showing all ${total} users`
+                  : `Page ${currentPage} of ${totalPages} (${total} total)`}
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+                <label style={{ fontSize: 12, color: "#555" }}>Per page:</label>
+                <select
+                  value={pageSize}
+                  onChange={e => { setPageSize(e.target.value === "all" ? "all" : Number(e.target.value)); setCurrentPage(1); }}
+                  style={{ padding: "4px 8px", borderRadius: 4, border: "1px solid #ccc", fontSize: 13 }}
+                >
+                  {pageSizes.map(s => <option key={s} value={s}>{s === "all" ? "View All" : s}</option>)}
+                </select>
+                {pageSize !== "all" && (
+                  <>
+                    <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ padding: "4px 10px", borderRadius: 4, border: "1px solid #ccc", cursor: currentPage === 1 ? "not-allowed" : "pointer", background: "#fff" }}>‹</button>
+                    <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={{ padding: "4px 10px", borderRadius: 4, border: "1px solid #ccc", cursor: currentPage === totalPages ? "not-allowed" : "pointer", background: "#fff" }}>›</button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* User Table */}
+            <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginBottom: 10 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 800 }}>
+              <thead>
+                <tr style={{ backgroundColor: "#f5f5f5" }}>
+                  <th style={{ border: "1px solid #ccc", padding: 8, width: 44 }}>
+                    <input type="checkbox" checked={selectedUsers.size === sortedUsers.length && sortedUsers.length > 0} onChange={handleSelectAll} />
+                  </th>
+                  <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("isOnline")}>Status</th>
+                  <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("subscriptionStatus")}>Plan</th>
+                  <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("email")}>Email</th>
+                  <th style={{ border: "1px solid #ccc", padding: 8 }}>Role</th>
+                  <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("consentToEmails")} title="Email consent">📧</th>
+                  <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("lastSeen")}>Last Seen {sortKey === "lastSeen" && (sortDirection === "desc" ? "↓" : "↑")}</th>
+                  <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("subscription.current_period_end")}>Sub End</th>
+                  <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("createdAt")}>Registered</th>
+                  <th style={{ border: "1px solid #ccc", padding: 8 }}>Teams</th>
+                  <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("matchesCount")}>Matches</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedUsers.map((u) => {
+                  const roleKey = normalizeRole(u.volleyballRole);
+                  const rm = roleMeta[roleKey] || roleMeta.other;
+                  return (
+                    <tr key={u._id} style={{ backgroundColor: selectedUsers.has(u._id) ? "#e3f2fd" : u.isOnline ? "#f0fff4" : rm.rowBg }}>
+                      <td style={{ border: "1px solid #ccc", padding: 8, textAlign: "center" }}><input type="checkbox" checked={selectedUsers.has(u._id)} onChange={() => handleSelectUser(u._id)} /></td>
+                      <td style={{ border: "1px solid #ccc", padding: 8, textAlign: "center" }}>{getOnlineStatus(u)}</td>
+                      <td style={{ border: "1px solid #ccc", padding: 8, textAlign: "center" }}>{getSubscriptionIcon(u)}</td>
+                      <td style={{ border: "1px solid #ccc", padding: 8 }}>{u.email}</td>
+                      <td style={{ border: "1px solid #ccc", padding: 8 }}>
+                        <span title={`volleyballRole: ${u.volleyballRole || "other"}`} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 10px", borderRadius: 999, background: "#fff", border: "1px solid rgba(0,0,0,0.08)", fontSize: 12, fontWeight: 800, color: "#111" }}>
+                          <span style={{ width: 8, height: 8, borderRadius: 99, background: rm.dot }} />
+                          {rm.label}
+                        </span>
+                      </td>
+                      <td style={{ border: "1px solid #ccc", padding: 8, textAlign: "center", backgroundColor: u.consentToEmails ? "#e8f5e9" : "#ffebee" }}>
+                        <span title={u.consentToEmails ? "Opted in" : "Not opted in"}>{u.consentToEmails ? "✅" : "❌"}</span>
+                      </td>
+                      <td style={{ border: "1px solid #ccc", padding: 8 }}>{formatLastSeen(u.lastSeen)}</td>
+                      <td style={{ border: "1px solid #ccc", padding: 8 }}>{getSubscriptionEndDate(u)}</td>
+                      <td style={{ border: "1px solid #ccc", padding: 8 }}>{u.createdAt ? dayjs(u.createdAt).format("YYYY-MM-DD") : "-"}</td>
+                      <td style={{ border: "1px solid #ccc", padding: 8 }}>
+                        {(() => {
+                          const arr = normalizeTeams(u.teams);
+                          if (arr.length === 0) return "-";
+                          return (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                              <div style={{ fontWeight: 800, fontSize: 12, color: "#111" }}>{arr.length} team{arr.length > 1 ? "s" : ""}</div>
+                              {arr.slice(0, 6).map((t, idx) => <div key={idx} style={{ fontSize: 12, color: "#333" }}>{t}</div>)}
+                              {arr.length > 6 && <div style={{ fontSize: 12, color: "#666" }}>+ {arr.length - 6} more…</div>}
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      <td style={{ border: "1px solid #ccc", padding: 8, textAlign: "center" }}>{u.matchesCount || 0}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            </div>
+
+            {/* Pagination controls — bottom */}
+            {pageSize !== "all" && totalPages > 1 && (
+              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, marginBottom: 30, flexWrap: "wrap" }}>
+                <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} style={{ padding: "4px 10px", borderRadius: 4, border: "1px solid #ccc", cursor: currentPage === 1 ? "not-allowed" : "pointer", background: "#fff" }}>«</button>
+                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ padding: "4px 10px", borderRadius: 4, border: "1px solid #ccc", cursor: currentPage === 1 ? "not-allowed" : "pointer", background: "#fff" }}>‹</button>
+                <span style={{ fontSize: 13, color: "#555", padding: "4px 8px" }}>{currentPage} / {totalPages}</span>
+                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={{ padding: "4px 10px", borderRadius: 4, border: "1px solid #ccc", cursor: currentPage === totalPages ? "not-allowed" : "pointer", background: "#fff" }}>›</button>
+                <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} style={{ padding: "4px 10px", borderRadius: 4, border: "1px solid #ccc", cursor: currentPage === totalPages ? "not-allowed" : "pointer", background: "#fff" }}>»</button>
+              </div>
+            )}
+          </>
+        );
+      })()}
+
+      {false && <table style={{ display: "none" }}>
         <thead>
           <tr style={{ backgroundColor: "#f5f5f5" }}>
             <th style={{ border: "1px solid #ccc", padding: 8, width: 44 }}>
@@ -1710,7 +1837,7 @@ const handleSendEmails = async () => {
             );
           })}
         </tbody>
-      </table>
+      </table>}
 
       {/* Charts */}
       <h3>Registrations by Date</h3>
