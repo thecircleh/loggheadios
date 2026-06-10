@@ -664,7 +664,7 @@ const handleVoiceButtonClick = () => {
         flexDirection: "column",
         alignItems: "center",
         gap: "8px",
-        zIndex: 400
+        zIndex: 10000
       }}
     >
       {/* Voice Command Display */}
@@ -896,7 +896,7 @@ const AdvancedLoggingToggle = () => (
        position: (isMobile && isPortrait) ? "static" : "absolute",
       top: (isMobile && isPortrait) ? undefined : (isPortrait ? "5%" : (isMobile ? "75%" : "92%")),
       right: (isMobile && isPortrait) ? undefined : (isMobile ? "1%" : "1.1%"),
-      width: (isMobile && isPortrait) ? "100%" : (isMobile ? "180px" : "220px"),
+      width: (isMobile && isPortrait) ? "220px" : (isMobile ? "180px" : "220px"),
       height: isMobile ? "44px" : "40px",
       boxSizing: "border-box",
       borderRadius: "12px",
@@ -5767,7 +5767,7 @@ function renderCourtArea() {
     </button>
   )}
             </div>
- <AdvancedLoggingToggle /> 
+ {!(isMobile && isPortrait) && <AdvancedLoggingToggle />}
 </div>
           </div>
         )}
@@ -5969,10 +5969,11 @@ return (
         </div>
       )}
 
-      {/* Portrait-only: voice (order 3) */}
+      {/* Portrait-only: voice + advanced logging toggle (order 3) */}
       {(isMobile && isPortrait) && (
-        <div style={{ order: 3, width: "100%", display: "flex", justifyContent: "center", padding: "4px 0" }}>
+        <div style={{ order: 3, width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", padding: "4px 0" }}>
           <VoiceInterface />
+          <AdvancedLoggingToggle />
         </div>
       )}
 
