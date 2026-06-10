@@ -263,12 +263,12 @@ const [localVideoUrl, setLocalVideoUrl] = useState("");
 const videoElementRef = useRef(null);
 
 const toggleVideoBackground = useCallback(() => {
-  if (isMobile) return;
+  if (isMobile || process.env.NODE_ENV !== 'development') return;
   setShowVideoBackground(!showVideoBackground);
 }, [showVideoBackground, isMobile]);
 
 const toggleAITracking = useCallback(() => {
-  if (isMobile) return;
+  if (isMobile || process.env.NODE_ENV !== 'development') return;
   if (!localVideoUrl) {
     alert("AI Tracking requires a local video file. Please upload a .mp4 file.");
     return;
@@ -5758,8 +5758,8 @@ function renderCourtArea() {
 
 return (
   <>
-    {/* ===== VIDEO CONTROLS ===== */}
-    {!isMobile && (
+    {/* ===== VIDEO CONTROLS (dev only) ===== */}
+    {!isMobile && process.env.NODE_ENV === 'development' && (
       <div style={{
         position: "fixed",
         top: "20px",
