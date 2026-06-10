@@ -283,11 +283,15 @@ const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName, isMob
   return (
     <div style={{
       padding: isMobile ? '12px' : '24px',
+      paddingBottom: isMobile ? '90px' : '24px',
       maxWidth: '1200px',
+      width: '100%',
+      boxSizing: 'border-box',
       margin: '0 auto',
       fontFamily: 'Inter, sans-serif',
       backgroundColor: '#f3f4f6',
       minHeight: '100vh',
+      overflowX: 'hidden',
       userSelect: 'none',
       WebkitUserSelect: 'none',
       MozUserSelect: 'none',
@@ -671,8 +675,8 @@ const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName, isMob
 
                   {/* TABLE: Substitution Impact Details */}
                   <div style={{ background: '#fff', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1)' }}>
-                  <div style={{ overflowX: isMobile ? 'auto' : 'visible' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '560px' : 'unset' }}>
+                  <div style={{ overflowX: 'auto', width: '100%' }}>
+                    <table style={{ borderCollapse: 'collapse', minWidth: isMobile ? '520px' : '100%' }}>
                       <thead style={{ background: '#f8fafc' }}>
                         <tr style={{ textAlign: 'left', fontSize: '12px', color: '#64748b', fontWeight: '700' }}>
                           <th style={{ padding: '15px' }}>SUB IN</th>
@@ -828,15 +832,15 @@ const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName, isMob
 				  
                       {viewMode === 'player' && (
   <div style={{ background: '#fff', borderRadius: '12px', overflow: 'hidden' }}>
-    <div style={{ overflowX: isMobile ? 'auto' : 'visible' }}>
-    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? '420px' : 'unset' }}>
+    <div style={{ overflowX: 'auto', width: '100%' }}>
+    <table style={{ borderCollapse: 'collapse', minWidth: isMobile ? '360px' : '100%' }}>
       <thead style={{ background: '#f8fafc' }}>
         <tr style={{ textAlign: 'left', fontSize: '12px', color: '#64748b' }}>
-          <th style={{ padding: '15px' }}>PLAYER</th>
-          <th>SETS</th>
-          <th>ROTATIONS</th>
-          <th>AVG +/- (PER ROT)</th>
-          <th>TOTAL +/-</th>
+          <th style={{ padding: isMobile ? '10px' : '15px' }}>PLAYER</th>
+          <th style={{ padding: isMobile ? '10px 8px' : '15px' }}>SETS</th>
+          <th style={{ padding: isMobile ? '10px 8px' : '15px' }}>{isMobile ? 'ROTS' : 'ROTATIONS'}</th>
+          <th style={{ padding: isMobile ? '10px 8px' : '15px' }}>{isMobile ? 'AVG +/-' : 'AVG +/- (PER ROT)'}</th>
+          <th style={{ padding: isMobile ? '10px 8px' : '15px' }}>TOTAL +/-</th>
         </tr>
       </thead>
       <tbody>
@@ -860,13 +864,13 @@ const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName, isMob
                 if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
               }}
             >
-              <td style={{ padding: '15px', fontWeight: '700' }}>#{p.num} {p.name}</td>
-              <td>{p.sets}</td>
-              <td>{p.rotationsPlayed}</td>
-              <td style={{ fontWeight: 'bold' }}>
+              <td style={{ padding: isMobile ? '10px' : '15px', fontWeight: '700' }}>#{p.num} {p.name}</td>
+              <td style={{ padding: isMobile ? '10px 8px' : '15px' }}>{p.sets}</td>
+              <td style={{ padding: isMobile ? '10px 8px' : '15px' }}>{p.rotationsPlayed}</td>
+              <td style={{ padding: isMobile ? '10px 8px' : '15px', fontWeight: 'bold' }}>
                 {(p.total / (p.rotationsPlayed || 1)).toFixed(2)}
               </td>
-              <td style={{ fontWeight: '900', color: getPmColor(p.total) }}>
+              <td style={{ padding: isMobile ? '10px 8px' : '15px', fontWeight: '900', color: getPmColor(p.total) }}>
                 {p.total > 0 ? `+${p.total}` : p.total}
               </td>
             </tr>

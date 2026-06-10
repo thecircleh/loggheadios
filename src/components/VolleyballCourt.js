@@ -681,13 +681,13 @@ const handleVoiceButtonClick = () => {
 <button
   onClick={() => setVoiceEnabled(prev => !prev)}
   style={{
-    width: (isMobile && isPortrait) ? "100px" : "60px",
+    width: "60px",
     height: "60px",
     borderRadius: "50%",
     backgroundColor: voiceStatus.color,
     border: "none",
     color: "#fff",
-    fontSize: (isMobile && isPortrait) ? "30px" : "24px",
+    fontSize: "24px",
     fontWeight: "bold",
     cursor: "pointer",
     boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
@@ -721,7 +721,7 @@ const handleVoiceButtonClick = () => {
             color: "#fff",
             padding: "6px 10px",
             borderRadius: "12px",
-            fontSize:(isMobile && isPortrait) ? "16px" : "10px",
+            fontSize: "10px",
             maxWidth: "100px",
             textAlign: "center",
             lineHeight: "1.2",
@@ -1543,6 +1543,8 @@ const mainContainerStyle = useMemo(() => ({
   gap: (isMobile && isPortrait) ? "8px" : (isMobile ? "10px" : "15px"),
   minHeight: (isMobile && isPortrait) ? "auto" : "450px",
   position: "relative",
+  overflowX: "hidden",
+  boxSizing: "border-box",
   backgroundColor: "#f5f5f5" // Always solid - transparency handled at court area level
 }), [isMobile, isPortrait]);
 
@@ -1579,10 +1581,11 @@ const mobileNoHeader = isMobile && !showHeader;
     boxShadow: "inset 0 1px 3px rgba(0,0,0,0.05)",
     padding: "5px",
     overflow: "hidden",
+    overflowX: "hidden",
     display: "flex",
     flexDirection: "column",
     minHeight: (isMobile && isPortrait) ? "auto" : "300px",
-    maxHeight: (isMobile && isPortrait) ? "200px" : "300px",
+    maxHeight: (isMobile && isPortrait) ? "120px" : "300px",
 	noSelect,
   };
 
@@ -1598,20 +1601,20 @@ const mobileNoHeader = isMobile && !showHeader;
 
 const benchGridStyle = {
   display: "grid",
-  gridTemplateColumns: (isMobile && isPortrait) 
-    ? "repeat(8, 1fr)" 
+  gridTemplateColumns: (isMobile && isPortrait)
+    ? "repeat(auto-fill, minmax(50px, 1fr))"
     : (isMobile ? "repeat(3, 1fr)" : "repeat(4, 1fr)"),
-  gap: (isMobile && isPortrait) ? "2px" : "2px",
+  gap: "2px",
   flexGrow: 1,
   overflowX: "auto",
-  overflowY: (isMobile && isPortrait) ? "auto" : (isMobile ? "auto" : "auto"),
+  overflowY: "auto",
   maxHeight: (isMobile && isPortrait) ? "auto" : "300",
 };
 
   const benchCardStyle = (player) => ({
-	width: (isMobile && isPortrait) ? "90px" : (isMobile ? "55px" : "40px"),
-	height: (isMobile && isPortrait) ? "70px" : (isMobile ? "50px" : "40px"),
-	fontSize: (isMobile && isPortrait) ? "1.5rem" : (isMobile ? "1.2rem" : "0.9rem"),
+	width: (isMobile && isPortrait) ? "50px" : (isMobile ? "55px" : "40px"),
+	height: (isMobile && isPortrait) ? "46px" : (isMobile ? "50px" : "40px"),
+	fontSize: (isMobile && isPortrait) ? "1.0rem" : (isMobile ? "1.2rem" : "0.9rem"),
     border: "1px solid rgba(0,0,0,0.15)",
     backgroundColor: player?.isLibero ? "#FFDADA" : "#FFFFFF",
     display: "grid",
@@ -1665,7 +1668,7 @@ const getNetLabelStyle = () => ({
   };
 
 const slotStyle = (index, player, flash) => {
-  const size = (isMobile && isPortrait) ? 195 : (isMobile && deviceInfo.isLandscape ? 80 : (isMobile ? 90 : 100));
+  const size = (isMobile && isPortrait) ? 85 : (isMobile && deviceInfo.isLandscape ? 80 : (isMobile ? 90 : 100));
   
   // Determine background color based on video state
   let bgColor;
@@ -1720,7 +1723,7 @@ const slotStyle = (index, player, flash) => {
 
 
   const slotNameStyle = {
-    fontSize: (isPortrait) ? "1.4rem" : "0.9rem",
+    fontSize: (isMobile && isPortrait) ? "0.7rem" : (isPortrait ? "1.4rem" : "0.9rem"),
     color: (showVideoBackground && !isMobile && (youtubeUrl || localVideoUrl)) ? "#FFF" : "#333",
     textShadow: (showVideoBackground && !isMobile && (youtubeUrl || localVideoUrl)) 
       ? "0 2px 4px rgba(0,0,0,0.8), 0 1px 2px rgba(0,0,0,0.6)" 
@@ -1729,7 +1732,7 @@ const slotStyle = (index, player, flash) => {
   };
 
   const slotNumberStyle = {
-    fontSize: (isPortrait) ? "2.5rem" : "0.75rem",
+    fontSize: (isMobile && isPortrait) ? "1.3rem" : (isPortrait ? "2.5rem" : "0.75rem"),
     color: (showVideoBackground && !isMobile && (youtubeUrl || localVideoUrl)) ? "#FFF" : "#666",
     textShadow: (showVideoBackground && !isMobile && (youtubeUrl || localVideoUrl)) 
       ? "0 2px 4px rgba(0,0,0,0.8), 0 1px 2px rgba(0,0,0,0.6)" 
@@ -1750,7 +1753,7 @@ const slotStyle = (index, player, flash) => {
     top: "5px",
     left: "5px",
     padding: "3px 6px",
-    fontSize: isPortrait && isMobile ? "1.5rem" : "0.65rem",
+    fontSize: "0.65rem",
     fontWeight: "bold",
     color: "#fff",
     borderRadius: "6px", // Rounded iOS-style badge
@@ -1799,7 +1802,7 @@ const logsPanelStyle = {
     listStyle: "none",
     padding: 0,
     margin: 0,
-    fontSize: (isMobile && isPortrait) ? "2.0rem" : "0.8rem",
+    fontSize: "0.8rem",
   };
 
   const logItemStyle = {
@@ -5917,7 +5920,10 @@ return (
     <div style={{
       position: "relative",
       zIndex: 2,
-      width: "100%"
+      width: "100%",
+      overflowX: "hidden",
+      boxSizing: "border-box",
+      paddingBottom: isMobile ? "90px" : 0,
     }}>
       <div style={mainContainerStyle}>
       {renderScoreboardAboveBench()}
