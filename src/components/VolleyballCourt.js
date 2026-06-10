@@ -627,11 +627,21 @@ const getContextualHints = () => {
 const VoiceInterface = () => {
 const hasVoiceAccess = hasPremium || user?.role === 'admin';
   
+  const MicIcon = ({ strikethrough = false }) => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="1" width="6" height="13" rx="3" fill="rgba(255,255,255,0.25)" stroke="#fff" />
+      <path d="M5 10v2a7 7 0 0 0 14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="23" />
+      <line x1="8" y1="23" x2="16" y2="23" />
+      {strikethrough && <line x1="3" y1="3" x2="21" y2="21" stroke="#fff" strokeWidth="2.2" />}
+    </svg>
+  );
+
   const getVoiceStatus = () => {
-    if (!hasVoiceAccess) return { text: "Voice Logging", color: "red", icon: "🎙" };
-    if (!voiceEnabled) return { text: "Off", color: "#8E8E93", icon: "🎙️" };
-    if (isListening) return { text: "Listening", color: "#34C759", icon: "🔴" };
-    return { text: "Ready", color: "#007AFF", icon: "🎙️" };
+    if (!hasVoiceAccess) return { text: "Voice Logging", color: "#FF3B30", icon: <MicIcon strikethrough /> };
+    if (!voiceEnabled) return { text: "Off", color: "#8E8E93", icon: <MicIcon /> };
+    if (isListening) return { text: "Listening", color: "#34C759", icon: <MicIcon /> };
+    return { text: "Ready", color: "#007AFF", icon: <MicIcon /> };
   };
     const voiceStatus = getVoiceStatus();
 
@@ -1530,7 +1540,8 @@ const shouldShowUndoButton = (actionLog) => {
     flexDirection: (isMobile && isPortrait) ? "row" : "column",
     width: (isMobile && isPortrait) ? "100%" : "185px",
     gap: (isMobile && isPortrait) ? "8px" : "10px",
-    order: (isMobile && isPortrait) ? 2 : 0,
+    order: (isMobile && isPortrait) ? 5 : 0,
+    alignItems: (isMobile && isPortrait) ? "flex-start" : undefined,
   };
 
 const mainContainerStyle = useMemo(() => ({
@@ -1782,7 +1793,7 @@ const logsPanelStyle = {
   flexDirection: (isMobile && isPortrait) ? "column" : "column",
   gap: (isMobile && isPortrait) ? "6px" : "10px",
   ...noSelect,
-  order: (isMobile && isPortrait) ? 3 : (isMobile ? 3 : 0),
+  order: (isMobile && isPortrait) ? 6 : (isMobile ? 3 : 0),
 };
 
   const logCardStyle = {
@@ -2497,6 +2508,13 @@ const StatBox = ({ label, value, color = "#111" }) => (
 );
 
 
+
+const CompactStatBox = ({ label, value, color = "#111" }) => (
+  <div style={{ border: `2px solid ${color}`, borderRadius: "12px", padding: "5px 8px", flex: "1 1 0", minWidth: "0", textAlign: "center", fontFamily: "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif", color: "#111" }}>
+    <div style={{ fontSize: "0.6rem", fontWeight: "500", opacity: 0.85, lineHeight: 1.2 }}>{label}</div>
+    <div style={{ fontSize: "1.1rem", fontWeight: "700" }}>{value}</div>
+  </div>
+);
 
 const ActionZone = ({ label, zoneAction, ballSide, color }) => {
   // Logic to determine default colors if no specific color is passed
@@ -5389,7 +5407,63 @@ const logContentStyle = {
 
 
 
+function renderBench() {
+  return (
+    <div style={benchPanelStyle}>
+      <h3 style={benchTitleStyle}>Bench</h3>
+      <div style={benchGridStyle}>
+        {benchPlayers &&
+          benchPlayers
+            .filter((player) => !player.isOnCourt)
+            .map((player, i) => (
+              <DraggableBenchCard
+                key={`bench-${player._id || i}`}
+                player={player}
+                benchCardStyle={benchCardStyle}
+                canSub={ballState === "serve" && !playersOnCourtIds.has(player._id)}
+                slot5TargetId={slot5TargetId}
+                allowedLiberoSubTarget={allowedLiberoSubTarget}
+                currentServeSide={currentServeSide}
+                setShowServeZoneOverlay={setShowServeZoneOverlay}
+                setShowFillCourtOverlay={setShowFillCourtOverlay}
+              />
+            ))}
+      </div>
+    </div>
+  );
+}
+
 function renderScoreboardAboveBench() {
+  if (isMobile && isPortrait) {
+    return (
+      <div style={leftColumnStyle}>
+        {/* Scoreboard + compact 2x2 team stats side by side */}
+        <div style={{ display: "flex", flexDirection: "row", alignItems: "flex-start", gap: "8px", width: "100%", boxSizing: "border-box" }}>
+          <div style={{ flex: "0 0 auto" }}>
+            <Scoreboard
+              match={match}
+              ourScore={ourScore}
+              opponentScore={opponentScore}
+              onAddPoint={onAddPoint}
+              onRemovePoint={onRemovePoint}
+              ourSets={ourSets}
+              opponentSets={opponentSets}
+              totalSets={match?.totalSets || 3}
+            />
+          </div>
+          {!enableAITracking && hasPremium && (
+            <div style={{ flex: "1 1 0", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px", alignContent: "center" }}>
+              <CompactStatBox label="Us Earned" value={teamStats.ourEarned} color="#53d769" />
+              <CompactStatBox label="Us Unearned" value={teamStats.oppError} color="#53d769" />
+              <CompactStatBox label="Them Earned" value={teamStats.oppEarned} color="#fc3158" />
+              <CompactStatBox label="Them Unearned" value={teamStats.ourError} color="#fc3158" />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={leftColumnStyle}>
       {/* Scoreboard */}
@@ -5405,35 +5479,9 @@ function renderScoreboardAboveBench() {
           totalSets={match?.totalSets || 3}
         />
       </div>
-      
+
       {/* Bench Panel */}
-      <div style={benchPanelStyle}>
-        <h3 style={benchTitleStyle}>Bench</h3>
-        <div style={benchGridStyle}>
-          {benchPlayers &&
-            benchPlayers
-              .filter((player) => !player.isOnCourt)
-              .map((player, i) => (
-                <DraggableBenchCard
-                  key={`bench-${player._id || i}`}
-                  player={player}
-                  benchCardStyle={benchCardStyle}
-                  canSub={
-                    ballState === "serve" &&
-                    !playersOnCourtIds.has(player._id)
-                  }
-                  slot5TargetId={slot5TargetId}
-                  allowedLiberoSubTarget={allowedLiberoSubTarget}
-				  currentServeSide={currentServeSide}
-				setShowServeZoneOverlay={setShowServeZoneOverlay}
-				setShowFillCourtOverlay={setShowFillCourtOverlay}
-				
-/>
-				  
-               
-              ))}
-        </div>
-      </div>
+      {renderBench()}
     </div>
   );
 }
@@ -5609,57 +5657,30 @@ function renderCourtArea() {
         />
       )}
 
-      <div style={{
-        display: "flex",
-        gap: "8px",
-        justifyContent: "center",
-        marginTop: "5px",
-        position: "relative",
-        zIndex: 1
-      }}>
-        {!enableAITracking && renderActionZones()}
-      </div>
-      
-<div
-  style={{
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: (isMobile && isPortrait) ? '6px' : '12px',
-    marginTop: (isMobile && isPortrait) ? '8px' : '12px',
-    paddingBottom: (isMobile && isPortrait) ? '6px' : '8px',
-    flexWrap: 'wrap',
-    width: '100%',
-  }}
->
-  {!enableAITracking && hasPremium ? (
-    <>
-      <StatBox label="Us: Earned" value={teamStats.ourEarned} color="#53d769" />
-      <StatBox label="Unearned" value={teamStats.oppError} color="#53d769" />
-      <StatBox label="Them: Earned" value={teamStats.oppEarned} color="#fc3158" />
-      <StatBox label="Unearned" value={teamStats.ourError} color="#fc3158" />
-    </>
-  ) : (
-    <div
-      style={{
-        width: (isMobile && isPortrait) ? "280px" : "300px",
-        maxHeight: (isMobile && isPortrait) ? "90px" : "100px",
-        minHeight: (isMobile && isPortrait) ? "70px" : "80px",
-        borderRadius: "16px",
-        overflow: "hidden",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-      }}
-    >
-      <AdCourtBottom />
-    </div>
-  )}
-  
-  <VoiceInterface />
-  
- 
-</div>
+      {/* Action zones + stat boxes — hidden in portrait (rendered as separate flow sections) */}
+      {!(isMobile && isPortrait) && (
+        <>
+          <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginTop: "5px", position: "relative", zIndex: 1 }}>
+            {!enableAITracking && renderActionZones()}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', marginTop: '12px', paddingBottom: '8px', flexWrap: 'wrap', width: '100%' }}>
+            {!enableAITracking && hasPremium ? (
+              <>
+                <StatBox label="Us: Earned" value={teamStats.ourEarned} color="#53d769" />
+                <StatBox label="Unearned" value={teamStats.oppError} color="#53d769" />
+                <StatBox label="Them: Earned" value={teamStats.oppEarned} color="#fc3158" />
+                <StatBox label="Unearned" value={teamStats.ourError} color="#fc3158" />
+              </>
+            ) : (
+              <div style={{ width: "300px", maxHeight: "100px", minHeight: "80px", borderRadius: "16px", overflow: "hidden", display: "flex", justifyContent: "center", alignItems: "center" }}>
+                <AdCourtBottom />
+              </div>
+            )}
+            <VoiceInterface />
+          </div>
+        </>
+      )}
+
 
 
 
@@ -5933,11 +5954,33 @@ return (
       <div style={mainContainerStyle}>
       {renderScoreboardAboveBench()}
       {renderCourtArea()}
+
+      {/* Portrait-only: action zones (order 1) */}
+      {(isMobile && isPortrait) && (
+        <div style={{ order: 1, width: "100%", display: "flex", gap: "8px", justifyContent: "center", padding: "4px 0" }}>
+          {!enableAITracking && renderActionZones()}
+        </div>
+      )}
+
+      {/* Portrait-only: bench (order 2) */}
+      {(isMobile && isPortrait) && (
+        <div style={{ order: 2, width: "100%" }}>
+          {renderBench()}
+        </div>
+      )}
+
+      {/* Portrait-only: voice (order 3) */}
+      {(isMobile && isPortrait) && (
+        <div style={{ order: 3, width: "100%", display: "flex", justifyContent: "center", padding: "4px 0" }}>
+          <VoiceInterface />
+        </div>
+      )}
+
       {renderLogsPanel()}
 
       {ballState === "serve" && !enableAITracking && (
         (isMobile && isPortrait) ? (
-          <div style={{ order: 0, width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", padding: "4px 0" }}>
+          <div style={{ order: 4, width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", padding: "4px 0" }}>
             <button
               onClick={() => setShowPortraitServeControls(p => !p)}
               style={{
