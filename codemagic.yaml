@@ -41,6 +41,13 @@ workflows:
           cd $CM_BUILD_DIR
           npx cap copy ios
 
+      - name: Add iOS permissions to Info.plist
+        script: |
+          PLIST=$CM_BUILD_DIR/ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'Loggerhead uses your microphone for voice-activated stat logging'" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :NSSpeechRecognitionUsageDescription string 'Loggerhead uses speech recognition to log volleyball stats hands-free'" "$PLIST" 2>/dev/null || true
+          echo "✅ iOS permissions added to Info.plist"
+
       - name: Inject app icons and splash screen
         script: |
           ICONS_SRC=$CM_BUILD_DIR/ios-assets/AppIcons

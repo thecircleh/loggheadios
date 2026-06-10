@@ -350,6 +350,7 @@ const [pendingErrorCallback, setPendingErrorCallback] = useState(null);
 const [showAceTargetModal, setShowAceTargetModal] = useState(false);
 const [pendingAceCallback, setPendingAceCallback] = useState(null);
 const [showServeZoneOverlay, setShowServeZoneOverlay] = useState(false);
+const [showPortraitServeControls, setShowPortraitServeControls] = useState(false);
 const [showFillCourtOverlay, setShowFillCourtOverlay] = useState(true);
 const [showVoiceSubscriptionModal, setShowVoiceSubscriptionModal] = useState(false);
 const [selectedServeZone, setSelectedServeZone] = useState(null);
@@ -646,9 +647,9 @@ const handleVoiceButtonClick = () => {
   return (
     <div
       style={{
-        position: "absolute",
-        top: "150px",
-        left: "3px",
+        position: (isMobile && isPortrait) ? "static" : "absolute",
+        top: (isMobile && isPortrait) ? undefined : "150px",
+        left: (isMobile && isPortrait) ? undefined : "3px",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -882,11 +883,12 @@ const AdvancedLoggingToggle = () => (
   <button
     onClick={() => setAdvancedLoggingEnabled(prev => !prev)}
     style={{
-       position: "absolute",
-      top: (isPortrait) ? "5%" : (isMobile ? "75%" : "92%"), 
-      right: isMobile ? "1%" : "1.1%",
-      width: isMobile ? "180px" : "220px",
-      height: isMobile ? "60px" : "40px",
+       position: (isMobile && isPortrait) ? "static" : "absolute",
+      top: (isMobile && isPortrait) ? undefined : (isPortrait ? "5%" : (isMobile ? "75%" : "92%")),
+      right: (isMobile && isPortrait) ? undefined : (isMobile ? "1%" : "1.1%"),
+      width: (isMobile && isPortrait) ? "100%" : (isMobile ? "180px" : "220px"),
+      height: isMobile ? "44px" : "40px",
+      boxSizing: "border-box",
       borderRadius: "12px",
       backgroundColor: advancedLoggingEnabled ? "#34C759" : "#8E8E93",
       border: "none",
@@ -1656,6 +1658,9 @@ const getNetLabelStyle = () => ({
   marginTop: (isMobile && isPortrait) ? "30px" : "40px",
   fontWeight: "bold",
   color: ballSide === "our" ? "#34C759" : "#007AFF",
+  overflow: "hidden",
+  whiteSpace: "nowrap",
+  width: "100%",
 });
 
   const rowStyle = {
@@ -1836,8 +1841,8 @@ const buttonStyle2 = {
   padding: isMobile && deviceInfo.isLandscape ? "8px 12px" : "12px 16px",
   fontSize: isMobile && deviceInfo.isLandscape ? "0.8rem" : "1em",
   backgroundColor: "#fd9426",
-  height: isMobile && isPortrait ? "80px" : "40px",
-  width: isMobile && deviceInfo.isLandscape ? "100px" : "100px",
+  height: isMobile && isPortrait ? "50px" : "40px",
+  width: isMobile && isPortrait ? "100px" : (isMobile && deviceInfo.isLandscape ? "100px" : "100px"),
   minWidth: isMobile && deviceInfo.isLandscape ? "80px" : "80px",
   border: "none",
   borderRadius: "12px",
@@ -5930,39 +5935,68 @@ return (
       {renderCourtArea()}
       {renderLogsPanel()}
 
-      {ballState === "serve" && (
-        <div
-          style={{
-            position: "absolute",
-            top: isMobile && isPortrait ? "140px" : "120px",
-            // left: isMobile && deviceInfo.isLandscape ? "25%" : "48%",
-            right: isMobile && isPortrait ? "0px" : "200px",
-            transform: isMobile && deviceInfo.isLandscape ? "none" : "translateX(-50%)",
-            display: enableAITracking ? "none" : "flex",
-            gap: isMobile && deviceInfo.isLandscape ? "4px" : "7px",
-            alignItems: "center",
-            zIndex: 10,
-            flexWrap: isMobile && deviceInfo.isLandscape ? "wrap" : "wrap",
-            maxWidth: isMobile && isPortrait ? "80px" : "100px",
-			minHeight: isMobile && isPortrait ? "160px" : "auto"
-          }}
-        >
-          <button onClick={rotatePlayers} style={buttonStyle2}>
-            {isMobile && deviceInfo.isLandscape ? "Rotate" : "Rotate Players"}
-          </button>
-          {wasLastActionASub() ? (
-            <button onClick={handleUndoLastSubstitution} style={buttonStyle2}>
-              {isMobile && deviceInfo.isLandscape ? "Undo Sub" : "Undo Sub"}
+      {ballState === "serve" && !enableAITracking && (
+        (isMobile && isPortrait) ? (
+          <div style={{ order: 0, width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", padding: "4px 0" }}>
+            <button
+              onClick={() => setShowPortraitServeControls(p => !p)}
+              style={{
+                background: "none",
+                border: "1px solid #ccc",
+                borderRadius: "20px",
+                padding: "6px 16px",
+                fontSize: "12px",
+                color: "#666",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              {showPortraitServeControls ? "▲ Hide Controls" : "▼ Rotate / Clear / Serve"}
             </button>
-          ) : (
-            <button onClick={clearCourt} style={buttonStyle2}>
-              {isMobile && deviceInfo.isLandscape ? "Clear Court" : "Clear Court"}
+            {showPortraitServeControls && (
+              <div style={{ display: "flex", flexDirection: "row", gap: "8px", justifyContent: "center", width: "100%" }}>
+                <button onClick={rotatePlayers} style={buttonStyle2}>Rotate</button>
+                {wasLastActionASub() ? (
+                  <button onClick={handleUndoLastSubstitution} style={buttonStyle2}>Undo Sub</button>
+                ) : (
+                  <button onClick={clearCourt} style={buttonStyle2}>Clear</button>
+                )}
+                <button onClick={handleSwitchServe} style={buttonStyle2}>Switch Serve</button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div
+            style={{
+              position: "absolute",
+              top: "120px",
+              right: isMobile && deviceInfo.isLandscape ? "25%" : "200px",
+              transform: isMobile && deviceInfo.isLandscape ? "none" : "translateX(-50%)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "7px",
+              alignItems: "center",
+              zIndex: 10,
+              maxWidth: "100px",
+            }}
+          >
+            <button onClick={rotatePlayers} style={buttonStyle2}>
+              {isMobile && deviceInfo.isLandscape ? "Rotate" : "Rotate Players"}
             </button>
-          )}
-          <button onClick={handleSwitchServe} style={buttonStyle2}>
-            {isMobile && deviceInfo.isLandscape ? "Switch Serve" : "Switch Serve"}
-          </button>
-        </div>
+            {wasLastActionASub() ? (
+              <button onClick={handleUndoLastSubstitution} style={buttonStyle2}>Undo Sub</button>
+            ) : (
+              <button onClick={clearCourt} style={buttonStyle2}>
+                {isMobile && deviceInfo.isLandscape ? "Clear Court" : "Clear Court"}
+              </button>
+            )}
+            <button onClick={handleSwitchServe} style={buttonStyle2}>
+              {isMobile && deviceInfo.isLandscape ? "Switch Serve" : "Switch Serve"}
+            </button>
+          </div>
+        )
       )}
     </div>
 
