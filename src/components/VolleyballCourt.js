@@ -664,7 +664,7 @@ const handleVoiceButtonClick = () => {
         flexDirection: "column",
         alignItems: "center",
         gap: "8px",
-        zIndex: 10000
+        zIndex: 999
       }}
     >
       {/* Voice Command Display */}
