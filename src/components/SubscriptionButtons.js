@@ -3,6 +3,7 @@ import axios from "axios";
 import { useAuth } from "./AuthContext";
 import stripePrices from "./stripePrices";
 import { getApiUrl } from "../utils/getApiUrl";
+import NativeSubscriptionButtons from "./NativeSubscriptionButtons";
 
 const PER_MATCH_PRICE = 1.29;
 
@@ -574,35 +575,7 @@ const premiumValueStack = useMemo(() => {
   }
 
   if (isNative) {
-    return (
-      <div style={styles.wrap}>
-        <div style={styles.header}>
-          <h2 style={styles.headline}>Manage Your Subscription</h2>
-          <div style={styles.subHeadline}>
-            Subscriptions and purchases are managed on the Loggerhead website.
-          </div>
-        </div>
-        <div style={{ ...styles.heroCard, marginTop: 16 }}>
-          <div style={styles.heroTitle}>Visit Loggerhead on the web</div>
-          <div style={styles.heroText}>
-            To subscribe, manage billing, or make a purchase, visit us at:
-          </div>
-          <div style={{
-            fontSize: 17,
-            fontWeight: 900,
-            color: "#007AFF",
-            marginBottom: 14,
-            letterSpacing: -0.2,
-          }}>
-            https://ui.loggerhead.app
-          </div>
-          <div style={styles.finePrint}>
-            Log in with the same email and password you use here.
-            Your subscription will be reflected in the app automatically.
-          </div>
-        </div>
-      </div>
-    );
+    return <NativeSubscriptionButtons />;
   }
 
   return (

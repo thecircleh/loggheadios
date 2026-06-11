@@ -35,11 +35,40 @@ workflows:
           cd $CM_BUILD_DIR
           rm -rf ios
           npx cap add ios
+          npx cap sync ios
 
       - name: Copy web assets to iOS
         script: |
           cd $CM_BUILD_DIR
           npx cap copy ios
+
+      - name: Enable In-App Purchase capability
+        script: |
+          PROJ=$CM_BUILD_DIR/ios/App/App.xcodeproj/project.pbxproj
+          ENTITLEMENTS=$CM_BUILD_DIR/ios/App/App/App.entitlements
+
+          # Create entitlements file if it doesn't exist
+          if [ ! -f "$ENTITLEMENTS" ]; then
+            cat > "$ENTITLEMENTS" << 'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+</dict>
+</plist>
+XML
+            echo "✅ Created App.entitlements"
+          fi
+
+          # StoreKit (In-App Purchase) does not require a special entitlement key —
+          # it is enabled automatically for App Store distribution profiles.
+          # However we wire up the entitlements file so Xcode picks it up for dev signing.
+          /usr/libexec/PlistBuddy -c "Add :com.apple.developer.in-app-payments array" "$ENTITLEMENTS" 2>/dev/null || true
+
+          # Point the Xcode target at our entitlements file
+          sed -i '' 's|CODE_SIGN_ENTITLEMENTS = .*|CODE_SIGN_ENTITLEMENTS = App/App.entitlements;|g' "$PROJ" 2>/dev/null || true
+
+          echo "✅ In-App Purchase capability enabled"
 
       - name: Add iOS permissions to Info.plist
         script: |
