@@ -2,7 +2,6 @@
 // Bundle ID: com.loggerheadstat.app
 
 export const APPLE_PRODUCT_IDS = {
-  daily:      'com.loggerheadstat.app.sub.daily',
   weekly:     'com.loggerheadstat.app.sub.weekly',
   monthly:    'com.loggerheadstat.app.sub.monthly',
   sixMonth:   'com.loggerheadstat.app.sub.sixmonth',
@@ -13,15 +12,6 @@ export const APPLE_PRODUCT_IDS = {
 
 // Subscription plans — prices are fallbacks; StoreKit returns the real local-currency price
 export const APPLE_SUBSCRIPTION_PLANS = [
-  {
-    key: 'daily',
-    productId: APPLE_PRODUCT_IDS.daily,
-    label: 'Daily',
-    fallbackPrice: '$1.49',
-    perWeek: 'Costly long-term',
-    subText: 'Recurring daily access for short bursts.',
-    badge: 'Try it',
-  },
   {
     key: 'weekly',
     productId: APPLE_PRODUCT_IDS.weekly,

@@ -49,7 +49,6 @@ export function useAppleIAP() {
 
       // Register subscription products
       store.register([
-        { id: APPLE_PRODUCT_IDS.daily,       type: ProductType.PAID_SUBSCRIPTION, platform: Platform.APPLE_APP_STORE },
         { id: APPLE_PRODUCT_IDS.weekly,      type: ProductType.PAID_SUBSCRIPTION, platform: Platform.APPLE_APP_STORE },
         { id: APPLE_PRODUCT_IDS.monthly,     type: ProductType.PAID_SUBSCRIPTION, platform: Platform.APPLE_APP_STORE },
         { id: APPLE_PRODUCT_IDS.sixMonth,    type: ProductType.PAID_SUBSCRIPTION, platform: Platform.APPLE_APP_STORE },
