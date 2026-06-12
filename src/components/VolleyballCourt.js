@@ -6410,7 +6410,7 @@ return (
     {advancedLoggingEnabled && showAceTargetModal && (
       <div style={{
         position: "fixed",
-        top: (isMobile && isPortrait) ? "14px" : "20px",
+        top: (isMobile && isPortrait) ? "calc(env(safe-area-inset-top, 50px) + 60px)" : "20px",
         left: "50%",
         transform: "translateX(-50%)",
         zIndex: 9999,
