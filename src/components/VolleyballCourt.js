@@ -1685,50 +1685,62 @@ const getNetLabelStyle = () => ({
 
 const slotStyle = (index, player, flash) => {
   const size = (isMobile && isPortrait) ? 85 : (isMobile && deviceInfo.isLandscape ? 80 : (isMobile ? 90 : 100));
-  
-  // Determine background color based on video state
-  let bgColor;
-  if (showVideoBackground && !isMobile && (youtubeUrl || localVideoUrl)) {
-    // Completely transparent when video is active
-    bgColor = "transparent";
-  } else {
-    // Solid colors when no video
-    bgColor = flash
-      ? "#FFF8E1"
-      : player.name === "?"
-        ? "#E5E5EA"
-        : "#FFFFFF";
-  }
-  
-  return {
+
+  const base = {
     width: `${size}px`,
     height: `${size}px`,
     borderRadius: "12px",
-    border: player.isLibero
-      ? "2px solid #FF3B30"
-      : positionLabels[index] === "1"
-        ? "2px solid #FFD700"
-        : (showVideoBackground && !isMobile && (youtubeUrl || localVideoUrl))
-          ? "2px solid rgba(255, 255, 255, 0.8)"  // White borders when video active
-          : "1px solid rgba(0,0,0,0.2)",
-    backgroundColor: bgColor,
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
-    boxShadow: player.isLibero
-      ? "0px 3px 6px rgba(255, 59, 48, 0.3)"
-      : positionLabels[index] === "1"
-        ? "0px 3px 6px rgba(255, 215, 0, 0.3)"
-        : "0px 2px 4px rgba(0,0,0,0.1)",
     cursor: "pointer",
     fontFamily: "-apple-system, 'Helvetica Neue', Arial, sans-serif",
     fontWeight: "600",
     transition: "background-color 0.2s ease, transform 0.1s ease",
     minHeight: isMobile ? "44px" : "auto",
     minWidth: isMobile ? "44px" : "auto",
-    backdropFilter: "none"  // No blur - completely clear
+  };
+
+  // Ace target selection mode — light box highlight
+  if (showAceTargetModal) {
+    return {
+      ...base,
+      border: "2px solid #007AFF",
+      backgroundColor: "#EBF5FF",
+      boxShadow: "0 0 0 3px rgba(0,122,255,0.25), 0 2px 8px rgba(0,122,255,0.35)",
+    };
+  }
+
+  // Determine background color based on video state
+  let bgColor;
+  if (showVideoBackground && !isMobile && (youtubeUrl || localVideoUrl)) {
+    bgColor = "transparent";
+  } else {
+    bgColor = flash
+      ? "#FFF8E1"
+      : player.name === "?"
+        ? "#E5E5EA"
+        : "#FFFFFF";
+  }
+
+  return {
+    ...base,
+    border: player.isLibero
+      ? "2px solid #FF3B30"
+      : positionLabels[index] === "1"
+        ? "2px solid #FFD700"
+        : (showVideoBackground && !isMobile && (youtubeUrl || localVideoUrl))
+          ? "2px solid rgba(255,255,255,0.8)"
+          : "1px solid rgba(0,0,0,0.2)",
+    backgroundColor: bgColor,
+    boxShadow: player.isLibero
+      ? "0px 3px 6px rgba(255,59,48,0.3)"
+      : positionLabels[index] === "1"
+        ? "0px 3px 6px rgba(255,215,0,0.3)"
+        : "0px 2px 4px rgba(0,0,0,0.1)",
+    backdropFilter: "none",
   };
 };
 
@@ -3329,7 +3341,14 @@ return (
       if (ref) ref.current = el;
     }}
     data-slot-index={index}
-    onClick={() => registerTouch(index)}
+    onClick={() => {
+      if (showAceTargetModal) {
+        setShowAceTargetModal(false);
+        pendingAceCallback(index);
+        return;
+      }
+      registerTouch(index);
+    }}
     style={slotStyle(index, player, flash)}
   >
     {/* Name + number hidden when empty */}
@@ -6391,78 +6410,41 @@ return (
     {advancedLoggingEnabled && showAceTargetModal && (
       <div style={{
         position: "fixed",
-        top: 0, left: 0, right: 0, bottom: 0,
-        backgroundColor: "rgba(0,0,0,0.6)",
+        top: (isMobile && isPortrait) ? "14px" : "20px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 9999,
+        backgroundColor: "rgba(0,0,0,0.82)",
+        borderRadius: "14px",
+        padding: (isMobile && isPortrait) ? "10px 16px" : "12px 22px",
         display: "flex",
         alignItems: "center",
-        justifyContent: "center",
-        zIndex: 9999
+        gap: "14px",
+        color: "#fff",
+        fontSize: (isMobile && isPortrait) ? "14px" : "15px",
+        fontWeight: "600",
+        whiteSpace: "nowrap",
+        boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
       }}>
-        <div style={{
-          backgroundColor: "white",
-          padding: (isMobile && isPortrait) ? "16px" : "20px",
-          borderRadius: "14px",
-          width: (isMobile && isPortrait) ? "90vw" : "350px",
-          maxWidth: "350px",
-          textAlign: "center",
-          boxShadow: "0 6px 20px rgba(0,0,0,0.3)"
-        }}>
-          <h3 style={{ marginBottom: "16px" }}>Who was targeted by the ace?</h3>
-
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
-            gridTemplateRows: "repeat(2, 1fr)",
-            gap: (isMobile && isPortrait) ? "8px" : "10px",
-            marginBottom: (isMobile && isPortrait) ? "12px" : "16px"
-          }}>
-            {courtPlayers.map((player, idx) => (
-              <button key={idx}
-                onClick={() => {
-                  setShowAceTargetModal(false);
-                  pendingAceCallback(idx);
-                }}
-                style={{
-                  height: (isMobile && isPortrait) ? "70px" : "80px",
-                  width: (isMobile && isPortrait) ? "70px" : "80px",
-                  padding: (isMobile && isPortrait) ? "8px" : "10px",
-                  borderRadius: "10px",
-                  fontWeight: "600",
-                  backgroundColor: "#FFF",
-                  borderColor: "#111",
-                  color: "#007AFF",
-                  border: "none",
-                  fontSize: (isMobile && isPortrait) ? "13px" : "14px",
-                  cursor: "pointer",
-                  alignItems: "center"
-                }}
-              >
-                <div><strong>{(player?.name?.slice(0, 10)) || "Player"}</strong></div>
-                <div>#{player?.number || "?"}</div>
-              </button>
-            ))}
-          </div>
-
-          <button
-            onClick={() => {
-              setShowAceTargetModal(false);
-              pendingAceCallback(null);
-            }}
-            style={{
-              marginTop: "8px",
-              padding: "10px 14px",
-              borderRadius: "10px",
-              fontWeight: "600",
-              backgroundColor: "#8E8E93",
-              color: "#fff",
-              border: "none",
-              fontSize: "14px",
-              cursor: "pointer"
-            }}
-          >
-            Unsure
-          </button>
-        </div>
+        <span>Who was targeted?</span>
+        <button
+          onClick={() => {
+            setShowAceTargetModal(false);
+            pendingAceCallback(null);
+          }}
+          style={{
+            padding: "6px 14px",
+            borderRadius: "8px",
+            backgroundColor: "#8E8E93",
+            color: "#fff",
+            border: "none",
+            fontSize: "13px",
+            fontWeight: "600",
+            cursor: "pointer",
+          }}
+        >
+          Unsure
+        </button>
       </div>
     )}
 

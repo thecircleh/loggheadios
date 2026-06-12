@@ -10,7 +10,11 @@ function waitForCdvPurchase(timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     const deadline = Date.now() + timeoutMs;
     const check = () => {
-      if (window.CdvPurchase) return resolve(window.CdvPurchase);
+      const cdv = window.CdvPurchase;
+      // Wait until the full API is ready, not just the object existing
+      if (cdv?.store && cdv?.Platform?.APPLE_APP_STORE && cdv?.ProductType?.PAID_SUBSCRIPTION) {
+        return resolve(cdv);
+      }
       if (Date.now() > deadline) return reject(new Error('CdvPurchase not available'));
       setTimeout(check, 150);
     };
