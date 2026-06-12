@@ -6426,7 +6426,7 @@ return (
         whiteSpace: "nowrap",
         boxShadow: "0 4px 16px rgba(0,0,0,0.35)",
       }}>
-        <span>Who was targeted?</span>
+        <span>Select who got aced</span>
         <button
           onClick={() => {
             setShowAceTargetModal(false);

@@ -10,11 +10,7 @@ function waitForCdvPurchase(timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     const deadline = Date.now() + timeoutMs;
     const check = () => {
-      const cdv = window.CdvPurchase;
-      // Wait until the full API is ready, not just the object existing
-      if (cdv?.store && cdv?.Platform?.APPLE_APP_STORE && cdv?.ProductType?.PAID_SUBSCRIPTION) {
-        return resolve(cdv);
-      }
+      if (window.CdvPurchase?.store) return resolve(window.CdvPurchase);
       if (Date.now() > deadline) return reject(new Error('CdvPurchase not available'));
       setTimeout(check, 150);
     };
@@ -51,14 +47,19 @@ export function useAppleIAP() {
       const { store, ProductType, Platform } = CdvPurchase;
       storeRef.current = store;
 
+      // Use string literals as fallbacks in case the plugin hasn't populated enums yet
+      const APPSTORE   = Platform?.APPLE_APP_STORE   ?? 'ios-appstore';
+      const SUB_TYPE   = ProductType?.PAID_SUBSCRIPTION ?? 'paid subscription';
+      const CONS_TYPE  = ProductType?.CONSUMABLE        ?? 'consumable';
+
       // Register subscription products
       store.register([
-        { id: APPLE_PRODUCT_IDS.weekly,      type: ProductType.PAID_SUBSCRIPTION, platform: Platform.APPLE_APP_STORE },
-        { id: APPLE_PRODUCT_IDS.monthly,     type: ProductType.PAID_SUBSCRIPTION, platform: Platform.APPLE_APP_STORE },
-        { id: APPLE_PRODUCT_IDS.sixMonth,    type: ProductType.PAID_SUBSCRIPTION, platform: Platform.APPLE_APP_STORE },
-        { id: APPLE_PRODUCT_IDS.annual,      type: ProductType.PAID_SUBSCRIPTION, platform: Platform.APPLE_APP_STORE },
-        { id: APPLE_PRODUCT_IDS.matchKey,    type: ProductType.CONSUMABLE,        platform: Platform.APPLE_APP_STORE },
-        { id: APPLE_PRODUCT_IDS.statbookKey, type: ProductType.CONSUMABLE,        platform: Platform.APPLE_APP_STORE },
+        { id: APPLE_PRODUCT_IDS.weekly,      type: SUB_TYPE,  platform: APPSTORE },
+        { id: APPLE_PRODUCT_IDS.monthly,     type: SUB_TYPE,  platform: APPSTORE },
+        { id: APPLE_PRODUCT_IDS.sixMonth,    type: SUB_TYPE,  platform: APPSTORE },
+        { id: APPLE_PRODUCT_IDS.annual,      type: SUB_TYPE,  platform: APPSTORE },
+        { id: APPLE_PRODUCT_IDS.matchKey,    type: CONS_TYPE, platform: APPSTORE },
+        { id: APPLE_PRODUCT_IDS.statbookKey, type: CONS_TYPE, platform: APPSTORE },
       ]);
 
       // Receipt validator — sends to our Node backend which calls Apple's API
@@ -124,7 +125,7 @@ export function useAppleIAP() {
       });
 
       try {
-        await store.initialize([Platform.APPLE_APP_STORE]);
+        await store.initialize([APPSTORE]);
         if (!cancelled) setInitialized(true);
       } catch (e) {
         if (!cancelled) setError('Failed to initialize the store: ' + e.message);
