@@ -3593,7 +3593,7 @@ frontPlayers.forEach(({ slot }, idx) => {
   const isSelected =
     blockInfo?.slots?.length === 1 && blockInfo.slots.includes(slot);
 
-  const top = isPortrait ? 11 : isMobile ? 18 : 18;
+  const top = isPortrait ? 21 : isMobile ? 18 : 18;
   const left = isMobile ? 22 + idx * 21 : 22 + idx * 21;
 
   buttons.push(
@@ -3612,17 +3612,17 @@ frontPlayers.forEach(({ slot }, idx) => {
 const twoPCombos = [
   {
     slots: [0, 1],
-    top: isPortrait? 7 : isMobile ? 11 : 11,
+    top: isPortrait? 11 : isMobile ? 11 : 11,
     left: isMobile ? 22 : 22,
   },
   {
     slots: [0, 2],
-    top: isPortrait? 7 : isMobile ? 11 : 11,
+    top: isPortrait? 11 : isMobile ? 11 : 11,
     left: isMobile ? 43 : 43,
   },
   {
     slots: [1, 2],
-    top: isPortrait? 7 : isMobile ? 11 : 11,
+    top: isPortrait? 11 : isMobile ? 11 : 11,
     left: isMobile ? 64 : 64,
   },
 ];
@@ -3652,7 +3652,7 @@ if (frontPlayers.length === 3) {
     blockInfo?.slots?.length === 3 &&
     slots.every((s) => blockInfo.slots.includes(s));
 
-  const top = isPortrait ? 2 : isMobile ? 4 : 4;
+  const top = isPortrait ? 1 : isMobile ? 4 : 4;
   const left = isMobile ? 43: 43;
 
   buttons.push(
