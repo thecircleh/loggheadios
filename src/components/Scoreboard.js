@@ -54,6 +54,12 @@ const Scoreboard = ({
   const teamLabelStyle = {
     fontSize: "0.85em",
     fontWeight: "300",
+    flex: 1,
+    minWidth: 0,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    marginRight: "8px",
   };
 
   const controlsStyle = {
