@@ -321,8 +321,7 @@ const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName, isMob
             { label: 'W-L', value: stats.insights.winLoss },
             { label: 'BEST ROT', value: stats.insights.bestRot },
             { label: 'PTS/SET', value: stats.insights.pointsPerSet },
-            { label: 'ERR/SET', value: stats.insights.errorRate },
-            { label: 'TOP', value: stats.insights.topPlayer },
+            { label: 'ERR/SET', value: stats.insights.errorRate }
           ].map((ins, idx) => (
             <div key={idx} style={{ flex: '0 0 auto', background: '#1e293b', color: '#fff', borderRadius: '12px', padding: '10px 14px', textAlign: 'center', minWidth: '80px' }}>
               <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: '800', letterSpacing: 0.5, marginBottom: '4px' }}>{ins.label}</div>
@@ -925,8 +924,7 @@ const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName, isMob
               { label: 'Set Record', value: stats.insights.winLoss },
               { label: 'Best Rotation', value: stats.insights.bestRot },
               { label: 'Pts Earned/Set', value: stats.insights.pointsPerSet },
-              { label: 'Errors/Set', value: stats.insights.errorRate },
-              { label: 'Top Player', value: stats.insights.topPlayer }
+              { label: 'Errors/Set', value: stats.insights.errorRate }
             ].map((insight, idx) => (
               <div key={idx} style={{ marginBottom: '20px', borderBottom: '1px solid #334155', paddingBottom: '10px' }}>
                 <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>{insight.label}</div>
