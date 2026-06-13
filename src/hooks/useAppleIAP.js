@@ -64,6 +64,8 @@ export function useAppleIAP() {
 
       // Receipt validator — sends to our Node backend which calls Apple's API
       store.validator = async (receipt, callback) => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 20000);
         try {
           const res = await fetch(`${getApiUrl()}/api/billing/apple/verify-receipt`, {
             method: 'POST',
@@ -72,19 +74,23 @@ export function useAppleIAP() {
               'Authorization': `Bearer ${tokenRef.current}`,
             },
             body: JSON.stringify(receipt),
+            signal: controller.signal,
           });
           if (!res.ok) {
-            callback(false, { code: CdvPurchase.ErrorCode.UNKNOWN, message: `HTTP ${res.status}` });
+            callback({ ok: false, code: CdvPurchase.ErrorCode.UNKNOWN, message: `HTTP ${res.status}` });
             return;
           }
           const data = await res.json();
           if (data.ok) {
-            callback(true, data.data || {});
+            callback({ ok: true, data: data.data || {} });
           } else {
-            callback(false, { code: CdvPurchase.ErrorCode.PURCHASE_NOT_ALLOWED, message: data.error || 'Verification failed' });
+            callback({ ok: false, code: CdvPurchase.ErrorCode.PURCHASE_NOT_ALLOWED, message: data.error || 'Verification failed' });
           }
         } catch (err) {
-          callback(false, { code: CdvPurchase.ErrorCode.UNKNOWN, message: `Network error: ${err.message}` });
+          const msg = err.name === 'AbortError' ? 'Verification timed out' : `Network error: ${err.message}`;
+          callback({ ok: false, code: CdvPurchase.ErrorCode.UNKNOWN, message: msg });
+        } finally {
+          clearTimeout(timeout);
         }
       };
 
