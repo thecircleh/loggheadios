@@ -73,6 +73,10 @@ export function useAppleIAP() {
             },
             body: JSON.stringify(receipt),
           });
+          if (!res.ok) {
+            callback(false, { code: CdvPurchase.ErrorCode.UNKNOWN, message: `HTTP ${res.status}` });
+            return;
+          }
           const data = await res.json();
           if (data.ok) {
             callback(true, data.data || {});
@@ -80,7 +84,7 @@ export function useAppleIAP() {
             callback(false, { code: CdvPurchase.ErrorCode.PURCHASE_NOT_ALLOWED, message: data.error || 'Verification failed' });
           }
         } catch (err) {
-          callback(false, { code: CdvPurchase.ErrorCode.UNKNOWN, message: err.message });
+          callback(false, { code: CdvPurchase.ErrorCode.UNKNOWN, message: `Network error: ${err.message}` });
         }
       };
 
@@ -101,8 +105,9 @@ export function useAppleIAP() {
         })
         .unverified((_receipt, err) => {
           console.warn('[IAP] unverified', err);
+          const detail = err?.message || err?.code || JSON.stringify(err) || 'unknown';
           if (!cancelled) {
-            setError('Purchase verification failed. Please try again or contact support.');
+            setError(`Purchase verification failed: ${detail}`);
             setPurchasing(false);
             setRestoring(false);
           }
