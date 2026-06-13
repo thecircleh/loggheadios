@@ -267,7 +267,9 @@ export const AuthProvider = ({ children }) => {
   const role = (user?.role || "").toLowerCase();
   const volleyballRole = user?.volleyballRole || null;
   const subStatus = user?.subscription?.status || null;
-  const isActiveSub = ["active", "canceling"].includes(subStatus);
+  const subPeriodEnd = user?.subscription?.current_period_end;
+  const subNotExpired = subPeriodEnd ? new Date(subPeriodEnd) > new Date() : false;
+  const isActiveSub = ["active", "canceling"].includes(subStatus) && subNotExpired;
   const hasGiftSubscription =
   user?.giftSubscription?.active === true &&
   user?.giftSubscription?.endsAt &&
