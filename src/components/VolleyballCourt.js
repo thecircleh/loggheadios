@@ -5968,6 +5968,7 @@ return (
       width: "100%",
       overflowX: "hidden",
       boxSizing: "border-box",
+      paddingTop: isMobile ? "env(safe-area-inset-top, 0px)" : 0,
       paddingBottom: isMobile ? "90px" : 0,
     }}>
       <div style={mainContainerStyle}>

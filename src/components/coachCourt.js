@@ -2425,6 +2425,7 @@ const SubTrackerCompact = ({ subCount, maxSubs, setMaxSubs }) => {
     <div
       style={{
         padding: isMobile ? 12 : 16,
+        paddingTop: isMobile ? `calc(env(safe-area-inset-top, 0px) + 12px)` : 16,
         background: "#F5F5F7",
         minHeight: "100vh",
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",

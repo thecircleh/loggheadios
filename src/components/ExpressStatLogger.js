@@ -5536,6 +5536,7 @@ const cancelAssist = useCallback(() => {
     maxWidth: '1200px',
     margin: '0 auto',
     padding: '8px',
+    paddingTop: 'env(safe-area-inset-top, 8px)',
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     backgroundColor: '#f8f9fa',
     borderRadius: '8px',
