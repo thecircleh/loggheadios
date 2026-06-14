@@ -90,6 +90,68 @@ body {
   -webkit-text-fill-color: transparent;
 }
 
+/* Navigation dropdown menus */
+.ios-nav-dropdown-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.ios-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.14), 0 1px 4px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  overflow: hidden;
+  padding: 4px 0;
+}
+
+.ios-dropdown-item {
+  display: block;
+  padding: 11px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1C1C1E;
+  text-decoration: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.ios-dropdown-item:hover {
+  background: rgba(52, 199, 89, 0.08);
+  color: #34C759;
+}
+
+.ios-dropdown-item.primary-green {
+  color: #34C759;
+  font-weight: 600;
+}
+
+.dropdown-arrow {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 12px;
+  line-height: 1;
+  transition: transform 0.2s;
+  transform: rotate(90deg);
+}
+
+.dropdown-arrow.open {
+  transform: rotate(270deg);
+}
+
 /* Navigation Links - Cleaning up the | delimiters */
 .ios-nav-links {
   display: flex;

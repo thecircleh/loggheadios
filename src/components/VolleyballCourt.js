@@ -5458,7 +5458,7 @@ function renderScoreboardAboveBench() {
       <div style={leftColumnStyle}>
         {/* Scoreboard + compact 2x2 team stats side by side */}
         <div style={{ display: "flex", flexDirection: "row", alignItems: "flex-start", gap: "8px", width: "100%", boxSizing: "border-box" }}>
-          <div style={{ flex: "0 0 auto" }}>
+          <div style={{ flex: "0 0 165px", minWidth: 0, overflow: "hidden" }}>
             <Scoreboard
               match={match}
               ourScore={ourScore}
@@ -5486,7 +5486,7 @@ function renderScoreboardAboveBench() {
   return (
     <div style={leftColumnStyle}>
       {/* Scoreboard */}
-      <div style={{ flex: "0 0 auto" }}>
+      <div style={{ width: "100%", minWidth: 0, overflow: "hidden" }}>
         <Scoreboard
           match={match}
           ourScore={ourScore}

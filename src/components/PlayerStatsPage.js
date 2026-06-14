@@ -3746,13 +3746,13 @@ const handleSaveInsights = async () => {
 >
         <button
     onClick={handleExportPDF}
-    style={{ marginRight: 12, padding: "8px 16px", background: "#007AFF", color: "white", border: "none", borderRadius: 6 }}
+    style={{ padding: "10px 20px", background: "#007AFF", color: "white", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: "pointer", boxShadow: "0 2px 8px rgba(0,122,255,0.3)", letterSpacing: "-0.1px" }}
   >
     {hasPremium ? "Export Premium PDF" : "Export PDF"}
   </button>
-        <button onClick={exportCSV} style={{ marginRight: 12, padding: "8px 16px", background: "#34C759", color: "white", border: "none", borderRadius: 6 }}>Export CSV</button>
-         <button onClick={exportMaxPreps} style={{ marginRight: 12, padding: "8px 16px", background: "#FF6B35", color: "white", border: "none", borderRadius: 6 }}>Export MaxPreps</button>
-        <button onClick={handlePurgeStats} style={{marginRight: 12, padding: "8px 16px", background: "#FF3B30", color: "white", border: "none", borderRadius: 6 }}>Purge All Team Stats</button>
+        <button onClick={exportCSV} style={{ padding: "10px 20px", background: "#34C759", color: "white", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: "pointer", boxShadow: "0 2px 8px rgba(52,199,89,0.3)", letterSpacing: "-0.1px" }}>Export CSV</button>
+        <button onClick={exportMaxPreps} style={{ padding: "10px 20px", background: "#FF6B35", color: "white", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: "pointer", boxShadow: "0 2px 8px rgba(255,107,53,0.3)", letterSpacing: "-0.1px" }}>Export MaxPreps</button>
+        <button onClick={handlePurgeStats} style={{ padding: "10px 20px", background: "#FF3B30", color: "white", border: "none", borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: "pointer", boxShadow: "0 2px 8px rgba(255,59,48,0.3)", letterSpacing: "-0.1px" }}>Purge All Team Stats</button>
 </div>
 <div
   style={{
@@ -3784,7 +3784,7 @@ const handleSaveInsights = async () => {
             </select>
             <button
               onClick={handleAnalyzeMatchLog}
-              style={{ marginRight: 12, padding: '8px 16px', background: '#5E5CE6', color: 'white', border: 'none', borderRadius: 6 }}
+              style={{ padding: '10px 20px', background: '#5E5CE6', color: 'white', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px rgba(94,92,230,0.3)', letterSpacing: '-0.1px' }}
             >
               Get Insights
             </button>
@@ -3792,7 +3792,7 @@ const handleSaveInsights = async () => {
         )}
  
         {isAnalyzing && (
-          <button disabled style={{ padding: '8px 16px', background: '#ccc', borderRadius: 6 }}>
+          <button disabled style={{ padding: '10px 20px', background: '#E5E7EB', color: '#9CA3AF', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'not-allowed', letterSpacing: '-0.1px' }}>
             Generating insights...
           </button>
         )}
@@ -3801,13 +3801,13 @@ const handleSaveInsights = async () => {
           <>
             <button
               onClick={() => setAiInsights("")}
-              style={{ marginRight: 12, padding: '8px 16px', background: '#ccc', color: '#111', border: 'none', borderRadius: 6 }}
+              style={{ padding: '10px 20px', background: '#F3F4F6', color: '#374151', border: '1px solid #E5E7EB', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer', letterSpacing: '-0.1px' }}
             >
               Clear Insights
             </button>
             <button
               onClick={handleSaveInsights}
-              style={{ marginRight: 12, padding: '8px 16px', background: '#007AFF', color: 'white', border: 'none', borderRadius: 6 }}
+              style={{ padding: '10px 20px', background: '#007AFF', color: 'white', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,122,255,0.3)', letterSpacing: '-0.1px' }}
             >
               Save Insights
             </button>

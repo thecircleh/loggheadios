@@ -116,7 +116,7 @@ const BottomTabBar = ({ isNative }) => {
   return (
     <>
       {/* Spacer */}
-      <div style={{ height: "calc(70px + env(safe-area-inset-bottom, 0px))" }} />
+      <div style={{ height: "calc(82px + env(safe-area-inset-bottom, 0px))" }} />
 
       {/* Backdrop to close menus */}
       {openMenu && (
@@ -130,17 +130,19 @@ const BottomTabBar = ({ isNative }) => {
 
       <nav style={{
         position: "fixed",
-        bottom: 10,
-        left: 0,
-        right: 0,
-        height: "calc(60px + env(safe-area-inset-bottom, 0px))",
-        paddingBottom: "env(safe-area-inset-bottom, 0px)",
-        backgroundColor: "rgba(255,255,255,0.92)",
-        backdropFilter: "blur(20px)",
-        WebkitBackdropFilter: "blur(20px)",
-        borderTop: "1px solid rgba(0,0,0,0.1)",
+        bottom: "calc(env(safe-area-inset-bottom, 0px) + 10px)",
+        left: 12,
+        right: 12,
+        height: 62,
+        borderRadius: 22,
+        backgroundColor: "rgba(255,255,255,0.72)",
+        backdropFilter: "blur(24px) saturate(180%)",
+        WebkitBackdropFilter: "blur(24px) saturate(180%)",
+        border: "1px solid rgba(255,255,255,0.55)",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.12), 0 1px 0 rgba(255,255,255,0.9) inset",
         display: "flex",
         alignItems: "stretch",
+        overflow: "hidden",
         zIndex: 9000,
       }}>
         {tabs.map((tab) => {
