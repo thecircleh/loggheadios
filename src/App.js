@@ -701,19 +701,24 @@ const [pendingMatchMode, setPendingMatchMode] = useState(null);
   const [hasEmailConsent, setHasEmailConsent] = useState(false);
   
 const [activeDropdown, setActiveDropdown] = useState(null); // 'blog', 'coaches', or null
-
+const dropdownCloseTimer = useRef(null);
 
 const handleToggleDropdown = (name) => {
   setActiveDropdown(activeDropdown === name ? null : name);
 };
 
 const handleOpenDropdown = (name) => {
+  clearTimeout(dropdownCloseTimer.current);
   setActiveDropdown(name);
 };
 
 const closeAllDropdowns = () => {
   setActiveDropdown(null);
-  setShowMobileMenu(false); 
+  setShowMobileMenu(false);
+};
+
+const scheduleCloseDropdowns = () => {
+  dropdownCloseTimer.current = setTimeout(() => setActiveDropdown(null), 150);
 };
 
 const [setEndingDialog, setSetEndingDialog] = useState({
@@ -4546,12 +4551,12 @@ if (location.pathname === "/match-tracking") {
   showWaitForOwnerOverlay
 ]);
 
- const BlogDropdown = ({ isOpen, onOpen, onClose }) => {
+ const BlogDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
   return (
     <div
       className="ios-nav-dropdown-wrapper"
       onMouseEnter={() => onOpen('blog')}
-      onMouseLeave={onClose}
+      onMouseLeave={onHoverClose}
       onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}
     >
       <a
@@ -4583,12 +4588,12 @@ if (location.pathname === "/match-tracking") {
   );
 };
 
-const StatDropdown = ({ isOpen, onOpen, onClose }) => {
+const StatDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
   return (
     <div
       className="ios-nav-dropdown-wrapper"
       onMouseEnter={() => onOpen('stats')}
-      onMouseLeave={onClose}
+      onMouseLeave={onHoverClose}
       onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}
     >
       <a
@@ -4614,12 +4619,12 @@ const StatDropdown = ({ isOpen, onOpen, onClose }) => {
   );
 };
 
-const LoggingModeDropdown = ({ isOpen, onOpen, onClose }) => {
+const LoggingModeDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
   return (
     <div
       className="ios-nav-dropdown-wrapper"
       onMouseEnter={() => onOpen('modes')}
-      onMouseLeave={onClose}
+      onMouseLeave={onHoverClose}
       onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}
     >
       <a
@@ -4648,12 +4653,12 @@ const LoggingModeDropdown = ({ isOpen, onOpen, onClose }) => {
   );
 };
 
-const CoachesCornerDropdown = ({ isOpen, onOpen, onClose }) => {
+const CoachesCornerDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
   return (
     <div
       className="ios-nav-dropdown-wrapper"
       onMouseEnter={() => onOpen('coaches')}
-      onMouseLeave={onClose}
+      onMouseLeave={onHoverClose}
       onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}
     >
       <a
@@ -5072,21 +5077,25 @@ const CoachesCornerDropdown = ({ isOpen, onOpen, onClose }) => {
       isOpen={activeDropdown === 'modes'}
       onOpen={handleOpenDropdown}
       onClose={closeAllDropdowns}
+      onHoverClose={scheduleCloseDropdowns}
     />
     <StatDropdown
       isOpen={activeDropdown === 'stats'}
       onOpen={handleOpenDropdown}
       onClose={closeAllDropdowns}
+      onHoverClose={scheduleCloseDropdowns}
     />
     <CoachesCornerDropdown
       isOpen={activeDropdown === 'coaches'}
       onOpen={handleOpenDropdown}
       onClose={closeAllDropdowns}
+      onHoverClose={scheduleCloseDropdowns}
     />
     <BlogDropdown
       isOpen={activeDropdown === 'blog'}
       onOpen={handleOpenDropdown}
       onClose={closeAllDropdowns}
+      onHoverClose={scheduleCloseDropdowns}
     />
 
     {user && (
