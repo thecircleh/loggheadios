@@ -707,6 +707,10 @@ const handleToggleDropdown = (name) => {
   setActiveDropdown(activeDropdown === name ? null : name);
 };
 
+const handleOpenDropdown = (name) => {
+  setActiveDropdown(name);
+};
+
 const closeAllDropdowns = () => {
   setActiveDropdown(null);
   setShowMobileMenu(false); 
@@ -4542,20 +4546,26 @@ if (location.pathname === "/match-tracking") {
   showWaitForOwnerOverlay
 ]);
 
- const BlogDropdown = ({ isOpen, onToggle, onClose }) => {
+ const BlogDropdown = ({ isOpen, onOpen, onClose }) => {
   return (
-    <div 
-      className="ios-nav-dropdown-wrapper" 
-      onMouseLeave={onClose} // Optional: close when mouse leaves
+    <div
+      className="ios-nav-dropdown-wrapper"
+      onMouseEnter={() => onOpen('blog')}
+      onMouseLeave={onClose}
+      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}
     >
-      <a href="#" onClick={(e) => { e.preventDefault(); onToggle('blog'); }} className="ios-nav-link">
+      <a
+        href="#"
+        onClick={(e) => { e.preventDefault(); isOpen ? onClose() : onOpen('blog'); }}
+        onFocus={() => onOpen('blog')}
+        className="ios-nav-link"
+      >
         Blog
         <span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
       </a>
-
       {isOpen && (
         <div className="ios-dropdown-menu">
-          <a 
+          <a
             href="https://www.loggerhead.app/blog"
             target="_blank"
             rel="noopener noreferrer"
@@ -4573,10 +4583,20 @@ if (location.pathname === "/match-tracking") {
   );
 };
 
-const StatDropdown = ({ isOpen, onToggle, onClose }) => {
+const StatDropdown = ({ isOpen, onOpen, onClose }) => {
   return (
-    <div className="ios-nav-dropdown-wrapper" onMouseLeave={onClose}>
-      <a href="#" onClick={(e) => { e.preventDefault(); onToggle('stats'); }} className="ios-nav-link">
+    <div
+      className="ios-nav-dropdown-wrapper"
+      onMouseEnter={() => onOpen('stats')}
+      onMouseLeave={onClose}
+      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}
+    >
+      <a
+        href="#"
+        onClick={(e) => { e.preventDefault(); isOpen ? onClose() : onOpen('stats'); }}
+        onFocus={() => onOpen('stats')}
+        className="ios-nav-link"
+      >
         Stats
         <span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
       </a>
@@ -4585,7 +4605,7 @@ const StatDropdown = ({ isOpen, onToggle, onClose }) => {
           <a href="/stats" onClick={onClose} className="ios-dropdown-item">
             Stat Book/Classic Stats
           </a>
-          <a href="/coaches-corner/stats"  onClick={onClose} className="ios-dropdown-item">
+          <a href="/coaches-corner/stats" onClick={onClose} className="ios-dropdown-item">
             Match Mode Stats
           </a>
         </div>
@@ -4594,10 +4614,20 @@ const StatDropdown = ({ isOpen, onToggle, onClose }) => {
   );
 };
 
-const LoggingModeDropdown = ({ isOpen, onToggle, onClose }) => {
+const LoggingModeDropdown = ({ isOpen, onOpen, onClose }) => {
   return (
-    <div className="ios-nav-dropdown-wrapper" onMouseLeave={onClose}>
-      <a href="#" onClick={(e) => { e.preventDefault(); onToggle('modes'); }} className="ios-nav-link">
+    <div
+      className="ios-nav-dropdown-wrapper"
+      onMouseEnter={() => onOpen('modes')}
+      onMouseLeave={onClose}
+      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}
+    >
+      <a
+        href="#"
+        onClick={(e) => { e.preventDefault(); isOpen ? onClose() : onOpen('modes'); }}
+        onFocus={() => onOpen('modes')}
+        className="ios-nav-link"
+      >
         Logging Modes
         <span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
       </a>
@@ -4606,10 +4636,10 @@ const LoggingModeDropdown = ({ isOpen, onToggle, onClose }) => {
           <a href="/stat-book" onClick={onClose} className="ios-dropdown-item">
             Stat Book Mode
           </a>
-          <a href="/match-tracking"  onClick={onClose} className="ios-dropdown-item">
+          <a href="/match-tracking" onClick={onClose} className="ios-dropdown-item">
             Match Mode
           </a>
-		  <a href="/classic"  onClick={onClose} className="ios-dropdown-item">
+          <a href="/classic" onClick={onClose} className="ios-dropdown-item">
             Classic Mode
           </a>
         </div>
@@ -4618,43 +4648,40 @@ const LoggingModeDropdown = ({ isOpen, onToggle, onClose }) => {
   );
 };
 
-  // 🏆 COACHES CORNER DROPDOWN COMPONENT
-const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
+const CoachesCornerDropdown = ({ isOpen, onOpen, onClose }) => {
   return (
-    <div className="ios-nav-dropdown-wrapper" onMouseLeave={onClose}>
+    <div
+      className="ios-nav-dropdown-wrapper"
+      onMouseEnter={() => onOpen('coaches')}
+      onMouseLeave={onClose}
+      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}
+    >
       <a
         href="#"
-        onClick={(e) => {
-          e.preventDefault();
-          onToggle("coaches");
-        }}
+        onClick={(e) => { e.preventDefault(); isOpen ? onClose() : onOpen('coaches'); }}
+        onFocus={() => onOpen('coaches')}
         className="ios-nav-link"
       >
         Coaches' Corner
-        <span className={`dropdown-arrow ${isOpen ? "open" : ""}`}>›</span>
+        <span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
       </a>
-
       {isOpen && (
         <div className="ios-dropdown-menu">
           <a href="/coaches-corner" onClick={onClose} className="ios-dropdown-item primary-green">
             Home
           </a>
-
           <a href="/coaches-corner/drills" onClick={onClose} className="ios-dropdown-item">
             My Drills
           </a>
-
           <a href="/coaches-corner/practice" onClick={onClose} className="ios-dropdown-item">
             Practice Assist
           </a>
-
           <a href="/coaches-corner/referrals" onClick={onClose} className="ios-dropdown-item">
             Referrals
           </a>
-		  
-		  <a href="/coaches-corner/jobs" onClick={onClose} className="ios-dropdown-item">
-   Jobs
-</a>
+          <a href="/coaches-corner/jobs" onClick={onClose} className="ios-dropdown-item">
+            Jobs
+          </a>
         </div>
       )}
     </div>
@@ -5041,36 +5068,26 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
   <nav className={`ios-nav-links ${showMobileMenu ? "visible" : ""}`}>
     <Link to="/profile" className="ios-nav-link">Profile</Link>
     <Link to="/settings" className="ios-nav-link">Rosters & Matches</Link>
-	<LoggingModeDropdown
-  isOpen={activeDropdown === 'modes'}
-  onToggle={handleToggleDropdown}
-  onClose={closeAllDropdowns}
-/>
-    
-   <div className="ios-nav-dropdown-wrapper">
-    <StatDropdown 
-    isOpen={activeDropdown === 'stats'} 
-    onToggle={handleToggleDropdown} 
-    onClose={closeAllDropdowns} 
-  />
-  </div>
-    
-    <div className="ios-nav-dropdown-wrapper">
-    <CoachesCornerDropdown 
-    isOpen={activeDropdown === 'coaches'} 
-    onToggle={handleToggleDropdown} 
-    onClose={closeAllDropdowns} 
-  />
-  </div>
-
-
-    <div className="ios-nav-dropdown-wrapper">
-      <BlogDropdown 
-    isOpen={activeDropdown === 'blog'} 
-    onToggle={handleToggleDropdown} 
-    onClose={closeAllDropdowns} 
-  />
-    </div>
+    <LoggingModeDropdown
+      isOpen={activeDropdown === 'modes'}
+      onOpen={handleOpenDropdown}
+      onClose={closeAllDropdowns}
+    />
+    <StatDropdown
+      isOpen={activeDropdown === 'stats'}
+      onOpen={handleOpenDropdown}
+      onClose={closeAllDropdowns}
+    />
+    <CoachesCornerDropdown
+      isOpen={activeDropdown === 'coaches'}
+      onOpen={handleOpenDropdown}
+      onClose={closeAllDropdowns}
+    />
+    <BlogDropdown
+      isOpen={activeDropdown === 'blog'}
+      onOpen={handleOpenDropdown}
+      onClose={closeAllDropdowns}
+    />
 
     {user && (
       <button onClick={handleLogout} className="ios-logout-btn">
