@@ -3220,40 +3220,7 @@ const handleDeletePlayer = useCallback(async (id) => {
     }
   }, [user?.id, courtPlayers]);
 
-  const SaveStatusIndicator = useCallback(() => {
-    if (!saveStatus) return null;
-    
-    const statusConfig = {
-      saving: { text: "Saving...", color: "#FFA500", icon: "Loading" },
-      saved: { text: "Saved", color: "#4CAF50", icon: "Check" },
-      error: { text: "Save Failed", color: "#F44336", icon: "Error" }
-    };
-    
-    const config = statusConfig[saveStatus];
-    
-    return (
-      <div style={{
-        position: "fixed",
-        top: showHeader ? "120px" : "60px",
-        left: "10px",
-        zIndex: 1001,
-        padding: "8px 12px",
-        borderRadius: "6px",
-        fontSize: "14px",
-        background: config.color,
-        color: "white",
-        border: "none",
-        boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-        display: "flex",
-        alignItems: "center",
-        gap: "5px",
-        transition: "all 0.3s ease"
-      }}>
-        <span>{config.icon}</span>
-        <span>{config.text}</span>
-      </div>
-    );
-  }, [saveStatus, showHeader]);
+  const SaveStatusIndicator = useCallback(() => null, []);
 
 const CONSENT_INTERVAL_DAYS = 28;
 const CONSENT_MAX_DISMISSES = 3;
@@ -5069,7 +5036,7 @@ const CoachesCornerDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
 
 
 
-{location.pathname !== "/login" && location.pathname !== "/register" && (
+{!isNativeApp && location.pathname !== "/login" && location.pathname !== "/register" && (
   <nav className={`ios-nav-links ${showMobileMenu ? "visible" : ""}`}>
     <Link to="/profile" className="ios-nav-link">Profile</Link>
     <Link to="/settings" className="ios-nav-link">Rosters & Matches</Link>

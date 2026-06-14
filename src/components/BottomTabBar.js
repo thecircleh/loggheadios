@@ -142,7 +142,6 @@ const BottomTabBar = ({ isNative }) => {
         boxShadow: "0 8px 32px rgba(0,0,0,0.12), 0 1px 0 rgba(255,255,255,0.9) inset",
         display: "flex",
         alignItems: "stretch",
-        overflow: "hidden",
         zIndex: 9000,
       }}>
         {tabs.map((tab) => {
