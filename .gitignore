@@ -2,3 +2,7 @@ node_modules/
 ios/
 build/
 .claude/
+*.zip
+*.bak
+.env
+.env.*
