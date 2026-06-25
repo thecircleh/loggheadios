@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import axios from "axios";
-import stripePrices from "./stripePrices";
 
 const getApiUrl = () => {
   if (window.location.hostname.startsWith("10.")) {
@@ -13,50 +12,69 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl();
 
-// Define mode mappings - which match modes are compatible with which pages
-// IMPORTANT: These match the exact capitalization stored in your MongoDB database
-// Includes both current and legacy mode names for backward compatibility
 const MODE_MAPPINGS = {
   classic: {
-    compatibleModes: ["Classic", "Gameflow"],  // Gameflow is legacy name
+    compatibleModes: ["Classic", "Gameflow"],
     newMatchMode: "Classic",
     displayName: "Classic",
     pageTitle: "Classic Mode",
   },
   statbook: {
-    compatibleModes: ["Statbook", "Collab"],  // Collab is legacy name
+    compatibleModes: ["Statbook", "Collab", "Express"],
     newMatchMode: "Statbook",
     displayName: "Stat Book",
-    pageTitle: "Stat Book Logger",
+    pageTitle: "Stat Book",
   },
   match: {
-    compatibleModes: ["Match", "Coach"],  // Coach is legacy name
+    compatibleModes: ["Match", "Coach"],
     newMatchMode: "Match",
     displayName: "Match Tracking",
-    pageTitle: "Match Tracking Mode",
+    pageTitle: "Match Tracking",
   },
 };
 
-const MATCH_AGE_THRESHOLD_MINUTES = 60; // Show selector if match is older than 1 hour
+const MODE_ROUTES = {
+  Classic: "/classic",
+  Gameflow: "/classic",
+  Statbook: "/stat-book",
+  Express: "/stat-book",
+  Collab: "/stat-book?collab=true",
+  Match: "/match-tracking",
+  Coach: "/match-tracking",
+};
+
+const MODE_NAMES = {
+  Classic: "Classic",
+  Gameflow: "Classic",
+  Statbook: "Stat Book",
+  Express: "Stat Book",
+  Collab: "Collaborative Stat Book",
+  Match: "Match Tracking",
+  Coach: "Match Tracking",
+};
+
+const MATCH_AGE_THRESHOLD_MINUTES = 60;
 
 export default function MatchModeSelector({
-  currentPage, // "classic", "statbook", or "match"
+  currentPage,
   currentMatchId,
   currentMatchMode,
-  currentMatchAge, // in minutes
+  currentMatchAge = 0,
   onStartNewMatch,
   onResumeMatch,
-  onClose, // Optional close handler if used as modal
+  onClose,
 }) {
   const navigate = useNavigate();
-  const { user, token, refreshUser } = useAuth(); // Add refreshUser if available
+  const { user, token } = useAuth();
+
   const [teams, setTeams] = useState([]);
+  const [teamRosters, setTeamRosters] = useState({});
   const [existingMatches, setExistingMatches] = useState([]);
+  const [activeTab, setActiveTab] = useState("new");
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState("new"); // "new" or "resume"
-  const [teamRosters, setTeamRosters] = useState({}); // Track rosters for each team
-  const [limitReached, setLimitReached] = useState(false); // Track if backend says limit reached
+
   const [formData, setFormData] = useState({
     teamName: "",
     opponent: "",
@@ -68,416 +86,248 @@ export default function MatchModeSelector({
 
   const config = MODE_MAPPINGS[currentPage] || MODE_MAPPINGS.classic;
 
-  // Determine if selector should be shown
-  const shouldShow = () => {
-    console.log("🔍 MatchModeSelector shouldShow check:", {
-      currentMatchId,
-      currentMatchMode,
-      currentMatchAge,
-      currentPage,
-      compatibleModes: config.compatibleModes,
-    });
+  const currentModeIsCompatible =
+    !!currentMatchMode && config.compatibleModes.includes(currentMatchMode);
 
-    // Always show if no current match
-    if (!currentMatchId) {
-      console.log("⚠️ Showing selector: No current match ID");
-      return true;
-    }
+  const hasWrongModeActiveMatch =
+    !!currentMatchId && !!currentMatchMode && !currentModeIsCompatible;
 
-    // If mode is undefined or empty, treat as "no match" (don't show)
-    if (!currentMatchMode || currentMatchMode.trim() === '') {
-      console.log("⚠️ Hiding selector: No current match mode");
-      return false;
-    }
+  const hasStaleMatch =
+    !!currentMatchId &&
+    !!currentMatchMode &&
+    currentModeIsCompatible &&
+    currentMatchAge > MATCH_AGE_THRESHOLD_MINUTES;
 
-    // CRITICAL: If user is in an active, recent, compatible match, NEVER show
-    // This prevents the modal from appearing during gameplay
-    const isCompatibleMode = config.compatibleModes.includes(currentMatchMode);
-    const isRecentMatch = currentMatchAge <= MATCH_AGE_THRESHOLD_MINUTES;
-    if (isCompatibleMode && isRecentMatch) {
-      console.log("✅ Hiding selector: User in active compatible match");
-      return false;
-    }
+  const shouldShow =
+    !currentMatchId ||
+    hasWrongModeActiveMatch ||
+    hasStaleMatch;
 
-    // If user has an active recent match in a DIFFERENT mode, also hide the selector.
-    // They navigated here from another mode — don't interrupt them with the selector.
-    // They can start a new match from the page if they want.
-    if (!isCompatibleMode && isRecentMatch) {
-      console.log("✅ Hiding selector: User has recent match in different mode, not interrupting");
-      return false;
-    }
+  const correctRoute = MODE_ROUTES[currentMatchMode] || "/";
 
-    // Show if match is older than threshold (stale match)
-    if (currentMatchAge > MATCH_AGE_THRESHOLD_MINUTES) {
-      console.log("⚠️ Showing selector: Match too old");
-      return true;
-    }
-
-    console.log("✅ Hiding selector: All checks passed");
-    return false;
-  };
-
-  // Fetch teams and existing compatible matches
   useEffect(() => {
+    if (!token || !user?.id || !shouldShow) {
+      setLoading(false);
+      return;
+    }
+
     const fetchData = async () => {
-      console.log("🔍 MatchModeSelector: Starting data fetch");
-
-      if (!user?.id) {
-        console.warn("⚠️ No user ID found");
-        setLoading(false);
-        return;
-      }
-
       try {
-        // Fetch user teams
-        console.log(`📡 Fetching user data from: ${API_URL}/api/users/${user.id}`);
+        setLoading(true);
+
         const userRes = await axios.get(`${API_URL}/api/users/${user.id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        const fetchedTeams = userRes.data.teams || [];
-        console.log("🏐 Teams found:", fetchedTeams);
+        const fetchedTeams = userRes.data?.teams || [];
         setTeams(fetchedTeams);
 
-        // Fetch rosters for all teams
-        console.log("📡 Fetching rosters for all teams");
-        const rostersMap = {};
+        if (fetchedTeams.length > 0) {
+          setFormData((prev) => ({
+            ...prev,
+            teamName: prev.teamName || fetchedTeams[0],
+          }));
+        }
+
+        const rosters = {};
         for (const teamName of fetchedTeams) {
           try {
-            const playersRes = await axios.get(
-              `${API_URL}/api/players?team=${encodeURIComponent(teamName)}`,
-              { headers: { Authorization: `Bearer ${token}` } }
-            );
-            rostersMap[teamName] = playersRes.data || [];
-            console.log(`✅ Roster for ${teamName}: ${playersRes.data?.length || 0} players`);
-          } catch (err) {
-            console.warn(`⚠️ Failed to fetch roster for team ${teamName}:`, err);
-            rostersMap[teamName] = [];
+            const playerRes = await axios.get(`${API_URL}/api/players`, {
+              params: { team: teamName },
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            rosters[teamName] = playerRes.data || [];
+          } catch {
+            rosters[teamName] = [];
           }
         }
-        setTeamRosters(rostersMap);
 
-        // Auto-select first team if available
-        if (fetchedTeams.length > 0) {
-          setFormData((prev) => ({ ...prev, teamName: fetchedTeams[0] }));
-        }
+        setTeamRosters(rosters);
 
-        // Fetch matches for all teams using the /team endpoint
-        console.log(`📡 Fetching matches for teams:`, fetchedTeams);
         const allMatches = [];
-        
+
         for (const teamName of fetchedTeams) {
           try {
-            const matchesRes = await axios.get(`${API_URL}/api/matches/team`, {
+            const matchRes = await axios.get(`${API_URL}/api/matches/team`, {
               params: { teamName },
               headers: { Authorization: `Bearer ${token}` },
             });
-            
-            if (matchesRes.data && Array.isArray(matchesRes.data)) {
-              allMatches.push(...matchesRes.data);
+
+            if (Array.isArray(matchRes.data)) {
+              allMatches.push(...matchRes.data);
             }
-          } catch (err) {
-            console.warn(`⚠️ Failed to fetch matches for team ${teamName}:`, err);
+          } catch {
+            // Ignore one bad team fetch
           }
         }
 
-        console.log(`📦 Total matches fetched: ${allMatches.length}`);
-
-        // Filter to only compatible matches that aren't the current one
         const compatibleMatches = allMatches
           .filter((match) => {
-            const isCompatible = config.compatibleModes.includes(match.mode);
-            const isNotCurrent = match._id !== currentMatchId;
-            const isNotFinalized = !match.finalized && match.status !== "Final";
-            const isUsersMatch = match.userId === user.id; // Only show user's own matches
-            
-            return isCompatible && isNotCurrent && isNotFinalized && isUsersMatch;
-          })
-          .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)); // Most recent first
+            const compatible = config.compatibleModes.includes(match.mode);
+            const notCurrent = match._id !== currentMatchId;
+            const notFinal =
+              match.status !== "Final" &&
+              match.status !== "completed" &&
+              !match.finalized;
 
-        console.log(`✅ Found ${compatibleMatches.length} compatible matches for user`);
+            return compatible && notCurrent && notFinal;
+          })
+          .sort((a, b) => {
+            const da = new Date(a.updatedAt || a.timestamp || a.createdAt || 0);
+            const db = new Date(b.updatedAt || b.timestamp || b.createdAt || 0);
+            return db - da;
+          });
+
         setExistingMatches(compatibleMatches);
 
-        // If there are existing matches, default to resume tab
-        if (compatibleMatches.length > 0) {
+        if (compatibleMatches.length > 0 && hasWrongModeActiveMatch) {
           setActiveTab("resume");
         }
-      } catch (error) {
-        console.error("❌ Failed to fetch data:", error);
-        setError("Failed to load data. Please try again.");
+      } catch (err) {
+        console.error("Failed to load match selector data:", err);
+        setError("Could not load your teams or matches.");
       } finally {
         setLoading(false);
       }
     };
 
-    if (token && user?.id) {
-      fetchData();
-    }
-  }, [token, user?.id, currentMatchId, currentPage]);
+    fetchData();
+  }, [
+    token,
+    user?.id,
+    currentMatchId,
+    currentMatchMode,
+    currentPage,
+    shouldShow,
+    hasWrongModeActiveMatch,
+    config.compatibleModes,
+  ]);
 
-  const handleInputChange = (field, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
-    if (error) setError("");
-  };
-
-  // Filter existing matches by selected team and sort by most recent
-  const filteredMatches = React.useMemo(() => {
-    let matches = existingMatches;
-    
-    // Filter by team if one is selected
-    if (formData.teamName) {
-      matches = matches.filter(match => match.teamName === formData.teamName);
-    }
-    
-    // Sort by most recent first (descending order)
-    return matches.sort((a, b) => {
-      const dateA = new Date(a.updatedAt || a.timestamp || a.createdAt || 0);
-      const dateB = new Date(b.updatedAt || b.timestamp || b.createdAt || 0);
-      return dateB - dateA; // Descending: newest first
-    });
+  const filteredMatches = useMemo(() => {
+    if (!formData.teamName) return existingMatches;
+    return existingMatches.filter((m) => m.teamName === formData.teamName);
   }, [existingMatches, formData.teamName]);
 
-  const validateForm = () => {
-    if (!formData.teamName) {
-      setError("Please select a team");
-      return false;
+  const selectedRosterCount = teamRosters[formData.teamName]?.length || 0;
+
+  const updateField = (field, value) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    setError("");
+  };
+
+  const handleGoCorrectMode = () => {
+    navigate(correctRoute, { replace: true });
+  };
+
+  const handleCancel = () => {
+    if (onClose) {
+      onClose();
+      return;
     }
-    
-    // Check if team has roster
-    const roster = teamRosters[formData.teamName] || [];
-    if (roster.length === 0) {
-      setError("Please add players to your team roster before starting a match");
-      return false;
-    }
-    
-    if (!formData.opponent.trim()) {
-      setError("Please enter an opponent name");
-      return false;
-    }
-    return true;
+    navigate("/", { replace: true });
   };
 
   const handleStartNewMatch = async () => {
-    console.log("🚀 handleStartNewMatch fired");
-
-    if (loading) {
-      console.log("⚠️ Already creating match, ignoring duplicate click");
+    if (!formData.teamName) {
+      setError("Please select a team.");
       return;
     }
 
-    if (!validateForm()) {
-      console.warn("❌ Form validation failed");
+    if (selectedRosterCount === 0) {
+      setError("Please add players to this team before starting a match.");
+      return;
+    }
+
+    if (!formData.opponent.trim()) {
+      setError("Please enter an opponent name.");
       return;
     }
 
     try {
-      setLoading(true);
-      console.log("📝 Creating new match with mode:", config.newMatchMode);
+      setCreating(true);
 
-      const matchData = {
+      const payload = {
         teamName: formData.teamName,
-        mode: config.newMatchMode,
         opponentName: formData.opponent.trim(),
-        totalSets: formData.sets,
-        playAllSets: formData.playAllSets,
-        pointsNonDeciding: formData.points,
-        pointsDeciding: formData.decidingSetPoints,
+        mode: config.newMatchMode,
+        totalSets: Number(formData.sets) || 3,
+        playAllSets: !!formData.playAllSets,
+        pointsNonDeciding: Number(formData.points) || 25,
+        pointsDeciding: Number(formData.decidingSetPoints) || 15,
         eventName: "",
         location: "",
         matchData: {
           opponentName: formData.opponent.trim(),
           teamName: formData.teamName,
-          sets: formData.sets,
-          points: formData.points,
-          decidingSetPoints: formData.decidingSetPoints,
-          playAllSets: formData.playAllSets,
+          sets: Number(formData.sets) || 3,
+          points: Number(formData.points) || 25,
+          decidingSetPoints: Number(formData.decidingSetPoints) || 15,
+          playAllSets: !!formData.playAllSets,
         },
       };
 
-      console.log("📤 Sending match data to API:", matchData);
-      console.log("🎯 Mode being sent:", config.newMatchMode);
-
-      const response = await axios.post(`${API_URL}/api/matches`, matchData, {
+      const res = await axios.post(`${API_URL}/api/matches`, payload, {
         headers: { Authorization: `Bearer ${token}` },
         withCredentials: true,
       });
 
-      const newMatchId = response.data._id;
-      console.log("✅ Created new match:", newMatchId);
+      const newMatchId = res.data?._id;
 
       if (!newMatchId) {
-        throw new Error("No match ID returned from server");
+        throw new Error("No match id returned.");
       }
 
-      // Call parent callback with new match config
-      // Note: We don't refresh user data here because the user is about to enter
-      // the match they just created. The usage counter will sync on next visit.
-      if (onStartNewMatch) {
-        onStartNewMatch({
-          matchId: newMatchId,
-          opponentName: formData.opponent.trim(),
-          teamName: formData.teamName,
-          sets: formData.sets,
-          points: formData.points,
-          decidingSetPoints: formData.decidingSetPoints,
-          playAllSets: formData.playAllSets,
-          mode: config.newMatchMode,
-        });
-      }
-      
-      // Reset loading state so modal can close/update
-      setLoading(false);
-    } catch (error) {
-      console.error("❌ Failed to create match:", error);
-      
-      // Handle MATCH_LIMIT_REACHED error
-      if (error.response?.data?.error === "MATCH_LIMIT_REACHED") {
-        console.log("🔄 Match limit reached - user needs to purchase access");
-        
-        // Set flag so purchase UI shows
-        setLimitReached(true);
-        
-        // Only refresh if we're NOT currently in a match
-        // (If in a match, user will see purchase UI when they exit)
-        if (!currentMatchId && refreshUser && typeof refreshUser === 'function') {
-          console.log("🔄 Refreshing user data to sync with backend");
-          try {
-            await refreshUser();
-          } catch (refreshError) {
-            console.error("Failed to refresh user data:", refreshError);
-          }
-        }
-        
-        setLoading(false);
-        return; // Don't display error message
-      }
-      
-      setError(
-        error.response?.data?.message || "Failed to start match. Please try again."
-      );
-      setLoading(false);
-    }
-  };
-
-  const handleResumeExistingMatch = (match) => {
-    console.log("🔄 Resuming match:", match._id);
-    
-    if (onResumeMatch) {
-      onResumeMatch({
-        matchId: match._id,
-        opponentName: match.opponentName || match.matchData?.opponentName,
-        teamName: match.teamName,
-        sets: match.totalSets || match.matchData?.sets,
-        points: match.pointsNonDeciding || match.matchData?.points,
-        decidingSetPoints: match.pointsDeciding || match.matchData?.decidingSetPoints,
-        playAllSets: match.playAllSets || match.matchData?.playAllSets,
-        mode: match.mode,
+      onStartNewMatch?.({
+        matchId: newMatchId,
+        opponentName: payload.opponentName,
+        teamName: payload.teamName,
+        sets: payload.totalSets,
+        points: payload.pointsNonDeciding,
+        decidingSetPoints: payload.pointsDeciding,
+        playAllSets: payload.playAllSets,
+        mode: payload.mode,
       });
-    }
-  };
-
-  // Billing handlers
-  const handleSubscribe = async (priceId, mode) => {
-    try {
-      const res = await axios.post(
-        `${API_URL}/api/billing/create-checkout-session`,
-        { priceId, mode },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      window.location.href = res.data.url;
     } catch (err) {
-      console.error("Checkout error:", err.response?.data || err.message);
-      setError(`Checkout failed: ${err.response?.data?.error || err.message}`);
+      console.error("Failed to start new match:", err);
+      setError(err.response?.data?.message || "Could not start a new match.");
+    } finally {
+      setCreating(false);
     }
   };
 
-  const handleMatchKeyPurchase = async (matchMode) => {
-    try {
-      const res = await axios.post(
-        `${API_URL}/api/billing/create-checkout-session`,
-        {
-          purchaseType: "match_key",
-          matchMode,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      window.location.href = res.data.url;
-    } catch (err) {
-      console.error("Match key purchase error:", err.response?.data || err.message);
-      setError(`Purchase failed: ${err.response?.data?.error || err.message}`);
-    }
+  const handleResumeMatch = (match) => {
+    onResumeMatch?.({
+      matchId: match._id,
+      opponentName: match.opponentName || match.matchData?.opponentName || "Opponent",
+      teamName: match.teamName,
+      sets: match.totalSets || match.matchData?.sets || 3,
+      points: match.pointsNonDeciding || match.matchData?.points || 25,
+      decidingSetPoints:
+        match.pointsDeciding || match.matchData?.decidingSetPoints || 15,
+      playAllSets: match.playAllSets || match.matchData?.playAllSets || false,
+      mode: match.mode,
+    });
   };
 
-  // Check subscription status and usage
-  const hasPremium = useMemo(() => {
-    return ["active", "canceling"].includes(user?.subscription?.status) || false;
-  }, [user?.subscription?.status]);
+  const formatTime = (match) => {
+    const date = new Date(match.updatedAt || match.timestamp || match.createdAt);
+    if (Number.isNaN(date.getTime())) return "Unknown time";
 
-  const statbookUsage = useMemo(() => {
-    return Number(user?.dailyUsage?.statbook?.count || 0);
-  }, [user?.dailyUsage?.statbook?.count]);
+    const minutes = Math.floor((Date.now() - date.getTime()) / 60000);
 
-  const matchUsage = useMemo(() => {
-    return Number(user?.dailyUsage?.match?.count || 0);
-  }, [user?.dailyUsage?.match?.count]);
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes} min ago`;
+    if (minutes < 1440) return `${Math.floor(minutes / 60)} hr ago`;
+    return `${Math.floor(minutes / 1440)} days ago`;
+  };
 
-  const needsAccess = useMemo(() => {
-    if (hasPremium) return false;
-    
-    // Show purchase UI if backend told us the limit is reached
-    if (limitReached) return true;
-    
-    // Check which mode we're in and if free usage is exhausted
-    if (currentPage === "statbook") {
-      return statbookUsage >= 1;
-    } else if (currentPage === "match") {
-      return matchUsage >= 1;
-    }
-    return false;
-  }, [hasPremium, currentPage, statbookUsage, matchUsage, limitReached]);
+  if (!shouldShow) return null;
 
-  // Get the best subscription plan to show
-  const quickAccessPlan = useMemo(() => {
-    if (stripePrices?.weekly) {
-      return { priceId: stripePrices.weekly, label: "Weekly", price: "$2.49" };
-    } else if (stripePrices?.daily) {
-      return { priceId: stripePrices.daily, label: "Daily", price: "$1.49" };
-    } else if (stripePrices?.monthly) {
-      return { priceId: stripePrices.monthly, label: "Monthly", price: "$7.99" };
-    }
-    return null;
-  }, []);
-
-  // Don't render if shouldn't show
-  if (!shouldShow()) {
-    return null;
-  }
-
-  if (loading && teams.length === 0) {
+  if (loading) {
     return (
       <div style={styles.overlay}>
         <div style={styles.card}>
-          <div style={styles.loadingMessage}>Loading...</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (teams.length === 0) {
-    return (
-      <div style={styles.overlay}>
-        <div style={styles.card}>
-          <h1 style={styles.title}>No Teams Found</h1>
-          <p style={styles.errorMessage}>
-            Please create a team first in{" "}
-            <a href="/settings" style={{ color: "#667eea" }}>
-              Settings
-            </a>
-            .
-          </p>
+          <h2 style={styles.title}>Loading matches...</h2>
         </div>
       </div>
     );
@@ -487,409 +337,191 @@ export default function MatchModeSelector({
     <div style={styles.overlay}>
       <div style={styles.card}>
         <h1 style={styles.title}>{config.pageTitle}</h1>
-        <p style={styles.subtitle}>Start a new match or resume an existing one</p>
 
-        {/* Info Alert */}
-        {currentMatchId && currentMatchMode && currentMatchMode.trim() !== '' && !config.compatibleModes.includes(currentMatchMode) && (
-          <div style={styles.infoAlert}>
-            <span style={{ color: "#1976d2", fontWeight: "500" }}>
-              💡 Your current match is in {currentMatchMode} mode. {config.pageTitle} uses{" "}
-              {config.compatibleModes.join(" or ")} mode. Start a new match or resume a compatible one.
-            </span>
-          </div>
-        )}
-
-        {currentMatchAge > MATCH_AGE_THRESHOLD_MINUTES && (
-          <div style={styles.infoAlert}>
-            <span style={{ color: "#f57c00", fontWeight: "500" }}>
-              ⏰ Your current match is over 1 hour old. Start fresh or resume a recent match.
-            </span>
-          </div>
-        )}
-
-        {error && (
-          <div style={styles.errorAlert}>
-            <span style={{ color: "#d32f2f", fontWeight: "500" }}>⚠️ {error}</span>
-          </div>
-        )}
-
-        {/* Access Restriction - Show Purchase Options */}
-        {needsAccess && (
-          <div style={styles.accessCard}>
-            <div style={styles.accessTitle}>
-              {currentPage === "statbook" && "🏐 Stat Book Access Required"}
-              {currentPage === "match" && "📊 Match Tracking Access Required"}
-              {currentPage === "classic" && "Access Required"}
-            </div>
-            <div style={styles.accessText}>
-              {currentPage === "statbook" && (
-                <>
-                  You've used your free Stat Book match for today. Choose an option below to continue logging, or{" "}
-                  <a href="/profile?section=subscription" style={{ color: "white", textDecoration: "underline" }}>
-                    see all plans
-                  </a> 
-                  .
-                </>
-              )}
-              {currentPage === "match" && (
-                <>
-                  You've used your free Match Tracking match for today. Choose an option below to continue tracking, or{" "}
-                  <a href="/profile?section=subscription" style={{ color: "white", textDecoration: "underline" }}>
-                    see all plans
-                  </a>
-                  .
-                </>
-              )}
-              {currentPage === "classic" && "Choose an option below to continue."}
+        {hasWrongModeActiveMatch && (
+          <div style={styles.warningBox}>
+            <div style={styles.warningTitle}>Active match is in another mode</div>
+            <div style={styles.warningText}>
+              Your current match was started in{" "}
+              <strong>{MODE_NAMES[currentMatchMode] || currentMatchMode}</strong>.
+              It cannot be opened in <strong>{config.displayName}</strong>.
             </div>
 
-            {/* Quick Premium CTA */}
-            {quickAccessPlan && (
-              <button
-                onClick={() => handleSubscribe(quickAccessPlan.priceId, "subscription")}
-                style={styles.premiumButton}
-                onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.98)")}
-                onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
-                onMouseOver={(e) => {
-                  e.currentTarget.style.boxShadow = "0 12px 24px rgba(0, 0, 0, 0.2)";
-                  e.currentTarget.style.transform = "translateY(-2px)";
-                }}
-                onMouseOut={(e) => {
-                  e.currentTarget.style.boxShadow = "0 8px 16px rgba(0, 0, 0, 0.15)";
-                  e.currentTarget.style.transform = "translateY(0)";
-                }}
-              >
-                <div style={styles.premiumButtonContent}>
-                  <div>
-                    <div style={styles.premiumButtonTitle}>Unlimited Premium ({quickAccessPlan.label})</div>
-                    <div style={styles.premiumButtonSub}>Recurring • Cancel anytime</div>
-                  </div>
-                  <div style={styles.premiumButtonPrice}>{quickAccessPlan.price}</div>
-                </div>
-              </button>
-            )}
-
-            {/* One-Time Purchase */}
-            <button
-              onClick={() => handleMatchKeyPurchase(currentPage === "statbook" ? "statbook" : "match")}
-              style={styles.oneTimeButton}
-              onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.98)")}
-              onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
-              onMouseOver={(e) => {
-                e.currentTarget.style.background = "rgba(255, 255, 255, 0.25)";
-                e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.4)";
-              }}
-              onMouseOut={(e) => {
-                e.currentTarget.style.background = "rgba(255, 255, 255, 0.2)";
-                e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.3)";
-              }}
-            >
-              <div style={styles.oneTimeButtonContent}>
-                <div>
-                  <div style={styles.oneTimeButtonTitle}>
-                    {currentPage === "statbook" && "One Stat Book Match"}
-                    {currentPage === "match" && "One Match Tracking Session"}
-                    {currentPage === "classic" && "One Match"}
-                  </div>
-                  <div style={styles.oneTimeButtonSub}>One-time • No renewal</div>
-                </div>
-                <div style={styles.oneTimeButtonPrice}>$1.29</div>
-              </div>
+            <button onClick={handleGoCorrectMode} style={styles.correctModeButton}>
+              Resume {MODE_NAMES[currentMatchMode] || currentMatchMode}
             </button>
-
-            <div style={styles.accessFooter}>
-              Coaches Corner stays free. Premium is a recurring subscription.
-            </div>
           </div>
         )}
 
-        {/* Tabs */}
-        <div style={styles.tabContainer}>
+        {hasStaleMatch && (
+          <div style={styles.infoBox}>
+            Your current {config.displayName} match is over an hour old. Resume an
+            older match or start fresh.
+          </div>
+        )}
+
+        {error && <div style={styles.errorBox}>{error}</div>}
+
+        <div style={styles.buttonGrid}>
           <button
             onClick={() => setActiveTab("new")}
             style={{
-              ...styles.tab,
+              ...styles.tabButton,
               ...(activeTab === "new" ? styles.activeTab : {}),
             }}
           >
             Start New Match
           </button>
+
           <button
             onClick={() => setActiveTab("resume")}
             style={{
-              ...styles.tab,
+              ...styles.tabButton,
               ...(activeTab === "resume" ? styles.activeTab : {}),
             }}
           >
-            Resume Existing ({filteredMatches.length})
+            Call Up Older Match
           </button>
         </div>
 
-        {/* Tab Content */}
-        {activeTab === "new" ? (
-          <div style={styles.tabContent}>
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Select Team *</label>
-              <select
-                value={formData.teamName || ""}
-                onChange={(e) => handleInputChange("teamName", e.target.value)}
-                style={styles.select}
-              >
-                <option value="">-- Choose a team --</option>
-                {teams.map((teamName) => (
-                  <option key={teamName} value={teamName}>
-                    {teamName}
-                  </option>
-                ))}
-              </select>
-              
-              {/* Roster warning */}
-              {formData.teamName && (teamRosters[formData.teamName] || []).length === 0 && (
-                <div style={{
-                  marginTop: '8px',
-                  padding: '8px 12px',
-                  backgroundColor: '#FFF3CD',
-                  border: '1px solid #FFC107',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  color: '#856404',
-                  fontWeight: '500'
-                }}>
-                  ⚠️ This team has no roster. Please add players before starting a match.
-                </div>
-              )}
-              
-              {/* Roster count indicator */}
-              {formData.teamName && (teamRosters[formData.teamName] || []).length > 0 && (
-                <div style={{
-                  marginTop: '8px',
-                  fontSize: '13px',
-                  color: '#28a745',
-                  fontWeight: '500'
-                }}>
-                  ✓ {(teamRosters[formData.teamName] || []).length} players on roster
-                </div>
-              )}
-            </div>
+        {activeTab === "new" && (
+          <div style={styles.section}>
+            <label style={styles.label}>Team</label>
+            <select
+              value={formData.teamName}
+              onChange={(e) => updateField("teamName", e.target.value)}
+              style={styles.input}
+            >
+              <option value="">Select team</option>
+              {teams.map((team) => (
+                <option key={team} value={team}>
+                  {team}
+                </option>
+              ))}
+            </select>
 
-            <div style={styles.formGroup}>
-              <label style={styles.label}>
-                Opponent Name <span style={{ color: "#d32f2f" }}>*</span>
-              </label>
-              <input
-                type="text"
-                placeholder="Enter opponent name"
-                value={formData.opponent}
-                onChange={(e) => handleInputChange("opponent", e.target.value)}
+            {formData.teamName && (
+              <div
                 style={{
-                  ...styles.input,
-                  borderColor: error && !formData.opponent ? "#d32f2f" : "#ddd",
+                  ...styles.rosterNote,
+                  color: selectedRosterCount > 0 ? "#15803d" : "#b45309",
                 }}
-                onKeyPress={(e) => {
-                  if (e.key === "Enter" && formData.opponent.trim()) {
-                    handleStartNewMatch();
-                  }
-                }}
-              />
-            </div>
+              >
+                {selectedRosterCount > 0
+                  ? `${selectedRosterCount} players on roster`
+                  : "This team has no players yet"}
+              </div>
+            )}
 
-            <div style={styles.gridRow}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Sets to Play</label>
+            <label style={styles.label}>Opponent</label>
+            <input
+              value={formData.opponent}
+              onChange={(e) => updateField("opponent", e.target.value)}
+              placeholder="Opponent name"
+              style={styles.input}
+            />
+
+            <div style={styles.row}>
+              <div style={styles.field}>
+                <label style={styles.label}>Sets</label>
                 <input
                   type="number"
                   min="1"
                   max="5"
                   value={formData.sets}
-                  onChange={(e) =>
-                    handleInputChange("sets", parseInt(e.target.value) || 3)
-                  }
+                  onChange={(e) => updateField("sets", e.target.value)}
                   style={styles.input}
                 />
               </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Points per Set</label>
+              <div style={styles.field}>
+                <label style={styles.label}>Points</label>
                 <input
                   type="number"
-                  min="15"
-                  max="30"
+                  min="1"
                   value={formData.points}
-                  onChange={(e) =>
-                    handleInputChange("points", parseInt(e.target.value) || 25)
-                  }
+                  onChange={(e) => updateField("points", e.target.value)}
                   style={styles.input}
                 />
               </div>
-            </div>
 
-            <div style={styles.gridRow}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Deciding Set Points</label>
+              <div style={styles.field}>
+                <label style={styles.label}>Deciding</label>
                 <input
                   type="number"
-                  min="10"
-                  max="25"
+                  min="1"
                   value={formData.decidingSetPoints}
                   onChange={(e) =>
-                    handleInputChange(
-                      "decidingSetPoints",
-                      parseInt(e.target.value) || 15
-                    )
+                    updateField("decidingSetPoints", e.target.value)
                   }
                   style={styles.input}
                 />
               </div>
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Play All Sets?</label>
-                <input
-                  type="checkbox"
-                  checked={formData.playAllSets}
-                  onChange={(e) =>
-                    handleInputChange("playAllSets", e.target.checked)
-                  }
-                  style={styles.checkbox}
-                />
-              </div>
             </div>
+
+            <label style={styles.checkboxLabel}>
+              <input
+                type="checkbox"
+                checked={formData.playAllSets}
+                onChange={(e) => updateField("playAllSets", e.target.checked)}
+              />
+              Play all sets
+            </label>
 
             <button
               onClick={handleStartNewMatch}
-              disabled={
-                loading || 
-                !formData.teamName || 
-                !formData.opponent.trim() ||
-                (teamRosters[formData.teamName] || []).length === 0 ||
-                needsAccess
-              }
-              style={{
-                ...styles.button,
-                opacity:
-                  loading || 
-                  !formData.teamName || 
-                  !formData.opponent.trim() ||
-                  (teamRosters[formData.teamName] || []).length === 0 ||
-                  needsAccess
-                    ? 0.6
-                    : 1,
-                cursor:
-                  loading || 
-                  !formData.teamName || 
-                  !formData.opponent.trim() ||
-                  (teamRosters[formData.teamName] || []).length === 0 ||
-                  needsAccess
-                    ? "not-allowed"
-                    : "pointer",
-              }}
+              disabled={creating}
+              style={styles.primaryButton}
             >
-              {loading ? "Starting Match..." : needsAccess ? "Purchase Access Above" : "Start New Match"}
+              {creating ? "Starting..." : `Start New ${config.displayName} Match`}
             </button>
           </div>
-        ) : (
-          <div style={styles.tabContent}>
-            {/* Team filter for Resume tab */}
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Filter by Team</label>
-              <select
-                value={formData.teamName || ""}
-                onChange={(e) => handleInputChange("teamName", e.target.value)}
-                style={styles.select}
-              >
-                <option value="">-- All Teams --</option>
-                {teams.map((teamName) => (
-                  <option key={teamName} value={teamName}>
-                    {teamName}
-                  </option>
-                ))}
-              </select>
-            </div>
+        )}
+
+        {activeTab === "resume" && (
+          <div style={styles.section}>
+            <label style={styles.label}>Filter by team</label>
+            <select
+              value={formData.teamName}
+              onChange={(e) => updateField("teamName", e.target.value)}
+              style={styles.input}
+            >
+              <option value="">All teams</option>
+              {teams.map((team) => (
+                <option key={team} value={team}>
+                  {team}
+                </option>
+              ))}
+            </select>
 
             {filteredMatches.length === 0 ? (
               <div style={styles.emptyState}>
-                <p style={{ color: "#666", fontSize: "14px", textAlign: "center" }}>
-                  {formData.teamName ? (
-                    <>
-                      No existing {config.displayName} matches found for {formData.teamName}.
-                      <br />
-                      Start a new match or select a different team.
-                    </>
-                  ) : (
-                    <>
-                      No existing {config.displayName} matches found.
-                      <br />
-                      Start a new match to get started!
-                    </>
-                  )}
-                </p>
+                No older {config.displayName} matches found.
               </div>
             ) : (
               <div style={styles.matchList}>
-                {filteredMatches.map((match) => {
-                  const opponent = match.opponentName || match.matchData?.opponentName || "Unknown";
-                  const team = match.teamName || "Unknown Team";
-                  
-                  // Handle potentially missing or invalid updatedAt
-                  let timeAgo = "Unknown time";
-                  try {
-                    const updatedAt = new Date(match.updatedAt || match.timestamp || match.createdAt);
-                    const now = new Date();
-                    
-                    // Check if date is valid
-                    if (!isNaN(updatedAt.getTime())) {
-                      const minutesAgo = Math.floor((now - updatedAt) / 1000 / 60);
-                      
-                      if (minutesAgo < 1) {
-                        timeAgo = "Just now";
-                      } else if (minutesAgo < 60) {
-                        timeAgo = `${minutesAgo} min ago`;
-                      } else if (minutesAgo < 1440) {
-                        const hours = Math.floor(minutesAgo / 60);
-                        timeAgo = `${hours} hr ago`;
-                      } else {
-                        const days = Math.floor(minutesAgo / 1440);
-                        timeAgo = `${days} ${days === 1 ? 'day' : 'days'} ago`;
-                      }
-                    }
-                  } catch (err) {
-                    console.warn("Failed to parse date for match:", match._id, err);
-                  }
-
-                  return (
-                    <div
-                      key={match._id}
-                      style={styles.matchCard}
-                      onClick={() => handleResumeExistingMatch(match)}
-                    >
-                      <div style={styles.matchCardHeader}>
-                        <span style={styles.matchCardTitle}>
-                          {team} vs {opponent}
-                        </span>
-                        <span style={styles.matchCardBadge}>{match.mode}</span>
-                      </div>
-                      <div style={styles.matchCardFooter}>
-                        <span style={styles.matchCardTime}>⏱ {timeAgo}</span>
-                      </div>
+                {filteredMatches.map((match) => (
+                  <button
+                    key={match._id}
+                    onClick={() => handleResumeMatch(match)}
+                    style={styles.matchCard}
+                  >
+                    <div style={styles.matchTitle}>
+                      {match.teamName || "Team"} vs{" "}
+                      {match.opponentName || match.matchData?.opponentName || "Opponent"}
                     </div>
-                  );
-                })}
+                    <div style={styles.matchMeta}>
+                      {MODE_NAMES[match.mode] || match.mode} • {formatTime(match)}
+                    </div>
+                  </button>
+                ))}
               </div>
             )}
           </div>
         )}
 
-        {/* Cancel Button */}
-        <button
-          onClick={() => navigate("/")}
-          style={styles.cancelButton}
-          onMouseOver={(e) => {
-            e.target.style.backgroundColor = "#f5f5f5";
-          }}
-          onMouseOut={(e) => {
-            e.target.style.backgroundColor = "transparent";
-          }}
-        >
-          Cancel
+        <button onClick={handleCancel} style={styles.cancelButton}>
+          Cancel — Go Home
         </button>
       </div>
     </div>
@@ -899,287 +531,187 @@ export default function MatchModeSelector({
 const styles = {
   overlay: {
     position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    inset: 0,
+    zIndex: 9999,
+    background: "rgba(0,0,0,0.55)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: "rgba(0, 0, 0, 0.6)",
-    zIndex: 9999,
-    padding: "20px",
-    backdropFilter: "blur(4px)",
+    padding: 16,
   },
   card: {
-    background: "white",
-    borderRadius: "12px",
-    padding: "40px",
-    boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
-    maxWidth: "600px",
     width: "100%",
-    maxHeight: "90vh",
+    maxWidth: 620,
+    maxHeight: "92vh",
     overflowY: "auto",
+    background: "#fff",
+    borderRadius: 18,
+    padding: 24,
+    boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+    fontFamily: "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
   },
   title: {
-    fontSize: "28px",
-    fontWeight: "bold",
-    marginBottom: "10px",
-    color: "#333",
+    margin: "0 0 8px",
+    fontSize: 26,
+    fontWeight: 800,
     textAlign: "center",
   },
-  subtitle: {
-    fontSize: "14px",
-    color: "#666",
-    textAlign: "center",
-    marginBottom: "25px",
+  warningBox: {
+    background: "#fff7ed",
+    border: "1px solid #fed7aa",
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
   },
-  infoAlert: {
-    padding: "12px 16px",
-    background: "#e3f2fd",
-    border: "1px solid #90caf9",
-    borderRadius: "6px",
-    marginBottom: "20px",
-    fontSize: "14px",
+  warningTitle: {
+    fontSize: 17,
+    fontWeight: 800,
+    marginBottom: 6,
+    color: "#9a3412",
   },
-  errorAlert: {
-    padding: "12px 16px",
-    background: "#ffebee",
-    border: "1px solid #ffcdd2",
-    borderRadius: "6px",
-    marginBottom: "20px",
-    fontSize: "14px",
+  warningText: {
+    fontSize: 14,
+    lineHeight: 1.45,
+    color: "#7c2d12",
+    marginBottom: 12,
   },
-  tabContainer: {
-    display: "flex",
-    gap: "10px",
-    marginBottom: "25px",
-    borderBottom: "2px solid #f0f0f0",
-  },
-  tab: {
-    flex: 1,
-    padding: "12px 20px",
-    background: "transparent",
+  correctModeButton: {
+    width: "100%",
+    padding: "14px 16px",
     border: "none",
-    borderBottom: "3px solid transparent",
-    fontSize: "14px",
-    fontWeight: "500",
-    color: "#666",
-    cursor: "pointer",
-    transition: "all 0.2s",
-  },
-  activeTab: {
-    color: "#667eea",
-    borderBottomColor: "#667eea",
-  },
-  tabContent: {
-    minHeight: "300px",
-  },
-  formGroup: {
-    marginBottom: "20px",
-    display: "flex",
-    flexDirection: "column",
-  },
-  label: {
-    fontSize: "14px",
-    fontWeight: "500",
-    marginBottom: "8px",
-    color: "#333",
-  },
-  input: {
-    padding: "10px 12px",
-    border: "1px solid #ddd",
-    borderRadius: "6px",
-    fontSize: "14px",
-    fontFamily: "inherit",
-    boxSizing: "border-box",
-    transition: "border-color 0.2s",
-  },
-  select: {
-    padding: "10px 12px",
-    border: "1px solid #ddd",
-    borderRadius: "6px",
-    fontSize: "14px",
-    fontFamily: "inherit",
-    boxSizing: "border-box",
-    backgroundColor: "white",
+    borderRadius: 12,
+    background: "#2563eb",
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: 800,
     cursor: "pointer",
   },
-  checkbox: {
-    width: "18px",
-    height: "18px",
-    cursor: "pointer",
-    marginTop: "6px",
+  infoBox: {
+    background: "#eff6ff",
+    border: "1px solid #bfdbfe",
+    color: "#1d4ed8",
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 14,
+    marginBottom: 14,
   },
-  gridRow: {
+  errorBox: {
+    background: "#fee2e2",
+    border: "1px solid #fecaca",
+    color: "#991b1b",
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 14,
+    marginBottom: 14,
+  },
+  buttonGrid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: "15px",
+    gap: 10,
+    marginBottom: 18,
   },
-  button: {
-    marginTop: "30px",
-    padding: "12px 24px",
-    background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-    color: "white",
-    border: "none",
-    borderRadius: "6px",
-    fontSize: "16px",
-    fontWeight: "bold",
-    width: "100%",
+  tabButton: {
+    padding: "12px 10px",
+    borderRadius: 12,
+    border: "1px solid #d1d5db",
+    background: "#f9fafb",
+    fontWeight: 700,
     cursor: "pointer",
-    transition: "transform 0.2s, box-shadow 0.2s",
+  },
+  activeTab: {
+    background: "#111827",
+    color: "#fff",
+    borderColor: "#111827",
+  },
+  section: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#374151",
+  },
+  input: {
+    width: "100%",
+    padding: "12px 14px",
+    borderRadius: 12,
+    border: "1px solid #d1d5db",
+    fontSize: 16,
+    boxSizing: "border-box",
+  },
+  rosterNote: {
+    fontSize: 13,
+    fontWeight: 700,
+  },
+  row: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr 1fr",
+    gap: 10,
+  },
+  field: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+  },
+  checkboxLabel: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    fontSize: 14,
+    fontWeight: 600,
+  },
+  primaryButton: {
+    marginTop: 8,
+    padding: "14px 16px",
+    border: "none",
+    borderRadius: 12,
+    background: "#16a34a",
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  emptyState: {
+    textAlign: "center",
+    padding: 24,
+    color: "#6b7280",
+    background: "#f9fafb",
+    borderRadius: 12,
   },
   matchList: {
     display: "flex",
     flexDirection: "column",
-    gap: "12px",
+    gap: 10,
   },
   matchCard: {
-    padding: "16px",
-    border: "1px solid #e0e0e0",
-    borderRadius: "8px",
+    textAlign: "left",
+    padding: 14,
+    borderRadius: 12,
+    border: "1px solid #e5e7eb",
+    background: "#fff",
     cursor: "pointer",
-    transition: "all 0.2s",
-    backgroundColor: "white",
   },
-  matchCardHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "8px",
+  matchTitle: {
+    fontSize: 15,
+    fontWeight: 800,
+    color: "#111827",
   },
-  matchCardTitle: {
-    fontSize: "15px",
-    fontWeight: "600",
-    color: "#333",
-  },
-  matchCardBadge: {
-    fontSize: "11px",
-    fontWeight: "600",
-    color: "#667eea",
-    background: "#f0f0ff",
-    padding: "4px 10px",
-    borderRadius: "12px",
-    textTransform: "uppercase",
-  },
-  matchCardFooter: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  matchCardTime: {
-    fontSize: "12px",
-    color: "#999",
-  },
-  emptyState: {
-    padding: "40px 20px",
-    textAlign: "center",
-  },
-  loadingMessage: {
-    textAlign: "center",
-    fontSize: "18px",
-    color: "#333",
+  matchMeta: {
+    fontSize: 13,
+    color: "#6b7280",
+    marginTop: 4,
   },
   cancelButton: {
-    marginTop: "20px",
-    padding: "12px 24px",
-    background: "transparent",
-    color: "#666",
-    border: "2px solid #e0e0e0",
-    borderRadius: "6px",
-    fontSize: "16px",
-    fontWeight: "600",
     width: "100%",
+    marginTop: 18,
+    padding: "12px 16px",
+    borderRadius: 12,
+    border: "1px solid #d1d5db",
+    background: "#fff",
+    fontSize: 15,
+    fontWeight: 700,
     cursor: "pointer",
-    transition: "all 0.2s ease",
-  },
-  accessCard: {
-    background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-    borderRadius: "16px",
-    padding: "24px",
-    marginBottom: "24px",
-    color: "white",
-    boxShadow: "0 12px 24px rgba(102, 126, 234, 0.3)",
-  },
-  accessTitle: {
-    fontSize: "20px",
-    fontWeight: "bold",
-    marginBottom: "8px",
-  },
-  accessText: {
-    fontSize: "14px",
-    marginBottom: "20px",
-    opacity: 0.95,
-    lineHeight: 1.4,
-  },
-  premiumButton: {
-    width: "100%",
-    padding: "16px",
-    background: "white",
-    border: "none",
-    borderRadius: "12px",
-    cursor: "pointer",
-    marginBottom: "12px",
-    boxShadow: "0 8px 16px rgba(0, 0, 0, 0.15)",
-    transition: "transform 0.2s, box-shadow 0.2s",
-  },
-  premiumButtonContent: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  premiumButtonTitle: {
-    fontSize: "16px",
-    fontWeight: "bold",
-    color: "#333",
-    textAlign: "left",
-  },
-  premiumButtonSub: {
-    fontSize: "12px",
-    color: "#666",
-    marginTop: "4px",
-    textAlign: "left",
-  },
-  premiumButtonPrice: {
-    fontSize: "20px",
-    fontWeight: "bold",
-    color: "#667eea",
-  },
-  oneTimeButton: {
-    width: "100%",
-    padding: "16px",
-    background: "rgba(255, 255, 255, 0.2)",
-    border: "2px solid rgba(255, 255, 255, 0.3)",
-    borderRadius: "12px",
-    cursor: "pointer",
-    transition: "all 0.2s",
-  },
-  oneTimeButtonContent: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  oneTimeButtonTitle: {
-    fontSize: "15px",
-    fontWeight: "600",
-    color: "white",
-    textAlign: "left",
-  },
-  oneTimeButtonSub: {
-    fontSize: "12px",
-    color: "rgba(255, 255, 255, 0.8)",
-    marginTop: "4px",
-    textAlign: "left",
-  },
-  oneTimeButtonPrice: {
-    fontSize: "18px",
-    fontWeight: "bold",
-    color: "white",
-  },
-  accessFooter: {
-    fontSize: "12px",
-    marginTop: "16px",
-    opacity: 0.85,
-    textAlign: "center",
   },
 };

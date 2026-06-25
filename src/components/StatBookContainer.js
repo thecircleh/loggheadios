@@ -75,6 +75,12 @@ export default function StatBookContainer({
 }) {
   const { user, token } = useAuth();
   const [currentMatchAge, setCurrentMatchAge] = useState(0);
+  
+  const compatibleModes = ["Statbook", "Collab"];
+const isCompatibleMatch =
+  !currentMatchId ||
+  !match?.mode ||
+  compatibleModes.includes(match.mode);
 
   // Calculate match age whenever match data updates
   useEffect(() => {
@@ -231,7 +237,7 @@ export default function StatBookContainer({
       />
 
       {/* Main Stat Book Page - only render when we have a match */}
-      {currentMatchId && match && (
+      {currentMatchId && match && isCompatibleMatch && (
         <ExpressStatPage
           courtPlayers={courtPlayers}
           updateCourtPositions={updateCourtPositions}

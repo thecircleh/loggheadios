@@ -1,5 +1,5 @@
 {
-  "appId": "com.loggerhead.app",
+  "appId": "com.loggerheadstat.app",
   "appName": "Loggerhead Volleyball Stats",
   "webDir": "build",
   "server": {
@@ -17,3 +17,4 @@
     }
   }
 }
+

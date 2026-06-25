@@ -103,6 +103,12 @@ export default function ClassicContainer({
 }) {
   const { user, token } = useAuth();
   const [currentMatchAge, setCurrentMatchAge] = useState(0);
+  
+  const compatibleModes = ["Classic", "Gameflow"];
+const isCompatibleMatch =
+  !currentMatchId ||
+  !matchSettings?.mode ||
+  compatibleModes.includes(matchSettings.mode);
 
   // Calculate match age whenever match data updates
   useEffect(() => {
@@ -267,7 +273,7 @@ export default function ClassicContainer({
       />
 
       {/* VolleyballCourt - only render when we have a match */}
-      {currentMatchId && matchSettings && (
+      {currentMatchId && matchSettings && isCompatibleMatch && (
         <VolleyballCourt
           courtPlayers={courtPlayers}
           benchPlayers={benchPlayers}

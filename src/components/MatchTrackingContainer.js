@@ -72,6 +72,12 @@ export default function MatchTrackingContainer({
 }) {
   const { user, token } = useAuth();
   const [currentMatchAge, setCurrentMatchAge] = useState(0);
+  
+    const compatibleModes = ["Match", "Coach"];
+const isCompatibleMatch =
+  !currentMatchId ||
+  !matchSettings?.mode ||
+  compatibleModes.includes(matchSettings.mode);
 
   // Calculate match age whenever match data updates
   useEffect(() => {
@@ -88,6 +94,8 @@ export default function MatchTrackingContainer({
       return () => clearInterval(interval);
     }
   }, [matchSettings?.updatedAt]);
+  
+
 
   /**
    * Handle starting a new Match Tracking match
@@ -219,7 +227,7 @@ export default function MatchTrackingContainer({
       />
 
       {/* CoachCourt - only render when we have a match */}
-      {currentMatchId && matchSettings && (
+      {currentMatchId && matchSettings && isCompatibleMatch && (
         <CoachCourt
           key={coachCourtKey}
           matchSettings={matchSettings}

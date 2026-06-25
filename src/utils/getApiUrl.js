@@ -1,8 +1,7 @@
 export const getApiUrl = () => {
-  if (window.Capacitor?.isNativePlatform?.()) return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
   const hostname = window.location.hostname;
-  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname.startsWith("10.")) {
+  if (hostname.startsWith("localhost") || hostname.startsWith("10.") || hostname === "127.0.0.1") {
     return `http://${hostname}:3000`;
   }
-  return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
+  return 'https://api.loggerhead.app';
 };

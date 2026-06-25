@@ -1107,11 +1107,33 @@ const handleStartScheduledMatch = async (match, mode) => {
   try {
     const res = await axios.put(
       `${API_URL}/api/matches/start/${match._id}`,
-      { mode },
+      {
+  mode,
+  opponentName: match.opponentName || "Opponent",
+  teamName: match.teamName,
+  eventName: match.eventName || "",
+  location: match.location || "",
+},
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
     const updated = res.data;
+	setOpponentName(updated.opponentName || match.opponentName || "Opponent");
+
+setMatchSettings((prev) => ({
+  ...prev,
+  teamName: updated.teamName || match.teamName,
+  opponentName: updated.opponentName || match.opponentName || "Opponent",
+  eventName: updated.eventName || match.eventName || "",
+  location: updated.location || match.location || "",
+  currentSet: updated.currentSet || 1,
+  totalSets: updated.totalSets || match.totalSets || 3,
+  playAllSets: updated.playAllSets ?? match.playAllSets ?? false,
+  pointsNonDeciding: updated.pointsNonDeciding || match.pointsNonDeciding || 25,
+  pointsDeciding: updated.pointsDeciding || match.pointsDeciding || 15,
+  mode,
+  _id: updated._id || match._id,
+}));
 
     // ✅ IMPORTANT: await resume so currentMatchId is set BEFORE leaving settings
     await handleResumeMatch(updated);

@@ -13,6 +13,7 @@ import axios from "axios";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { TouchBackend } from "react-dnd-touch-backend";
+import Clarity from '@microsoft/clarity';
 import { AuthProvider, useAuth } from "./components/AuthContext";
 // Component imports
 import VolleyballCourt from "./components/VolleyballCourt";
@@ -81,7 +82,11 @@ const PERIODIC_SAVE_INTERVAL = 300000;
 
 
 
-  // 5 minutes
+ if (process.env.NODE_ENV !== "development") {
+  Clarity.init("x4h28kex3q");
+};
+
+ // 5 minutes
  
 
 console.log(`Loggerhead deployed version: ${APP_VERSION}`);
@@ -638,6 +643,25 @@ function AppContent({ matchSettings, setMatchSettings }) {
   const location = useLocation();
   const navigate = useNavigate();
   
+  const clarityIdentifiedRef = useRef(false);
+
+useEffect(() => {
+  if (
+    clarityIdentifiedRef.current ||
+    !user ||
+    process.env.NODE_ENV === "development"
+  ) {
+    return;
+  }
+
+  Clarity.identify(
+    user.id || user._id,
+    user.email || "",
+    user.displayName || ""
+  );
+
+  clarityIdentifiedRef.current = true;
+}, [user]);
   // State variables
   const [loadingMatch, setLoadingMatch] = useState(true);
   const [showHeader, setShowHeader] = useState(true);
@@ -977,7 +1001,7 @@ const saveMatchData = useCallback(async (showAlert = false) => {
       userId: user.id,
       timestamp: new Date().toISOString(),
       teamName: matchSettings?.teamName || "",
-      opponentName: opponentName || "Opponent",
+      opponentName: matchSettings?.opponentName || opponentName || "Opponent",
       eventName: matchSettings?.eventName || "",
       location: matchSettings?.location || "",
       currentSet: matchSettings?.currentSet || 1,
@@ -2646,7 +2670,7 @@ const shouldAttachAccessKey =
 payload = {
   userId: user?.id,
   teamName: newSettings?.teamName || "Our Team",
-  opponentName: newSettings?.opponentName || opponentName || "Opponent",
+  opponentName: newSettings?.opponentName || matchSettings?.opponentName || opponentName || "Opponent",
   eventName: newSettings?.eventName || "",
   location: newSettings?.location || "",
   currentSet: 1,
@@ -2698,7 +2722,7 @@ payload = {
 
     setMatchSettings({
       teamName: newMatch.teamName,
-      opponentName: newMatch.opponentName || newSettings?.opponentName || opponentName || "Opponent",
+      opponentName: newMatch.opponentName || newSettings?.opponentName || matchSettings?.opponentName || opponentName || "Opponent",
       eventName: newMatch.eventName || "",
       location: newMatch.location || "",
       currentSet: newMatch.currentSet || 1,
@@ -5007,11 +5031,17 @@ const CoachesCornerDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
 
       {!isNativeApp && (
       <button
-        className="ios-menu-toggle"
-        onClick={() => setShowMobileMenu((prev) => !prev)}
-      >
-        Menu
-      </button>
+  className="ios-menu-toggle"
+  onClick={() => {
+    setShowMobileMenu((prev) => {
+      const next = !prev;
+      if (!next) setActiveDropdown(null);
+      return next;
+    });
+  }}
+>
+  Menu
+</button>
       )}
     </div>
 )}
@@ -5038,8 +5068,8 @@ const CoachesCornerDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
 
 {!isNativeApp && location.pathname !== "/login" && location.pathname !== "/register" && (
   <nav className={`ios-nav-links ${showMobileMenu ? "visible" : ""}`}>
-    <Link to="/profile" className="ios-nav-link">Profile</Link>
-    <Link to="/settings" className="ios-nav-link">Rosters & Matches</Link>
+    <Link to="/profile" onClick={closeAllDropdowns} className="ios-nav-link">Profile</Link>
+    <Link to="/settings" onClick={closeAllDropdowns} className="ios-nav-link">Rosters & Matches</Link>
     <LoggingModeDropdown
       isOpen={activeDropdown === 'modes'}
       onOpen={handleOpenDropdown}
@@ -5066,7 +5096,7 @@ const CoachesCornerDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
     />
 
     {user && (
-      <button onClick={handleLogout} className="ios-logout-btn">
+      <button onClick={handleLogout} onClick={closeAllDropdowns} className="ios-logout-btn">
         Logout
       </button>
     )}
