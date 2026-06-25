@@ -1,12 +1,50 @@
 import React, { useState } from 'react';
+import axios from 'axios';
+import { Browser } from '@capacitor/browser';
 import { useAuth } from './AuthContext';
 import { useAppleIAP } from '../hooks/useAppleIAP';
 import { APPLE_SUBSCRIPTION_PLANS, APPLE_ONETIME_PRODUCTS } from '../iap/appleProducts';
 
+const API_URL = process.env.REACT_APP_API_URL || 'https://api.loggerhead.app';
+
 const NativeSubscriptionButtons = () => {
-  const { hasPremium, user } = useAuth();
+  const { hasPremium, user, token } = useAuth();
   const { storeProducts, purchase, restore, purchasing, restoring, error, initialized } = useAppleIAP();
   const [selected, setSelected] = useState('weekly');
+  const [giftQuantity, setGiftQuantity] = useState(1);
+  const [giftLoading, setGiftLoading] = useState(false);
+
+  const handleGiftPurchase = async () => {
+    try {
+      setGiftLoading(true);
+      const res = await axios.post(
+        `${API_URL}/api/gifts/checkout`,
+        { planType: 'loggerhead_annual', quantity: giftQuantity },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      await Browser.open({ url: res.data.url });
+    } catch (err) {
+      alert(`Gift checkout failed: ${err.response?.data?.message || err.message}`);
+    } finally {
+      setGiftLoading(false);
+    }
+  };
+
+  const GiftSection = () => (
+    <div style={s.giftSection}>
+      <div style={s.giftTitle}>🎁 Give Loggerhead as a Gift</div>
+      <div style={s.giftSub}>Purchase a gift subscription and send a redemption code.</div>
+      <div style={s.giftRow}>
+        <label style={s.giftLabel}>Qty</label>
+        <select value={giftQuantity} onChange={e => setGiftQuantity(Number(e.target.value))} style={s.giftSelect}>
+          {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <button onClick={handleGiftPurchase} disabled={giftLoading} style={s.giftBtn}>
+          {giftLoading ? 'Opening…' : `Gift Annual – $${(59.99 * giftQuantity).toFixed(2)}`}
+        </button>
+      </div>
+    </div>
+  );
 
   const getPrice = (plan) => {
     const sp = storeProducts[plan.productId];
@@ -26,6 +64,7 @@ const NativeSubscriptionButtons = () => {
         <button onClick={restore} disabled={restoring} style={s.restoreBtn}>
           {restoring ? 'Checking…' : 'Restore Purchases'}
         </button>
+        <GiftSection />
         <div style={s.legalText}>
           Subscriptions can be managed in your iPhone Settings → Apple ID → Subscriptions.
         </div>
@@ -107,6 +146,8 @@ const NativeSubscriptionButtons = () => {
           </div>
         ))}
       </div>
+
+      <GiftSection />
 
       {/* Restore + legal */}
       <button onClick={restore} disabled={restoring} style={s.restoreBtn}>
@@ -309,6 +350,53 @@ const s = {
     textAlign: 'center',
     lineHeight: 1.5,
     padding: '0 8px',
+  },
+  giftSection: {
+    marginTop: 20,
+    padding: '14px',
+    background: 'rgba(255,215,0,0.08)',
+    border: '1px solid rgba(255,215,0,0.3)',
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  giftTitle: {
+    fontSize: 15,
+    fontWeight: 700,
+    color: '#111',
+    marginBottom: 4,
+  },
+  giftSub: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 10,
+  },
+  giftRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+  giftLabel: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#444',
+  },
+  giftSelect: {
+    fontSize: 14,
+    padding: '4px 6px',
+    borderRadius: 8,
+    border: '1px solid #ccc',
+    background: '#fff',
+  },
+  giftBtn: {
+    flex: 1,
+    padding: '10px 12px',
+    background: '#F5A623',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 10,
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: 'pointer',
   },
   activeHeader: {
     textAlign: 'center',

@@ -567,7 +567,6 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
       )}
 
       {/* ── Redeem Gift Code ── */}
-      {!isNative && (
       <div className="card" style={{ marginTop: 14 }}>
         <p className="card-title">Redeem a Gift Code</p>
         <div className="field">
@@ -584,7 +583,6 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
           Redeem Gift
         </button>
       </div>
-      )}
 
       {/* ── Subscription ── */}
       <div className="card" style={{ marginTop: 14 }} ref={subscriptionRef}>
