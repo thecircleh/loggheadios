@@ -374,7 +374,7 @@ function rebuildSetScoresFromActionLog(actionLog) {
 function PrivateRoute({ children, requiredRole }) {
   const { user, token, loading } = useAuth();
   if (loading) return <div>Loading...</div>;
-  if (!token || !user) return <Navigate to="/login" />;
+  if (!token) return <Navigate to="/login" />;
   if (requiredRole && user?.role !== requiredRole) return <Navigate to="/settings" replace />;
   return children;
 }

@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Browser } from '@capacitor/browser';
 import { useAuth } from './AuthContext';
 
-const isNativeApp = !!(window.Capacitor?.isNativePlatform?.());
 const SITE_BASE = 'https://www.loggerhead.app';
+const checkNative = () => !!(window.Capacitor?.isNativePlatform?.());
 
 const HomePage = ({ matchSettings, isMobile }) => {
   const navigate = useNavigate();
@@ -342,7 +342,7 @@ const HomePage = ({ matchSettings, isMobile }) => {
 
   const handleCardClick = (route) => {
     if (route.startsWith('http')) {
-      if (isNativeApp) {
+      if (checkNative()) {
         Browser.open({ url: route });
       } else {
         window.open(route, '_blank', 'noopener,noreferrer');
@@ -354,7 +354,7 @@ const HomePage = ({ matchSettings, isMobile }) => {
 
   const openExternalLink = (path) => {
     const url = `${SITE_BASE}${path}`;
-    if (isNativeApp) {
+    if (checkNative()) {
       Browser.open({ url });
     } else {
       window.open(url, '_blank', 'noopener,noreferrer');
