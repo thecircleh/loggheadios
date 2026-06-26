@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "./AuthContext";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Navigate } from "react-router-dom";
 import axios from "axios";
 import { Country, State } from "country-state-city";
 import "./Profile.css";
@@ -176,6 +176,13 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
     };
   }, [profile, user?.id]);
 
+  // Re-fetch auth user if token exists but user hasn't loaded yet (e.g. after API hiccup)
+  useEffect(() => {
+    if (!loading && !user && token) {
+      refreshUser();
+    }
+  }, [loading, user, token, refreshUser]);
+
   // Load profile
   useEffect(() => {
     if (!user?.id) {
@@ -341,8 +348,8 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
     navigate("/login");
   };
 
-  if (loading) return <p style={{ textAlign: "center", padding: 40 }}>Loading…</p>;
-  if (!user) return <p style={{ textAlign: "center", padding: 40 }}>Not authenticated.</p>;
+  if (loading || (!user && token)) return <p style={{ textAlign: "center", padding: 40 }}>Loading…</p>;
+  if (!user && !token) return <Navigate to="/login" replace />;
 
   return (
     <div className="page-wrapper">
