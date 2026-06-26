@@ -43,6 +43,7 @@ const NativeSubscriptionButtons = () => {
           {restoring ? 'Checking…' : 'Restore Purchases'}
         </button>
         <GiftSection />
+        {error && <div style={s.errorText}>{error}</div>}
         <div style={s.legalText}>
           Subscriptions can be managed in your iPhone Settings → Apple ID → Subscriptions.
         </div>

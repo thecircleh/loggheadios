@@ -60,6 +60,7 @@ export function useAppleIAP() {
         { id: APPLE_PRODUCT_IDS.annual,      type: SUB_TYPE,  platform: APPSTORE },
         { id: APPLE_PRODUCT_IDS.matchKey,    type: CONS_TYPE, platform: APPSTORE },
         { id: APPLE_PRODUCT_IDS.statbookKey, type: CONS_TYPE, platform: APPSTORE },
+        { id: APPLE_PRODUCT_IDS.giftAnnual,  type: CONS_TYPE, platform: APPSTORE },
       ]);
 
       // Receipt validator — sends to our Node backend which calls Apple's API
