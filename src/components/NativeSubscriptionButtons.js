@@ -1,48 +1,26 @@
 import React, { useState } from 'react';
-import axios from 'axios';
-import { Browser } from '@capacitor/browser';
 import { useAuth } from './AuthContext';
 import { useAppleIAP } from '../hooks/useAppleIAP';
-import { APPLE_SUBSCRIPTION_PLANS, APPLE_ONETIME_PRODUCTS } from '../iap/appleProducts';
-
-const API_URL = process.env.REACT_APP_API_URL || 'https://api.loggerhead.app';
+import { APPLE_SUBSCRIPTION_PLANS, APPLE_ONETIME_PRODUCTS, APPLE_PRODUCT_IDS } from '../iap/appleProducts';
 
 const NativeSubscriptionButtons = () => {
-  const { hasPremium, user, token } = useAuth();
+  const { hasPremium, user } = useAuth();
   const { storeProducts, purchase, restore, purchasing, restoring, error, initialized } = useAppleIAP();
   const [selected, setSelected] = useState('weekly');
-  const [giftQuantity, setGiftQuantity] = useState(1);
-  const [giftLoading, setGiftLoading] = useState(false);
 
-  const handleGiftPurchase = async () => {
-    try {
-      setGiftLoading(true);
-      const res = await axios.post(
-        `${API_URL}/api/gifts/checkout`,
-        { planType: 'loggerhead_annual', quantity: giftQuantity },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      await Browser.open({ url: res.data.url });
-    } catch (err) {
-      alert(`Gift checkout failed: ${err.response?.data?.message || err.message}`);
-    } finally {
-      setGiftLoading(false);
-    }
-  };
+  const giftPrice = storeProducts[APPLE_PRODUCT_IDS.giftAnnual]?.price ?? '$59.99';
 
   const GiftSection = () => (
     <div style={s.giftSection}>
       <div style={s.giftTitle}>🎁 Give Loggerhead as a Gift</div>
-      <div style={s.giftSub}>Purchase a gift subscription and send a redemption code.</div>
-      <div style={s.giftRow}>
-        <label style={s.giftLabel}>Qty</label>
-        <select value={giftQuantity} onChange={e => setGiftQuantity(Number(e.target.value))} style={s.giftSelect}>
-          {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
-        <button onClick={handleGiftPurchase} disabled={giftLoading} style={s.giftBtn}>
-          {giftLoading ? 'Opening…' : `Gift Annual – $${(59.99 * giftQuantity).toFixed(2)}`}
-        </button>
-      </div>
+      <div style={s.giftSub}>Buy a gift code and share it with a coach, parent, or player.</div>
+      <button
+        onClick={() => purchase(APPLE_PRODUCT_IDS.giftAnnual)}
+        disabled={purchasing || !initialized}
+        style={s.giftBtn}
+      >
+        {purchasing ? 'Processing…' : !initialized ? 'Loading…' : `Gift Annual – ${giftPrice}`}
+      </button>
     </div>
   );
 
@@ -370,25 +348,8 @@ const s = {
     color: '#666',
     marginBottom: 10,
   },
-  giftRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-  },
-  giftLabel: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: '#444',
-  },
-  giftSelect: {
-    fontSize: 14,
-    padding: '4px 6px',
-    borderRadius: 8,
-    border: '1px solid #ccc',
-    background: '#fff',
-  },
   giftBtn: {
-    flex: 1,
+    width: '100%',
     padding: '10px 12px',
     background: '#F5A623',
     color: '#fff',
