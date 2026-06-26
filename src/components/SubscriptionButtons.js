@@ -3,6 +3,8 @@ import axios from "axios";
 import { useAuth } from "./AuthContext";
 import stripePrices from "./stripePrices";
 import { getApiUrl } from "../utils/getApiUrl";
+import { useAppleIAP } from "../hooks/useAppleIAP";
+import { APPLE_SUBSCRIPTION_PLANS, APPLE_ONETIME_PRODUCTS } from "../iap/appleProducts";
 
 const PER_MATCH_PRICE = 1.29;
 
@@ -325,6 +327,7 @@ const styles = {
 const SubscriptionButtons = ({ isNative }) => {
   const auth = useAuth();
   const token = auth?.token;
+  const { storeProducts, purchase, restore, purchasing, restoring, error: iapError, initialized } = useAppleIAP();
   const user = auth?.user;
   const loading = auth?.loading;
 
@@ -574,33 +577,77 @@ const premiumValueStack = useMemo(() => {
   }
 
   if (isNative) {
+    const busy = purchasing || restoring;
+    const btnBase = {
+      display: "block", width: "100%", padding: "14px 16px", borderRadius: 12,
+      border: "none", fontSize: 16, fontWeight: 700, cursor: busy ? "default" : "pointer",
+      marginBottom: 10, opacity: busy ? 0.6 : 1,
+    };
     return (
       <div style={styles.wrap}>
         <div style={styles.header}>
-          <h2 style={styles.headline}>Manage Your Subscription</h2>
+          <h2 style={styles.headline}>{hasPremium ? "You're on Premium." : "Subscribe"}</h2>
           <div style={styles.subHeadline}>
-            Subscriptions and purchases are managed on the Loggerhead website.
+            {hasPremium
+              ? "Manage or cancel your subscription in iOS Settings → Apple ID → Subscriptions."
+              : "Choose a plan. Billed through Apple. Cancel anytime in iOS Settings."}
           </div>
         </div>
-        <div style={{ ...styles.heroCard, marginTop: 16 }}>
-          <div style={styles.heroTitle}>Visit Loggerhead on the web</div>
-          <div style={styles.heroText}>
-            To subscribe, manage billing, or make a purchase, visit us at:
+
+        {iapError && (
+          <div style={{ ...styles.banner, background: "rgba(255,59,48,0.08)", border: "1px solid rgba(255,59,48,0.25)", color: "#c00", marginBottom: 12 }}>
+            {iapError}
           </div>
-          <div style={{
-            fontSize: 17,
-            fontWeight: 900,
-            color: "#007AFF",
-            marginBottom: 14,
-            letterSpacing: -0.2,
-          }}>
-            https://ui.loggerhead.app
+        )}
+
+        {!hasPremium && (
+          <>
+            <div style={styles.sectionTitle}>Subscriptions</div>
+            {APPLE_SUBSCRIPTION_PLANS.map(plan => {
+              const live = storeProducts[plan.productId];
+              return (
+                <button
+                  key={plan.key}
+                  disabled={busy || !initialized}
+                  onClick={() => purchase(plan.productId)}
+                  style={{ ...btnBase, background: plan.featured ? "#34C759" : "#F2F2F7", color: plan.featured ? "#fff" : "#1C1C1E" }}
+                >
+                  {plan.label} — {live?.price ?? plan.fallbackPrice}
+                  {plan.badge ? `  ·  ${plan.badge}` : ""}
+                </button>
+              );
+            })}
+
+            <div style={styles.sectionTitle}>One-Time Access</div>
+            {APPLE_ONETIME_PRODUCTS.map(prod => {
+              const live = storeProducts[prod.productId];
+              return (
+                <button
+                  key={prod.key}
+                  disabled={busy || !initialized}
+                  onClick={() => purchase(prod.productId)}
+                  style={{ ...btnBase, background: "#F2F2F7", color: "#1C1C1E" }}
+                >
+                  {prod.label} — {live?.price ?? prod.fallbackPrice}
+                </button>
+              );
+            })}
+          </>
+        )}
+
+        <button
+          disabled={busy}
+          onClick={restore}
+          style={{ ...btnBase, background: "transparent", color: "#007AFF", border: "1px solid rgba(0,122,255,0.3)", marginTop: 8 }}
+        >
+          {restoring ? "Restoring…" : "Restore Purchases"}
+        </button>
+
+        {purchasing && (
+          <div style={{ textAlign: "center", color: "#8E8E93", fontSize: 14, marginTop: 8 }}>
+            Processing purchase…
           </div>
-          <div style={styles.finePrint}>
-            Log in with the same email and password you use here.
-            Your subscription will be reflected in the app automatically.
-          </div>
-        </div>
+        )}
       </div>
     );
   }
