@@ -194,6 +194,20 @@ export const AuthProvider = ({ children }) => {
     clearAllUserData();
   }, [clearAllUserData]);
 
+  // Kick any unauthenticated session to login immediately, on any API call
+  useEffect(() => {
+    const interceptor = axios.interceptors.response.use(
+      (res) => res,
+      (error) => {
+        if (error.response?.status === 401) {
+          clearAllUserData();
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => axios.interceptors.response.eject(interceptor);
+  }, [clearAllUserData]);
+
   useEffect(() => {
     const loadUser = async () => {
       setLoading(true);
