@@ -384,9 +384,9 @@ const HomePage = ({ matchSettings, isMobile }) => {
         <div style={styles.pricingHighlight}>
           Need more? Subscribe for unlimited matches or pay just $1.29 per match
         </div>
-        <Link to="/profile?section=subscription" style={styles.ctaButton}>
+        <button onClick={() => navigate('/profile?section=subscription')} style={styles.ctaButton}>
           View Pricing Plans
-        </Link>
+        </button>
       </div>
 
       <div style={styles.featuresGrid}>
