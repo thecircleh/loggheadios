@@ -5027,21 +5027,35 @@ const CoachesCornerDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
                     }
                   `}</style>
                 </div>
-                {user && location.pathname !== "/login" && location.pathname !== "/register" && (
-                  <button onClick={handleLogout} className="ios-logout-btn">
-                    Logout
-                  </button>
+                {location.pathname !== "/login" && location.pathname !== "/register" && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <button
+                      className="ios-menu-toggle"
+                      onClick={() => {
+                        setShowMobileMenu((prev) => {
+                          const next = !prev;
+                          if (!next) setActiveDropdown(null);
+                          return next;
+                        });
+                      }}
+                    >
+                      Menu
+                    </button>
+                    {user && (
+                      <button onClick={handleLogout} className="ios-logout-btn">
+                        Logout
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
-			  
+
 {emailConsentChecked && !hasEmailConsent && showEmailConsentModal && (
   <EmailConsentModal
     onEnable={enableEmailConsent}
     onNotNow={dismissEmailConsent}
   />
 )}
-
-
 
 <NotificationModal
   open={showNotificationModal}
@@ -5051,10 +5065,36 @@ const CoachesCornerDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
   onClose={() => setShowNotificationModal(false)}
 />
 
-
-
-
-                
+{location.pathname !== "/login" && location.pathname !== "/register" && (
+  <nav className={`ios-nav-links ${showMobileMenu ? "visible" : ""}`}>
+    <Link to="/profile" onClick={closeAllDropdowns} className="ios-nav-link">Profile</Link>
+    <Link to="/settings" onClick={closeAllDropdowns} className="ios-nav-link">Rosters & Matches</Link>
+    <LoggingModeDropdown
+      isOpen={activeDropdown === 'modes'}
+      onOpen={handleOpenDropdown}
+      onClose={closeAllDropdowns}
+      onHoverClose={scheduleCloseDropdowns}
+    />
+    <StatDropdown
+      isOpen={activeDropdown === 'stats'}
+      onOpen={handleOpenDropdown}
+      onClose={closeAllDropdowns}
+      onHoverClose={scheduleCloseDropdowns}
+    />
+    <CoachesCornerDropdown
+      isOpen={activeDropdown === 'coaches'}
+      onOpen={handleOpenDropdown}
+      onClose={closeAllDropdowns}
+      onHoverClose={scheduleCloseDropdowns}
+    />
+    <BlogDropdown
+      isOpen={activeDropdown === 'blog'}
+      onOpen={handleOpenDropdown}
+      onClose={closeAllDropdowns}
+      onHoverClose={scheduleCloseDropdowns}
+    />
+  </nav>
+)}
 
             </header>
           )}
