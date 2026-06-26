@@ -219,14 +219,9 @@ body {
   background-color: rgba(52, 199, 89, 0.05);
 }
 
-/* Mobile menu */
+/* Mobile menu toggle — hidden everywhere, nav is always visible */
 .ios-menu-toggle {
   display: none;
-  font-size: 26px;
-  background: none;
-  border: none;
-  color: #007aff;
-  cursor: pointer;
 }
 
 @media (max-width: 1024px) {
@@ -240,24 +235,28 @@ body {
 }
 
 @media (max-width: 640px) {
-  .ios-menu-toggle {
-    display: block;
-  }
-
   .ios-nav-links {
-    display: none;
-    flex-direction: column;
-    align-items: center;
-
-    background: #ffffff;
-    border-radius: 12px;
-    padding: 10px;
-    margin-top: 6px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    justify-content: flex-start;
+    gap: 2px;
+    padding: 6px 8px;
+    border-top: 1px solid rgba(0,0,0,0.06);
   }
 
-  .ios-nav-links.visible {
-    display: flex;
+  .ios-nav-links::-webkit-scrollbar {
+    display: none;
+  }
+
+  .ios-nav-link, .ios-nav-links a,
+  .ios-nav-dropdown-wrapper button {
+    font-size: 13px !important;
+    padding: 6px 10px !important;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 }
 

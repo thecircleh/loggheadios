@@ -5027,26 +5027,10 @@ const CoachesCornerDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
                     }
                   `}</style>
                 </div>
-                {location.pathname !== "/login" && location.pathname !== "/register" && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <button
-                      className="ios-menu-toggle"
-                      onClick={() => {
-                        setShowMobileMenu((prev) => {
-                          const next = !prev;
-                          if (!next) setActiveDropdown(null);
-                          return next;
-                        });
-                      }}
-                    >
-                      Menu
-                    </button>
-                    {user && (
-                      <button onClick={handleLogout} className="ios-logout-btn">
-                        Logout
-                      </button>
-                    )}
-                  </div>
+                {user && location.pathname !== "/login" && location.pathname !== "/register" && (
+                  <button onClick={handleLogout} className="ios-logout-btn">
+                    Logout
+                  </button>
                 )}
               </div>
 
