@@ -5027,6 +5027,11 @@ const CoachesCornerDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
                     }
                   `}</style>
                 </div>
+                {user && location.pathname !== "/login" && location.pathname !== "/register" && (
+                  <button onClick={handleLogout} className="ios-logout-btn">
+                    Logout
+                  </button>
+                )}
               </div>
 			  
 {emailConsentChecked && !hasEmailConsent && showEmailConsentModal && (
