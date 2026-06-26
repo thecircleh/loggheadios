@@ -82,7 +82,8 @@ const PERIODIC_SAVE_INTERVAL = 300000;
 
 
 
- if (process.env.NODE_ENV !== "development") {
+ const isNativePlatform = !!(window.Capacitor?.isNativePlatform?.());
+ if (process.env.NODE_ENV !== "development" && !isNativePlatform) {
   Clarity.init("x4h28kex3q");
 };
 
@@ -649,7 +650,8 @@ useEffect(() => {
   if (
     clarityIdentifiedRef.current ||
     !user ||
-    process.env.NODE_ENV === "development"
+    process.env.NODE_ENV === "development" ||
+    isNativeApp
   ) {
     return;
   }
