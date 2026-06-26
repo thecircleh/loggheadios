@@ -668,6 +668,7 @@ useEffect(() => {
   // State variables
   const [loadingMatch, setLoadingMatch] = useState(true);
   const [showHeader, setShowHeader] = useState(true);
+  const [headerScrollHidden, setHeaderScrollHidden] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
   const [courtPlayers, setCourtPlayers] = useState(
     Array.from({ length: 6 }, (_, i) => ({ id: `empty-${i}`, name: "?", number: "?", isLibero: false }))
@@ -4952,7 +4953,7 @@ const CoachesCornerDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
 
 
   {showHeader && !isNativeApp && (
-            <header className="ios-header-bar" key={location.pathname}>
+            <header className={`ios-header-bar${headerScrollHidden ? ' header-scroll-hidden' : ''}`} key={location.pathname}>
               <div className="ios-header-content">
                 <div className="ios-logo-title">
                   <img
@@ -5080,8 +5081,26 @@ const CoachesCornerDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
   </nav>
 )}
 
+<button
+  className="header-collapse-btn"
+  onClick={() => setHeaderScrollHidden(true)}
+  aria-label="Hide navigation"
+>
+  ▴
+</button>
+
             </header>
           )}
+
+  {!isNativeApp && (
+    <button
+      className="header-reveal-btn"
+      onClick={() => setHeaderScrollHidden(false)}
+      aria-label="Show navigation"
+    >
+      ▾
+    </button>
+  )}
 
  { location.pathname !== "/" &&
   location.pathname !== "/login" &&

@@ -48,6 +48,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 1000;
+  transition: transform 0.25s ease;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   background-color: rgba(255, 255, 255, 0.8);
@@ -55,6 +56,55 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
 }
+
+.ios-header-bar.header-scroll-hidden {
+  transform: translateY(-100%);
+}
+
+.header-collapse-btn {
+  display: block;
+  margin: 2px auto 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: #bbb;
+  padding: 2px 32px 4px;
+  line-height: 1;
+  width: 100%;
+  text-align: center;
+  letter-spacing: 2px;
+}
+
+.header-collapse-btn:hover {
+  color: #888;
+}
+
+.header-reveal-btn {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999; /* sits below the header (z-index 1000) so header covers it */
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-top: none;
+  border-radius: 0 0 16px 16px;
+  padding: 4px 28px 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #555;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.header-reveal-btn:hover {
+  color: #222;
+}
+
 
 .ios-header-content {
   max-width: 1200px;
