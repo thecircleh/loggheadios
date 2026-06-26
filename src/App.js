@@ -657,9 +657,10 @@ useEffect(() => {
   }
 
   Clarity.identify(
-    user.id || user._id,
-    user.email || "",
-    user.displayName || ""
+    String(user.id || user._id),
+    undefined,
+    undefined,
+    user.email || ""
   );
 
   clarityIdentifiedRef.current = true;
