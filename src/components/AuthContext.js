@@ -114,12 +114,21 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    if (token) {
-      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-      axios.defaults.withCredentials = true;
-    } else {
-      delete axios.defaults.headers.common["Authorization"];
-    }
+    const requestInterceptor = axios.interceptors.request.use(
+      (config) => {
+        const currentToken = token || localStorage.getItem("token") || Cookies.get("token");
+        if (currentToken) {
+          config.headers["Authorization"] = `Bearer ${currentToken}`;
+        } else {
+          delete config.headers["Authorization"];
+        }
+        config.withCredentials = true;
+        return config;
+      },
+      (error) => Promise.reject(error)
+    );
+
+    return () => axios.interceptors.request.eject(requestInterceptor);
   }, [token]);
 
   const clearAllUserData = useCallback(async () => {
@@ -131,6 +140,7 @@ export const AuthProvider = ({ children }) => {
           {
             headers: { Authorization: `Bearer ${token}` },
             withCredentials: true,
+            timeout: 2000,
           }
         );
       } catch (err) {
@@ -140,12 +150,13 @@ export const AuthProvider = ({ children }) => {
 
     Cookies.remove("token");
     localStorage.removeItem("token");
-    setToken(null);
-    setUser(null);
-    setPendingNotifications([]);
 
     localStorage.clear();
     sessionStorage.clear();
+
+    setToken(null);
+    setUser(null);
+    setPendingNotifications([]);
 
     window.dispatchEvent(
       new CustomEvent("userLogout", {
@@ -157,6 +168,8 @@ export const AuthProvider = ({ children }) => {
     );
 
     console.log("All user data cleared and logout event dispatched");
+
+    window.location.href = "/";
   }, [token]);
 
   const setAuthToken = useCallback(
