@@ -28,6 +28,7 @@ export function useAppleIAP() {
   const [pendingGiftCodes, setPendingGiftCodes] = useState([]);
   const storeRef = useRef(null);
   const tokenRef = useRef(token);
+  const hangGuardRef = useRef(null);
 
   useEffect(() => { tokenRef.current = token; }, [token]);
 
@@ -108,6 +109,7 @@ export function useAppleIAP() {
         })
         .verified((receipt) => {
           console.log('[IAP] verified');
+          clearTimeout(hangGuardRef.current);
           receipt.finish();
           refreshUser();
           if (!cancelled) {
@@ -118,6 +120,7 @@ export function useAppleIAP() {
         })
         .unverified((unverified, err) => {
           console.warn('[IAP] unverified full object:', JSON.stringify(unverified), err);
+          clearTimeout(hangGuardRef.current);
           const detail = unverified?.payload?.message || err?.message || err?.code || JSON.stringify(err) || 'unknown';
           if (!cancelled) {
             setError(`Purchase verification failed: ${detail}`);
@@ -158,6 +161,10 @@ export function useAppleIAP() {
     if (!storeRef.current || !initialized) return;
     setError(null);
     setPurchasing(true);
+    hangGuardRef.current = setTimeout(() => {
+      setPurchasing(false);
+      setError('Purchase timed out. If you were charged, tap Restore Purchases.');
+    }, 90000);
     try {
       const product = storeRef.current.get(productId, 'ios-appstore');
       if (!product) throw new Error('Product not found. Make sure it is registered in App Store Connect.');
@@ -168,6 +175,7 @@ export function useAppleIAP() {
       console.error('[IAP] purchase error', err);
       setError(err.message);
       setPurchasing(false);
+      clearTimeout(hangGuardRef.current);
     }
   }, [initialized]);
 
