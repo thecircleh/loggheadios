@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { Browser } from '@capacitor/browser';
 import { useAuth } from './AuthContext';
+
+const isNativeApp = !!(window.Capacitor?.isNativePlatform?.());
+const SITE_BASE = 'https://www.loggerhead.app';
 
 const HomePage = ({ matchSettings, isMobile }) => {
   const navigate = useNavigate();
@@ -231,13 +235,20 @@ const HomePage = ({ matchSettings, isMobile }) => {
       marginTop: isMobile ? '6px' : '8px',
       display: 'flex',
       justifyContent: 'center',
-      gap: isMobile ? '12px' : '16px',
+      gap: isMobile ? '8px' : '16px',
       flexWrap: 'wrap'
     },
     footerLink: {
       color: 'white',
       textDecoration: 'none',
-      fontSize: isMobile ? '12px' : '13px'
+      fontSize: isMobile ? '15px' : '13px',
+      padding: isMobile ? '10px 12px' : '4px 0',
+      minHeight: isMobile ? '44px' : 'auto',
+      display: 'inline-flex',
+      alignItems: 'center',
+      cursor: 'pointer',
+      background: 'none',
+      border: 'none',
     },
     expandableCard: {
       background: 'white',
@@ -331,10 +342,23 @@ const HomePage = ({ matchSettings, isMobile }) => {
 
   const handleCardClick = (route) => {
     if (route.startsWith('http')) {
-      window.location.href = route;
+      if (isNativeApp) {
+        Browser.open({ url: route });
+      } else {
+        window.open(route, '_blank', 'noopener,noreferrer');
+      }
       return;
     }
     navigate(route);
+  };
+
+  const openExternalLink = (path) => {
+    const url = `${SITE_BASE}${path}`;
+    if (isNativeApp) {
+      Browser.open({ url });
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
   };
 
   return (
@@ -530,9 +554,11 @@ const HomePage = ({ matchSettings, isMobile }) => {
       <div style={styles.footer}>
         <p>Loggerhead v3.0 - Your complete volleyball analytics solution</p>
         <div style={styles.footerLinks}>
-          <Link to="/about" style={styles.footerLink}>About</Link>
-          <Link to="/privacy" style={styles.footerLink}>Privacy</Link>
-          <Link to="/terms" style={styles.footerLink}>Terms</Link>
+          <button onClick={() => openExternalLink('/about')} style={styles.footerLink}>About</button>
+          <button onClick={() => openExternalLink('/privacy')} style={styles.footerLink}>Privacy</button>
+          <button onClick={() => openExternalLink('/terms')} style={styles.footerLink}>Terms</button>
+          <button onClick={() => openExternalLink('/faq')} style={styles.footerLink}>FAQ</button>
+          <button onClick={() => openExternalLink('/how-to')} style={styles.footerLink}>Getting Started</button>
         </div>
       </div>
     </div>
