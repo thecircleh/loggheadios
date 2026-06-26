@@ -69,4 +69,11 @@ export const APPLE_ONETIME_PRODUCTS = [
     subText: 'One-time unlock for a single stat book match.',
     mode: 'statbook',
   },
+  {
+    key: 'giftAnnual',
+    productId: APPLE_PRODUCT_IDS.giftAnnual,
+    label: 'Buy a Gift — Annual',
+    fallbackPrice: '$59.99',
+    subText: 'Gift one year of Premium to someone else.',
+  },
 ];
