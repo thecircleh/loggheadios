@@ -237,26 +237,22 @@ body {
 @media (max-width: 640px) {
   .ios-nav-links {
     display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    justify-content: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
     gap: 2px;
     padding: 6px 8px;
     border-top: 1px solid rgba(0,0,0,0.06);
-  }
-
-  .ios-nav-links::-webkit-scrollbar {
-    display: none;
   }
 
   .ios-nav-link, .ios-nav-links a,
   .ios-nav-dropdown-wrapper button {
     font-size: 13px !important;
     padding: 6px 10px !important;
-    white-space: nowrap;
-    flex-shrink: 0;
+  }
+
+  .ios-dropdown-menu {
+    left: auto;
+    right: 0;
   }
 }
 
