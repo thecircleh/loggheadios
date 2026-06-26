@@ -6,7 +6,7 @@ import { listMyDrills } from "./CoachesCornerPages/coachDrillsApi";
 
 const getApiUrl = () => {
   const h = window.location.hostname;
-  if (h === 'localhost' || h === '127.0.0.1' || h.startsWith("10.")) {
+  if (!window.Capacitor?.isNativePlatform?.() && (h === 'localhost' || h === '127.0.0.1' || h.startsWith('10.'))) {
     return `http://${h}:3000`;
   }
   return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";

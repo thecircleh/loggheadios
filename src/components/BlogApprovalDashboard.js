@@ -9,7 +9,7 @@ const BlogApprovalDashboard = () => {
   const [expandedPostIds, setExpandedPostIds] = useState([]);
 
   const _h2 = window.location.hostname;
-  const API_URL = (_h2 === 'localhost' || _h2 === '127.0.0.1' || _h2.startsWith('10.'))
+  const API_URL = (!window.Capacitor?.isNativePlatform?.() && (_h2 === 'localhost' || _h2 === '127.0.0.1' || _h2.startsWith('10.')))
     ? `http://${_h2}:3000`
     : process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
 
