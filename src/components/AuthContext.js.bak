@@ -40,6 +40,7 @@ export const AuthProvider = ({ children }) => {
     teams: data.teams || [],
 
     subscription: data.subscription || null,
+	giftSubscription: data.giftSubscription || null,
     matchKeys: Array.isArray(data.matchKeys) ? data.matchKeys : [],
     dailyUsage: data.dailyUsage || {
       statbook: { count: 0, lastReset: null },
@@ -251,6 +252,10 @@ export const AuthProvider = ({ children }) => {
   const volleyballRole = user?.volleyballRole || null;
   const subStatus = user?.subscription?.status || null;
   const isActiveSub = ["active", "canceling"].includes(subStatus);
+  const hasGiftSubscription =
+  user?.giftSubscription?.active === true &&
+  user?.giftSubscription?.endsAt &&
+  new Date(user.giftSubscription.endsAt) > new Date();
   const isAdminOrWinner = role === "admin" || role === "winner";
   const normalizeMode = (mode) => {
   if (!mode) return null;
@@ -328,7 +333,10 @@ const getMatchAccess = (mode) => {
   return "locked";
 };
 
-  const hasPremium = isActiveSub || isAdminOrWinner;
+ const hasPremium =
+  isActiveSub ||
+  hasGiftSubscription ||
+  isAdminOrWinner;
   const hasCoachesCorner = true;
   const isCoach = volleyballRole === "coach";
   const isSubscriber = hasPremium;
@@ -339,6 +347,7 @@ const getMatchAccess = (mode) => {
     isCoach,
     hasPremium,
     hasCoachesCorner,
+	hasGiftSubscription,
     isSubscriber,
   });
 
@@ -355,6 +364,7 @@ const contextValue = {
   isSubscriber,
   hasPremium,
   hasCoachesCorner,
+  hasGiftSubscription,
   isCoach,
   volleyballRole,
   refreshUser,

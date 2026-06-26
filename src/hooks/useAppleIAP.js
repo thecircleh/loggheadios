@@ -83,12 +83,14 @@ export function useAppleIAP() {
             return;
           }
           const data = await res.json();
+          console.log('[IAP] validator server response:', JSON.stringify(data));
           if (data.ok) {
             if (data.data?.giftCodes?.length > 0) {
               setPendingGiftCodes(data.data.giftCodes);
             }
             callback({ ok: true, data: data.data || {} });
           } else {
+            console.error('[IAP] verification failed:', data.error);
             callback({ ok: false, code: CdvPurchase.ErrorCode.PURCHASE_NOT_ALLOWED, message: data.error || 'Verification failed' });
           }
         } catch (err) {
@@ -114,9 +116,9 @@ export function useAppleIAP() {
             setError(null);
           }
         })
-        .unverified((_receipt, err) => {
-          console.warn('[IAP] unverified', err);
-          const detail = err?.message || err?.code || JSON.stringify(err) || 'unknown';
+        .unverified((unverified, err) => {
+          console.warn('[IAP] unverified full object:', JSON.stringify(unverified), err);
+          const detail = unverified?.payload?.message || err?.message || err?.code || JSON.stringify(err) || 'unknown';
           if (!cancelled) {
             setError(`Purchase verification failed: ${detail}`);
             setPurchasing(false);

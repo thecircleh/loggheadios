@@ -56,10 +56,16 @@ export default function MatchTrackingContainer({
   saveMatchData,
   processCoachSetEnding,
   ensureMatchIsFinalAndNavigate,
+  isMobile,
+  isPortrait,
+  isTouch,
   
   // Refs
   matchFinalizedRef,
   setEndingInProgressRef,
+
+  // Match restore state
+  isRestoringMatch,
   
   // Other props
   coachCourtKey,
@@ -209,6 +215,7 @@ export default function MatchTrackingContainer({
         currentMatchAge={currentMatchAge}
         onStartNewMatch={handleStartNewMatch}
         onResumeMatch={handleResumeMatch}
+        isRestoringMatch={isRestoringMatch}
       />
 
       {/* CoachCourt - only render when we have a match */}
@@ -221,6 +228,9 @@ export default function MatchTrackingContainer({
           saveMatchData={saveMatchData}
           courtPlayers={courtPlayers}
           benchPlayers={benchPlayers}
+		  isMobile={isMobile}
+	      isPortrait={isPortrait}
+	      isTouch={isTouch}
           updatePlayersOnCourt={updatePlayersOnCourt}
           refreshBench={refreshBench}
           ourScore={ourScore}

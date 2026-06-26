@@ -1,14 +1,10 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Browser } from '@capacitor/browser';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-
-const SITE_BASE = 'https://www.loggerhead.app';
-const checkNative = () => !!(window.Capacitor?.isNativePlatform?.());
 
 const HomePage = ({ matchSettings, isMobile }) => {
   const navigate = useNavigate();
-  const { user, removeToken } = useAuth();
+  const { user } = useAuth();
   const [expandedCard, setExpandedCard] = useState(null);
 
   const loggingModes = [
@@ -235,20 +231,13 @@ const HomePage = ({ matchSettings, isMobile }) => {
       marginTop: isMobile ? '6px' : '8px',
       display: 'flex',
       justifyContent: 'center',
-      gap: isMobile ? '8px' : '16px',
+      gap: isMobile ? '12px' : '16px',
       flexWrap: 'wrap'
     },
     footerLink: {
       color: 'white',
       textDecoration: 'none',
-      fontSize: isMobile ? '15px' : '13px',
-      padding: isMobile ? '10px 12px' : '4px 0',
-      minHeight: isMobile ? '44px' : 'auto',
-      display: 'inline-flex',
-      alignItems: 'center',
-      cursor: 'pointer',
-      background: 'none',
-      border: 'none',
+      fontSize: isMobile ? '12px' : '13px'
     },
     expandableCard: {
       background: 'white',
@@ -342,23 +331,10 @@ const HomePage = ({ matchSettings, isMobile }) => {
 
   const handleCardClick = (route) => {
     if (route.startsWith('http')) {
-      if (checkNative()) {
-        Browser.open({ url: route });
-      } else {
-        window.open(route, '_blank', 'noopener,noreferrer');
-      }
+      window.location.href = route;
       return;
     }
     navigate(route);
-  };
-
-  const openExternalLink = (path) => {
-    const url = `${SITE_BASE}${path}`;
-    if (checkNative()) {
-      Browser.open({ url });
-    } else {
-      window.open(url, '_blank', 'noopener,noreferrer');
-    }
   };
 
   return (
@@ -384,9 +360,9 @@ const HomePage = ({ matchSettings, isMobile }) => {
         <div style={styles.pricingHighlight}>
           Need more? Subscribe for unlimited matches or pay just $1.29 per match
         </div>
-        <button onClick={() => navigate('/profile?section=subscription')} style={styles.ctaButton}>
+        <Link to="/profile?section=subscription" style={styles.ctaButton}>
           View Pricing Plans
-        </button>
+        </Link>
       </div>
 
       <div style={styles.featuresGrid}>
@@ -554,14 +530,9 @@ const HomePage = ({ matchSettings, isMobile }) => {
       <div style={styles.footer}>
         <p>Loggerhead v3.0 - Your complete volleyball analytics solution</p>
         <div style={styles.footerLinks}>
-          <button onClick={() => openExternalLink('/about')} style={styles.footerLink}>About</button>
-          <button onClick={() => openExternalLink('/privacy')} style={styles.footerLink}>Privacy</button>
-          <button onClick={() => openExternalLink('/terms')} style={styles.footerLink}>Terms</button>
-          <button onClick={() => openExternalLink('/faq')} style={styles.footerLink}>FAQ</button>
-          <button onClick={() => openExternalLink('/how-to')} style={styles.footerLink}>Getting Started</button>
-          <button onClick={() => navigate('/blogs')} style={styles.footerLink}>Blog</button>
-          <button onClick={() => navigate('/profile?section=consent')} style={styles.footerLink}>Consent Preferences</button>
-          <button onClick={() => removeToken()} style={{ ...styles.footerLink, opacity: 1, fontWeight: '600' }}>Log Out</button>
+          <Link to="/about" style={styles.footerLink}>About</Link>
+          <Link to="/privacy" style={styles.footerLink}>Privacy</Link>
+          <Link to="/terms" style={styles.footerLink}>Terms</Link>
         </div>
       </div>
     </div>

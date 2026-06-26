@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "./AuthContext";
-import { useNavigate, Navigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { Country, State } from "country-state-city";
 import "./Profile.css";
@@ -8,8 +8,9 @@ import SubscriptionButtons from "./SubscriptionButtons";
 import TeamNameBuilder from "./TeamNameBuilder";
 
 const getApiUrl = () => {
-  if (window.location.hostname.startsWith("10.")) {
-    return `http://${window.location.hostname}:3000`;
+  const h = window.location.hostname;
+  if (h === 'localhost' || h === '127.0.0.1' || h.startsWith("10.")) {
+    return `http://${h}:3000`;
   }
   return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
 };
@@ -176,13 +177,6 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
     };
   }, [profile, user?.id]);
 
-  // Re-fetch auth user if token exists but user hasn't loaded yet (e.g. after API hiccup)
-  useEffect(() => {
-    if (!loading && !user && token) {
-      refreshUser();
-    }
-  }, [loading, user, token, refreshUser]);
-
   // Load profile
   useEffect(() => {
     if (!user?.id) {
@@ -348,8 +342,8 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
     navigate("/login");
   };
 
-  if (loading || (!user && token)) return <p style={{ textAlign: "center", padding: 40 }}>Loading…</p>;
-  if (!user && !token) return <Navigate to="/login" replace />;
+  if (loading) return <p style={{ textAlign: "center", padding: 40 }}>Loading…</p>;
+  if (!user) return <p style={{ textAlign: "center", padding: 40 }}>Not authenticated.</p>;
 
   return (
     <div className="page-wrapper">
@@ -574,6 +568,7 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
       )}
 
       {/* ── Redeem Gift Code ── */}
+      {!isNative && (
       <div className="card" style={{ marginTop: 14 }}>
         <p className="card-title">Redeem a Gift Code</p>
         <div className="field">
@@ -590,6 +585,7 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
           Redeem Gift
         </button>
       </div>
+      )}
 
       {/* ── Subscription ── */}
       <div className="card" style={{ marginTop: 14 }} ref={subscriptionRef}>

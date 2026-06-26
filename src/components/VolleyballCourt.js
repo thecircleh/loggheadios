@@ -32,8 +32,9 @@ import VideoPlayerTracking from './VideoPlayerTracking';
 
 
 const getApiUrl = () => {
-  if (window.location.hostname.startsWith("10.")) {
-    return `http://${window.location.hostname}:3000`;
+  const h = window.location.hostname;
+  if (h === 'localhost' || h === '127.0.0.1' || h.startsWith("10.")) {
+    return `http://${h}:3000`;
   }
   return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
 };
@@ -5458,7 +5459,7 @@ function renderScoreboardAboveBench() {
       <div style={leftColumnStyle}>
         {/* Scoreboard + compact 2x2 team stats side by side */}
         <div style={{ display: "flex", flexDirection: "row", alignItems: "flex-start", gap: "8px", width: "100%", boxSizing: "border-box" }}>
-          <div style={{ flex: "0 0 165px", minWidth: 0, overflow: "hidden" }}>
+          <div style={{ flex: "0 0 auto" }}>
             <Scoreboard
               match={match}
               ourScore={ourScore}
@@ -5486,7 +5487,7 @@ function renderScoreboardAboveBench() {
   return (
     <div style={leftColumnStyle}>
       {/* Scoreboard */}
-      <div style={{ width: "100%", minWidth: 0, overflow: "hidden" }}>
+      <div style={{ flex: "0 0 auto" }}>
         <Scoreboard
           match={match}
           ourScore={ourScore}

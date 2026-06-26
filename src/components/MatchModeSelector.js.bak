@@ -47,6 +47,7 @@ export default function MatchModeSelector({
   onStartNewMatch,
   onResumeMatch,
   onClose, // Optional close handler if used as modal
+  isRestoringMatch, // NEW: prevents selector from showing during match restore
 }) {
   const navigate = useNavigate();
   const { user, token, refreshUser } = useAuth(); // Add refreshUser if available
@@ -70,6 +71,12 @@ export default function MatchModeSelector({
 
   // Determine if selector should be shown
   const shouldShow = () => {
+    // Never show while match is being restored from storage
+    if (isRestoringMatch) {
+      console.log("⏳ Hiding selector: match is still restoring");
+      return false;
+    }
+
     console.log("🔍 MatchModeSelector shouldShow check:", {
       currentMatchId,
       currentMatchMode,
@@ -520,8 +527,24 @@ export default function MatchModeSelector({
               {currentPage === "classic" && "Access Required"}
             </div>
             <div style={styles.accessText}>
-              {currentPage === "statbook" && "You've used your free Stat Book match for today. Choose an option below to continue logging."}
-              {currentPage === "match" && "You've used your free Match Tracking match for today. Choose an option below to continue tracking."}
+              {currentPage === "statbook" && (
+                <>
+                  You've used your free Stat Book match for today. Choose an option below to continue logging, or{" "}
+                  <a href="/profile?section=subscription" style={{ color: "white", textDecoration: "underline" }}>
+                    see all plans
+                  </a> 
+                  .
+                </>
+              )}
+              {currentPage === "match" && (
+                <>
+                  You've used your free Match Tracking match for today. Choose an option below to continue tracking, or{" "}
+                  <a href="/profile?section=subscription" style={{ color: "white", textDecoration: "underline" }}>
+                    see all plans
+                  </a>
+                  .
+                </>
+              )}
               {currentPage === "classic" && "Choose an option below to continue."}
             </div>
 

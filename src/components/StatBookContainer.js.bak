@@ -48,7 +48,7 @@ export default function StatBookContainer({
   ballSide,
   setBallSide,
   isMobile,
-  isPortait,
+  isPortrait,
   isTouch,
   deactivatedPlayers,
   setDeactivatedPlayers,
@@ -72,6 +72,7 @@ export default function StatBookContainer({
   isMatchOwner,
   setOurScore,
   setOpponentScore,
+  isRestoringMatch,
 }) {
   const { user, token } = useAuth();
   const [currentMatchAge, setCurrentMatchAge] = useState(0);
@@ -228,6 +229,7 @@ export default function StatBookContainer({
         currentMatchAge={currentMatchAge}
         onStartNewMatch={handleStartNewMatch}
         onResumeMatch={handleResumeMatch}
+        isRestoringMatch={isRestoringMatch}
       />
 
       {/* Main Stat Book Page - only render when we have a match */}

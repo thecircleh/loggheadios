@@ -12,8 +12,9 @@ import {
 } from "../constants/matchConstants";
 
 const getApiUrl = () => {
-  if (typeof window !== "undefined" && window.location.hostname.startsWith("10.")) {
-    return `http://${window.location.hostname}:3000`;
+  const h = typeof window !== "undefined" ? window.location.hostname : "";
+  if (h === 'localhost' || h === '127.0.0.1' || h.startsWith("10.")) {
+    return `http://${h}:3000`;
   }
   return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
 };

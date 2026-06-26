@@ -272,8 +272,6 @@ export default function ClassicContainer({
 		  isMobile={isMobile}
 		  isPortrait={isPortrait}
 		  isTouch={isTouch}
-		  setIsMobile={setIsMobile}
-		  setIsPortrait={setIsPortrait}
           updateCourtPositions={updateCourtPositions}
           updatePlayersOnCourt={updateCourtPositions}
           positionMapping={positionMapping}
