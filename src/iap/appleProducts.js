@@ -8,7 +8,7 @@ export const APPLE_PRODUCT_IDS = {
   annual:     'com.loggerheadstat.app.sub.annual',
   matchKey:   'com.loggerheadstat.app.matchkey',
   statbookKey:'com.loggerheadstat.app.statbookkey',
-  giftAnnual: 'com.loggerheadstat.app.sub.annual.gift',
+  giftAnnual: 'com.loggerheadstat.app.giftcode',
 };
 
 // Subscription plans — prices are fallbacks; StoreKit returns the real local-currency price
