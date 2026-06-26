@@ -25,6 +25,7 @@ export function useAppleIAP() {
   const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState(null);
   const [initialized, setInitialized] = useState(false);
+  const [pendingGiftCodes, setPendingGiftCodes] = useState([]);
   const storeRef = useRef(null);
   const tokenRef = useRef(token);
 
@@ -83,6 +84,9 @@ export function useAppleIAP() {
           }
           const data = await res.json();
           if (data.ok) {
+            if (data.data?.giftCodes?.length > 0) {
+              setPendingGiftCodes(data.data.giftCodes);
+            }
             callback({ ok: true, data: data.data || {} });
           } else {
             callback({ ok: false, code: CdvPurchase.ErrorCode.PURCHASE_NOT_ALLOWED, message: data.error || 'Verification failed' });
@@ -178,5 +182,7 @@ export function useAppleIAP() {
     }
   }, [initialized]);
 
-  return { storeProducts, purchase, restore, purchasing, restoring, error, initialized };
+  const clearGiftCodes = useCallback(() => setPendingGiftCodes([]), []);
+
+  return { storeProducts, purchase, restore, purchasing, restoring, error, initialized, pendingGiftCodes, clearGiftCodes };
 }

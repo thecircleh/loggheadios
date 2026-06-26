@@ -5,7 +5,7 @@ import { APPLE_SUBSCRIPTION_PLANS, APPLE_ONETIME_PRODUCTS, APPLE_PRODUCT_IDS } f
 
 const NativeSubscriptionButtons = () => {
   const { hasPremium, user } = useAuth();
-  const { storeProducts, purchase, restore, purchasing, restoring, error, initialized } = useAppleIAP();
+  const { storeProducts, purchase, restore, purchasing, restoring, error, initialized, pendingGiftCodes, clearGiftCodes } = useAppleIAP();
   const [selected, setSelected] = useState('weekly');
 
   const giftPrice = storeProducts[APPLE_PRODUCT_IDS.giftAnnual]?.price ?? '$59.99';
@@ -30,6 +30,30 @@ const NativeSubscriptionButtons = () => {
   };
 
   const selectedPlan = APPLE_SUBSCRIPTION_PLANS.find(p => p.key === selected);
+
+  if (pendingGiftCodes.length > 0) {
+    return (
+      <div style={s.wrap}>
+        <div style={s.giftSuccessBox}>
+          <div style={s.giftSuccessIcon}>🎁</div>
+          <div style={s.giftSuccessTitle}>Gift Code Ready!</div>
+          <div style={s.giftSuccessSub}>Share this code with a coach, parent, or player. They can redeem it in the app under Profile → Redeem Gift Code.</div>
+          {pendingGiftCodes.map((code) => (
+            <div key={code} style={s.giftCodeDisplay}>
+              <span style={s.giftCodeText}>{code}</span>
+              <button
+                style={s.copyBtn}
+                onClick={() => navigator.clipboard?.writeText(code).catch(() => {})}
+              >
+                Copy
+              </button>
+            </div>
+          ))}
+          <button style={s.restoreBtn} onClick={clearGiftCodes}>Done</button>
+        </div>
+      </div>
+    );
+  }
 
   if (hasPremium) {
     return (
@@ -358,6 +382,54 @@ const s = {
     borderRadius: 10,
     fontSize: 14,
     fontWeight: 700,
+    cursor: 'pointer',
+  },
+  giftSuccessBox: {
+    textAlign: 'center',
+    padding: '32px 16px',
+  },
+  giftSuccessIcon: {
+    fontSize: 56,
+    marginBottom: 12,
+  },
+  giftSuccessTitle: {
+    fontSize: 22,
+    fontWeight: 700,
+    color: '#111',
+    marginBottom: 8,
+  },
+  giftSuccessSub: {
+    fontSize: 14,
+    color: '#555',
+    lineHeight: 1.5,
+    marginBottom: 20,
+  },
+  giftCodeDisplay: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    background: '#f5f5f5',
+    border: '2px dashed #ccc',
+    borderRadius: 12,
+    padding: '14px 16px',
+    marginBottom: 12,
+  },
+  giftCodeText: {
+    fontSize: 20,
+    fontWeight: 700,
+    letterSpacing: 2,
+    color: '#333',
+    fontFamily: 'monospace',
+  },
+  copyBtn: {
+    background: '#007AFF',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 8,
+    padding: '8px 14px',
+    fontSize: 14,
+    fontWeight: 600,
     cursor: 'pointer',
   },
   activeHeader: {

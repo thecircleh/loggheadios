@@ -8,7 +8,7 @@ const checkNative = () => !!(window.Capacitor?.isNativePlatform?.());
 
 const HomePage = ({ matchSettings, isMobile }) => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, removeToken } = useAuth();
   const [expandedCard, setExpandedCard] = useState(null);
 
   const loggingModes = [
@@ -559,6 +559,9 @@ const HomePage = ({ matchSettings, isMobile }) => {
           <button onClick={() => openExternalLink('/terms')} style={styles.footerLink}>Terms</button>
           <button onClick={() => openExternalLink('/faq')} style={styles.footerLink}>FAQ</button>
           <button onClick={() => openExternalLink('/how-to')} style={styles.footerLink}>Getting Started</button>
+          <button onClick={() => navigate('/blogs')} style={styles.footerLink}>Blog</button>
+          <button onClick={() => navigate('/profile?section=consent')} style={styles.footerLink}>Consent Preferences</button>
+          <button onClick={() => removeToken()} style={{ ...styles.footerLink, opacity: 1, fontWeight: '600' }}>Log Out</button>
         </div>
       </div>
     </div>

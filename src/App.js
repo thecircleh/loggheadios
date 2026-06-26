@@ -5027,27 +5027,6 @@ const CoachesCornerDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
                     }
                   `}</style>
                 </div>
-                {location.pathname !== "/login" &&
-  location.pathname !== "/register" && (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-     
-
-      {!isNativeApp && (
-      <button
-  className="ios-menu-toggle"
-  onClick={() => {
-    setShowMobileMenu((prev) => {
-      const next = !prev;
-      if (!next) setActiveDropdown(null);
-      return next;
-    });
-  }}
->
-  Menu
-</button>
-      )}
-    </div>
-)}
               </div>
 			  
 {emailConsentChecked && !hasEmailConsent && showEmailConsentModal && (
@@ -5069,42 +5048,6 @@ const CoachesCornerDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
 
 
 
-{!isNativeApp && location.pathname !== "/login" && location.pathname !== "/register" && (
-  <nav className={`ios-nav-links ${showMobileMenu ? "visible" : ""}`}>
-    <Link to="/profile" onClick={closeAllDropdowns} className="ios-nav-link">Profile</Link>
-    <Link to="/settings" onClick={closeAllDropdowns} className="ios-nav-link">Rosters & Matches</Link>
-    <LoggingModeDropdown
-      isOpen={activeDropdown === 'modes'}
-      onOpen={handleOpenDropdown}
-      onClose={closeAllDropdowns}
-      onHoverClose={scheduleCloseDropdowns}
-    />
-    <StatDropdown
-      isOpen={activeDropdown === 'stats'}
-      onOpen={handleOpenDropdown}
-      onClose={closeAllDropdowns}
-      onHoverClose={scheduleCloseDropdowns}
-    />
-    <CoachesCornerDropdown
-      isOpen={activeDropdown === 'coaches'}
-      onOpen={handleOpenDropdown}
-      onClose={closeAllDropdowns}
-      onHoverClose={scheduleCloseDropdowns}
-    />
-    <BlogDropdown
-      isOpen={activeDropdown === 'blog'}
-      onOpen={handleOpenDropdown}
-      onClose={closeAllDropdowns}
-      onHoverClose={scheduleCloseDropdowns}
-    />
-
-    {user && (
-      <button onClick={handleLogout} onClick={closeAllDropdowns} className="ios-logout-btn">
-        Logout
-      </button>
-    )}
-  </nav>
-)}
 
                 
 
