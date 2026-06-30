@@ -188,11 +188,11 @@ const SettingsPanel = ({
   const [showTeamNameBuilder, setShowTeamNameBuilder] = useState(false);
 
   const [openSections, setOpenSections] = useState({
-    teamRoster: true,
-    matchSettings: true,
-    startMatch: true,
-    scheduled: true,
-    inProcess: true,
+    teamRoster: false,
+    matchSettings: false,
+    startMatch: false,
+    scheduled: false,
+    inProcess: false,
     final: false,
   });
   const toggleSection = useCallback((key) => {
@@ -2963,17 +2963,17 @@ const nextScheduled = scheduledMatches
 }}>
   <div style={styles.card}>
     <button onClick={() => toggleSection('scheduled')} style={styles.subAccordionBtn}>
-      <h3 style={{ ...styles.cardTitle, margin: 0 }}>📅 Scheduled Matches</h3>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-        <span style={styles.accordionSummary}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>📅 Scheduled Matches</h3>
+        <div style={{ ...styles.accordionSummary, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {scheduledMatches.length === 0
             ? 'None'
             : nextScheduled
               ? `${scheduledMatches.length} · Next: ${nextScheduled.opponentName} ${new Date(nextScheduled.scheduledFor).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
               : `${scheduledMatches.length} scheduled`}
-        </span>
-        <span style={styles.accordionChevron}>{openSections.scheduled ? '▲' : '▼'}</span>
+        </div>
       </div>
+      <span style={styles.accordionChevron}>{openSections.scheduled ? '▲' : '▼'}</span>
     </button>
     {openSections.scheduled && <>
     {(!selectedTeam || !benchPlayers || benchPlayers.length === 0) && scheduledMatches.length > 0 && (
@@ -3098,18 +3098,18 @@ const nextScheduled = scheduledMatches
 }}>
   <div style={styles.card}>
     <button onClick={() => toggleSection('inProcess')} style={styles.subAccordionBtn}>
-      <h3 style={{ ...styles.cardTitle, margin: 0 }}>
-        <InProcessIcon size={20} />
-        In Process Matches
-      </h3>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-        <span style={styles.accordionSummary}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>
+          <InProcessIcon size={20} />
+          In Process Matches
+        </h3>
+        <div style={{ ...styles.accordionSummary, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {inProcessMatches.length === 0
             ? 'None'
             : `${inProcessMatches.length} · ${Object.entries(inProcessModeCount).map(([k, v]) => `${v} ${k}`).join(', ')}`}
-        </span>
-        <span style={styles.accordionChevron}>{openSections.inProcess ? '▲' : '▼'}</span>
+        </div>
       </div>
+      <span style={styles.accordionChevron}>{openSections.inProcess ? '▲' : '▼'}</span>
     </button>
 
   {openSections.inProcess && (inProcessMatches.length === 0 ? (
@@ -3168,18 +3168,18 @@ const nextScheduled = scheduledMatches
 }}>
   <div style={styles.card}>
     <button onClick={() => toggleSection('final')} style={styles.subAccordionBtn}>
-      <h3 style={{ ...styles.cardTitle, margin: 0 }}>
-        <CheckmarkIcon size={20} />
-        Final Matches
-      </h3>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-        <span style={styles.accordionSummary}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <h3 style={{ ...styles.cardTitle, margin: 0 }}>
+          <CheckmarkIcon size={20} />
+          Final Matches
+        </h3>
+        <div style={{ ...styles.accordionSummary, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {finalMatches.length === 0
             ? 'None'
             : `${wins}W – ${losses}L · ${finalMatches.length} match${finalMatches.length !== 1 ? 'es' : ''}`}
-        </span>
-        <span style={styles.accordionChevron}>{openSections.final ? '▲' : '▼'}</span>
+        </div>
       </div>
+      <span style={styles.accordionChevron}>{openSections.final ? '▲' : '▼'}</span>
     </button>
 
   {openSections.final && (finalMatches.length === 0 ? (
