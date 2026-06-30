@@ -186,6 +186,18 @@ const SettingsPanel = ({
   const [searchPlayerName, setSearchPlayerName] = useState('');
   const [showExternalSearch, setShowExternalSearch] = useState(false);
   const [showTeamNameBuilder, setShowTeamNameBuilder] = useState(false);
+
+  const [openSections, setOpenSections] = useState({
+    teamRoster: true,
+    matchSettings: true,
+    startMatch: true,
+    scheduled: true,
+    inProcess: true,
+    final: false,
+  });
+  const toggleSection = useCallback((key) => {
+    setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
+  }, []);
   
   // NEW: State for editing players
   const [editingPlayer, setEditingPlayer] = useState(null);
@@ -1515,6 +1527,18 @@ const finalMatches = (savedMatches || []).filter(
 const groupedInProcessByEvent = groupByEvent(inProcessMatches);
 const groupedFinalByEvent = groupByEvent(finalMatches);
 
+const inProcessModeCount = inProcessMatches.reduce((acc, m) => {
+  const mode = (m.mode || 'classic').toLowerCase();
+  const label = mode === 'match' ? 'Match' : mode === 'statbook' ? 'Stat Book' : 'Classic';
+  acc[label] = (acc[label] || 0) + 1;
+  return acc;
+}, {});
+const wins = finalMatches.filter(m => m.ourSetsWon > m.opponentSetsWon).length;
+const losses = finalMatches.filter(m => m.opponentSetsWon > m.ourSetsWon).length;
+const nextScheduled = scheduledMatches
+  .filter(m => m.scheduledFor)
+  .sort((a, b) => new Date(a.scheduledFor) - new Date(b.scheduledFor))[0];
+
 
   const gridContainerStyle = {
     display: 'grid',
@@ -2176,6 +2200,55 @@ const groupedFinalByEvent = groupByEvent(finalMatches);
       fontWeight: 'bold',
       marginLeft: '4px',
     },
+
+    // ============================================
+    // ACCORDION HEADERS
+    // ============================================
+    accordionBtn: {
+      width: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: isMobile && isPortrait ? '16px 16px' : '20px 20px',
+      backgroundColor: 'white',
+      border: 'none',
+      borderBottom: '1px solid #E9ECEF',
+      cursor: 'pointer',
+      textAlign: 'left',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    },
+    accordionTitle: {
+      fontSize: isMobile && isPortrait ? '20px' : '22px',
+      fontWeight: '700',
+      color: '#1C1C1E',
+      letterSpacing: '-0.4px',
+    },
+    accordionSummary: {
+      fontSize: '13px',
+      color: '#6C757D',
+      marginTop: '3px',
+      fontWeight: '400',
+    },
+    accordionChevron: {
+      fontSize: '13px',
+      color: '#ADB5BD',
+      flexShrink: 0,
+      marginLeft: 8,
+    },
+    subAccordionBtn: {
+      width: '100%',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '0 0 12px 0',
+      backgroundColor: 'transparent',
+      border: 'none',
+      borderBottom: '1px solid #F3F4F6',
+      cursor: 'pointer',
+      textAlign: 'left',
+      fontFamily: 'inherit',
+      marginBottom: '12px',
+    },
   };
 
   return (
@@ -2183,8 +2256,19 @@ const groupedFinalByEvent = groupByEvent(finalMatches);
       {/* ============================================ */}
       {/* SECTION 1: TEAM & ROSTER */}
       {/* ============================================ */}
-      <h2 style={styles.header}>1. Team & Roster</h2>
+      <button onClick={() => toggleSection('teamRoster')} style={styles.accordionBtn}>
+        <div>
+          <div style={styles.accordionTitle}>1. Team &amp; Roster</div>
+          <div style={styles.accordionSummary}>
+            {selectedTeam
+              ? `${selectedTeam} · ${benchPlayers?.length || 0} player${benchPlayers?.length !== 1 ? 's' : ''}`
+              : 'No team selected'}
+          </div>
+        </div>
+        <span style={styles.accordionChevron}>{openSections.teamRoster ? '▲' : '▼'}</span>
+      </button>
 
+      {openSections.teamRoster && <>
       {/* Team Selection Card */}
       <div style={styles.card}>
         <h3 style={styles.cardTitle}>Select Team</h3>
@@ -2505,11 +2589,24 @@ const groupedFinalByEvent = groupByEvent(finalMatches);
 
 
 
+      </>}
+
       {/* ============================================ */}
       {/* SECTION 2: MATCH SETTINGS */}
       {/* ============================================ */}
-      <h2 style={styles.header}>2. Match Settings</h2>
-      
+      <button onClick={() => toggleSection('matchSettings')} style={styles.accordionBtn}>
+        <div>
+          <div style={styles.accordionTitle}>2. Match Settings</div>
+          <div style={styles.accordionSummary}>
+            {opponentName
+              ? `vs ${opponentName}${eventName ? ` · ${eventName}` : ''}`
+              : eventName || 'No opponent set'}
+          </div>
+        </div>
+        <span style={styles.accordionChevron}>{openSections.matchSettings ? '▲' : '▼'}</span>
+      </button>
+
+      {openSections.matchSettings && <>
       <div style={styles.card}>
         <div style={formContainerStyle}>
 <div
@@ -2666,16 +2763,28 @@ const groupedFinalByEvent = groupByEvent(finalMatches);
       </div>
       </div>
 
+      </>}
+
       {/* ============================================ */}
       {/* SECTION 3: START MATCH */}
       {/* ============================================ */}
-<div style={{ 
+<div style={{
   marginLeft: isMobile && isPortrait ? 16 : 20,
   marginRight: isMobile && isPortrait ? 16 : 20,
 }}>
-  <h2 style={styles.header}>3. Start Match</h2>
+  <button onClick={() => toggleSection('startMatch')} style={{ ...styles.accordionBtn, marginLeft: -(isMobile && isPortrait ? 16 : 20), marginRight: -(isMobile && isPortrait ? 16 : 20), width: `calc(100% + ${isMobile && isPortrait ? 32 : 40}px)` }}>
+    <div>
+      <div style={styles.accordionTitle}>3. Start Match</div>
+      <div style={styles.accordionSummary}>
+        {selectedTeam && benchPlayers?.length > 0
+          ? `${selectedTeam} is ready · Choose a mode below`
+          : 'Select a team with players first'}
+      </div>
+    </div>
+    <span style={styles.accordionChevron}>{openSections.startMatch ? '▲' : '▼'}</span>
+  </button>
 
-  <div
+  {openSections.startMatch && <div
     style={{
       display: 'flex',
       flexWrap: 'wrap',
@@ -2795,7 +2904,7 @@ const groupedFinalByEvent = groupByEvent(finalMatches);
         </button>
       </div>
     </div>
-  </div>
+  </div>}
 
 
   {toastVisible && (
@@ -2848,13 +2957,25 @@ const groupedFinalByEvent = groupByEvent(finalMatches);
       <h2 style={styles.header}>4. Saved Matches</h2>
 
 {/* Scheduled Matches Card */}
-<div style={{ 
+<div style={{
   marginLeft: isMobile && isPortrait ? 16 : 20,
   marginRight: isMobile && isPortrait ? 16 : 20,
 }}>
   <div style={styles.card}>
-    <h3 style={styles.cardTitle}>📅 Scheduled Matches</h3>
-    
+    <button onClick={() => toggleSection('scheduled')} style={styles.subAccordionBtn}>
+      <h3 style={{ ...styles.cardTitle, margin: 0 }}>📅 Scheduled Matches</h3>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <span style={styles.accordionSummary}>
+          {scheduledMatches.length === 0
+            ? 'None'
+            : nextScheduled
+              ? `${scheduledMatches.length} · Next: ${nextScheduled.opponentName} ${new Date(nextScheduled.scheduledFor).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+              : `${scheduledMatches.length} scheduled`}
+        </span>
+        <span style={styles.accordionChevron}>{openSections.scheduled ? '▲' : '▼'}</span>
+      </div>
+    </button>
+    {openSections.scheduled && <>
     {(!selectedTeam || !benchPlayers || benchPlayers.length === 0) && scheduledMatches.length > 0 && (
       <div
         style={{
@@ -2966,21 +3087,32 @@ const groupedFinalByEvent = groupByEvent(finalMatches);
         ))}
       </ul>
     )}
+    </>}
   </div>
 </div>
 
 {/* In Process Matches Card */}
-<div style={{ 
+<div style={{
   marginLeft: isMobile && isPortrait ? 16 : 20,
   marginRight: isMobile && isPortrait ? 16 : 20,
 }}>
   <div style={styles.card}>
-    <h3 style={styles.cardTitle}>
-      <InProcessIcon size={20} />
-      In Process Matches
-    </h3>
+    <button onClick={() => toggleSection('inProcess')} style={styles.subAccordionBtn}>
+      <h3 style={{ ...styles.cardTitle, margin: 0 }}>
+        <InProcessIcon size={20} />
+        In Process Matches
+      </h3>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <span style={styles.accordionSummary}>
+          {inProcessMatches.length === 0
+            ? 'None'
+            : `${inProcessMatches.length} · ${Object.entries(inProcessModeCount).map(([k, v]) => `${v} ${k}`).join(', ')}`}
+        </span>
+        <span style={styles.accordionChevron}>{openSections.inProcess ? '▲' : '▼'}</span>
+      </div>
+    </button>
 
-  {inProcessMatches.length === 0 ? (
+  {openSections.inProcess && (inProcessMatches.length === 0 ? (
     <p style={{ fontStyle: 'italic', color: '#666' }}>
       No in-process matches for {selectedTeam || 'selected team'}.
     </p>
@@ -3025,22 +3157,32 @@ const groupedFinalByEvent = groupByEvent(finalMatches);
         })}
       </div>
     ))
-  )}
+  ))}
   </div>
 </div>
 
 {/* Final Matches Card */}
-<div style={{ 
+<div style={{
   marginLeft: isMobile && isPortrait ? 16 : 20,
   marginRight: isMobile && isPortrait ? 16 : 20,
 }}>
   <div style={styles.card}>
-    <h3 style={styles.cardTitle}>
-      <CheckmarkIcon size={20} />
-      Final Matches
-    </h3>
+    <button onClick={() => toggleSection('final')} style={styles.subAccordionBtn}>
+      <h3 style={{ ...styles.cardTitle, margin: 0 }}>
+        <CheckmarkIcon size={20} />
+        Final Matches
+      </h3>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <span style={styles.accordionSummary}>
+          {finalMatches.length === 0
+            ? 'None'
+            : `${wins}W – ${losses}L · ${finalMatches.length} match${finalMatches.length !== 1 ? 'es' : ''}`}
+        </span>
+        <span style={styles.accordionChevron}>{openSections.final ? '▲' : '▼'}</span>
+      </div>
+    </button>
 
-  {finalMatches.length === 0 ? (
+  {openSections.final && (finalMatches.length === 0 ? (
     <p style={{ fontStyle: 'italic', color: '#666' }}>
       No final matches for {selectedTeam || 'selected team'}.
     </p>
@@ -3097,7 +3239,7 @@ const groupedFinalByEvent = groupByEvent(finalMatches);
         })}
       </div>
     ))
-  )}
+  ))}
   </div>
 </div>
 
