@@ -545,6 +545,8 @@ const premiumValueStack = useMemo(() => {
   };
   
   const [giftQuantity, setGiftQuantity] = React.useState(1);
+  const [nativeGiftQuantity, setNativeGiftQuantity] = React.useState(1);
+  const [nativeGiftBusy, setNativeGiftBusy] = React.useState(false);
 
   const handleGiftPurchase = async (planType) => {
     try {
@@ -558,6 +560,24 @@ const premiumValueStack = useMemo(() => {
     } catch (err) {
       console.error("Gift checkout error:", err.response?.data || err.message);
       alert(`Gift checkout failed: ${err.response?.data?.message || err.message}`);
+    }
+  };
+
+  const handleNativeGiftPurchase = async (planType) => {
+    setNativeGiftBusy(true);
+    try {
+      const res = await axios.post(
+        `${getApiUrl()}/api/gifts/checkout`,
+        { planType, quantity: nativeGiftQuantity },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const { Browser } = await import('@capacitor/browser');
+      await Browser.open({ url: res.data.url });
+    } catch (err) {
+      console.error("Native gift checkout error:", err.response?.data || err.message);
+      alert(`Gift checkout failed: ${err.response?.data?.message || err.message}`);
+    } finally {
+      setNativeGiftBusy(false);
     }
   };
 
@@ -648,6 +668,37 @@ const premiumValueStack = useMemo(() => {
             Processing purchase…
           </div>
         )}
+
+        {/* Gift section — same Stripe flow as web, opens in in-app browser */}
+        <div style={{ marginTop: 20, padding: 14, background: "rgba(255,215,0,0.08)", border: "1px solid rgba(255,215,0,0.3)", borderRadius: 12 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "#111", marginBottom: 4 }}>Gift Loggerhead</div>
+          <div style={{ fontSize: 12, color: "#666", marginBottom: 10 }}>
+            Purchase a gift subscription and send a redemption code to a coach, parent, or player.
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 13, fontWeight: 700, marginRight: 8, color: "#1C1C1E" }}>Quantity</label>
+            <select
+              value={nativeGiftQuantity}
+              onChange={(e) => setNativeGiftQuantity(Number(e.target.value))}
+              style={{ fontSize: 14, fontWeight: 700, padding: "4px 8px", borderRadius: 8, border: "1px solid rgba(0,0,0,0.15)", background: "#fff" }}
+            >
+              {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            {nativeGiftQuantity > 1 && (
+              <span style={{ marginLeft: 10, fontSize: 13, color: "#6B7280" }}>${(59.99 * nativeGiftQuantity).toFixed(2)} total</span>
+            )}
+          </div>
+          <button
+            disabled={nativeGiftBusy}
+            onClick={() => handleNativeGiftPurchase("loggerhead_annual")}
+            style={{ width: "100%", padding: "12px 14px", background: "#F5A623", color: "#fff", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: nativeGiftBusy ? "default" : "pointer", opacity: nativeGiftBusy ? 0.6 : 1 }}
+          >
+            {nativeGiftBusy ? "Opening checkout…" : `Gift Annual${nativeGiftQuantity > 1 ? ` ×${nativeGiftQuantity}` : ""} — $${(59.99 * nativeGiftQuantity).toFixed(2)}`}
+          </button>
+          <div style={{ fontSize: 11, color: "#999", marginTop: 8, textAlign: "center" }}>
+            After payment, your gift code(s) will appear in the browser. Copy and share with the recipient.
+          </div>
+        </div>
       </div>
     );
   }

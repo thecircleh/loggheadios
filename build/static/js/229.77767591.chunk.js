@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkvolleyball_logger_client=self.webpackChunkvolleyball_logger_client||[]).push([[229],{3229(e,l,n){n.d(l,{Browser:()=>r});const r=(0,n(9344).F3)("Browser",{web:()=>n.e(127).then(n.bind(n,7127)).then(e=>new e.BrowserWeb)})}}]);
