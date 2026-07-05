@@ -116,11 +116,12 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const requestInterceptor = axios.interceptors.request.use(
       (config) => {
-        const currentToken = token || localStorage.getItem("token") || Cookies.get("token");
-        if (currentToken) {
-          config.headers["Authorization"] = `Bearer ${currentToken}`;
-        } else {
-          delete config.headers["Authorization"];
+        // Don't override an explicit Authorization header (e.g. setAuthToken passes newToken directly)
+        if (!config.headers["Authorization"]) {
+          const currentToken = token || localStorage.getItem("token") || Cookies.get("token");
+          if (currentToken) {
+            config.headers["Authorization"] = `Bearer ${currentToken}`;
+          }
         }
         config.withCredentials = true;
         return config;

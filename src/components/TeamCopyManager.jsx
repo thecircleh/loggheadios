@@ -1,12 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-
-const getApiUrl = () => {
-  if (window.location.hostname.startsWith("10.")) {
-    return `http://${window.location.hostname}:3000`;
-  }
-  return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
-};
+import { getApiUrl } from '../utils/getApiUrl';
 
 const API_URL = getApiUrl();
 
@@ -52,6 +46,9 @@ const TeamCopyManager = ({
   const [linking, setLinking] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
 
+  // Track whether the search dialog has ever been opened (prevents false close on mount)
+  const searchDialogEverOpenedRef = useRef(false);
+
   // Handle external search trigger from player card link button
   useEffect(() => {
     if (externalShowSearch && initialSearchName) {
@@ -72,12 +69,15 @@ const TeamCopyManager = ({
   }, [showCopyDialog]);
 
   useEffect(() => {
-    if (!showSearchDialog) {
+    if (showSearchDialog) {
+      searchDialogEverOpenedRef.current = true;
+    } else if (searchDialogEverOpenedRef.current) {
+      // Only reset/notify after the dialog was actually open, not on initial mount
       setSimilarResults(null);
       setSelectedPlayerIds([]);
       setExistingLinks(null);
       setPlayer1(null);
-      // Notify parent that search dialog closed (for external triggers)
+      searchDialogEverOpenedRef.current = false;
       if (onCloseExternalSearch) {
         onCloseExternalSearch();
       }

@@ -2415,6 +2415,11 @@ const nextScheduled = scheduledMatches
                   <div><span style={styles.playerName}>{(player.name || "").slice(0, 20)}</span></div>
                   <span style={styles.playerNumber}>#{player.number}</span>
                   <small style={{ fontSize: '14px', color: '#888' }}>{player.position || '—'}</small>
+                  {player.linkedPlayers && player.linkedPlayers.length > 0 && (
+                    <small style={{ fontSize: '10px', color: '#fff', backgroundColor: '#5856D6', borderRadius: '10px', padding: '1px 6px', fontWeight: '600', marginTop: '2px', display: 'inline-block' }}>
+                      + {player.linkedPlayers.length} Linked
+                    </small>
+                  )}
                   <div>
                     <select
                       value={player.position}
@@ -2470,7 +2475,7 @@ const nextScheduled = scheduledMatches
                   <button onClick={() => handleFindPlayerOnTeams(player.name)} style={styles.linkButton} title="Find on other teams">
                     <LinkIcon size={15} color="#5856D6" />
                   </button>
-                  <button onClick={() => handleDeletePlayer(player._id)} style={styles.deleteButton}>
+                  <button onClick={async () => { await handleDeletePlayer(player._id); handleRecallBench(selectedTeam); }} style={styles.deleteButton}>
                     <DeleteIcon size={15} color="#dc2626" />
                   </button>
                 </div>
@@ -2564,6 +2569,26 @@ const nextScheduled = scheduledMatches
                 inlineMode={true}
               />
             </div>
+          )}
+
+          {/* Link search panel — rendered when link button clicked on an existing player */}
+          {showExternalSearch && benchPlayers && benchPlayers.length > 0 && selectedTeam && (
+            <TeamCopyManager
+              userTeams={userTeams}
+              archivedTeams={archivedTeams}
+              selectedTeam={selectedTeam}
+              token={token}
+              onTeamCopied={(teamName) => {
+                setSelectedTeam(teamName);
+                setMatchSettings((prev) => ({ ...prev, teamName: teamName }));
+                handleRecallBench(teamName);
+              }}
+              refreshBenchPlayers={() => handleRecallBench(selectedTeam)}
+              initialSearchName={searchPlayerName}
+              externalShowSearch={showExternalSearch}
+              onCloseExternalSearch={handleCloseExternalSearch}
+              inlineMode={true}
+            />
           )}
 
           {/* Recall / Reset — quiet text links, only when roster has players */}

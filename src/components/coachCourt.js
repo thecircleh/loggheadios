@@ -49,7 +49,7 @@ const emptyPlayer = { name: "?", number: "?" };
 
 const getApiUrl = () => {
   const h = window.location.hostname;
-  if (typeof window !== 'undefined' && (h === 'localhost' || h === '127.0.0.1' || h.startsWith('10.'))) {
+  if (typeof window !== 'undefined' && !window.Capacitor?.isNativePlatform?.() && (h === 'localhost' || h === '127.0.0.1' || h.startsWith('10.'))) {
     return `http://${h}:3000`;
   }
   return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
