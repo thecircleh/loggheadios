@@ -4,7 +4,7 @@ import { useAuth } from "./AuthContext";
 import stripePrices from "./stripePrices";
 import { getApiUrl } from "../utils/getApiUrl";
 import { useAppleIAP } from "../hooks/useAppleIAP";
-import { APPLE_SUBSCRIPTION_PLANS, APPLE_ONETIME_PRODUCTS } from "../iap/appleProducts";
+import { APPLE_SUBSCRIPTION_PLANS, APPLE_ONETIME_PRODUCTS, APPLE_PRODUCT_IDS } from "../iap/appleProducts";
 
 const PER_MATCH_PRICE = 1.29;
 
@@ -327,7 +327,7 @@ const styles = {
 const SubscriptionButtons = ({ isNative }) => {
   const auth = useAuth();
   const token = auth?.token;
-  const { storeProducts, purchase, restore, purchasing, restoring, error: iapError, initialized } = useAppleIAP();
+  const { storeProducts, purchase, restore, purchasing, restoring, error: iapError, initialized, pendingGiftCodes, clearGiftCodes } = useAppleIAP();
   const user = auth?.user;
   const loading = auth?.loading;
 
@@ -545,8 +545,6 @@ const premiumValueStack = useMemo(() => {
   };
   
   const [giftQuantity, setGiftQuantity] = React.useState(1);
-  const [nativeGiftQuantity, setNativeGiftQuantity] = React.useState(1);
-  const [nativeGiftBusy, setNativeGiftBusy] = React.useState(false);
 
   const handleGiftPurchase = async (planType) => {
     try {
@@ -560,24 +558,6 @@ const premiumValueStack = useMemo(() => {
     } catch (err) {
       console.error("Gift checkout error:", err.response?.data || err.message);
       alert(`Gift checkout failed: ${err.response?.data?.message || err.message}`);
-    }
-  };
-
-  const handleNativeGiftPurchase = async (planType) => {
-    setNativeGiftBusy(true);
-    try {
-      const res = await axios.post(
-        `${getApiUrl()}/api/gifts/checkout`,
-        { planType, quantity: nativeGiftQuantity },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const { Browser } = await import('@capacitor/browser');
-      await Browser.open({ url: res.data.url });
-    } catch (err) {
-      console.error("Native gift checkout error:", err.response?.data || err.message);
-      alert(`Gift checkout failed: ${err.response?.data?.message || err.message}`);
-    } finally {
-      setNativeGiftBusy(false);
     }
   };
 
@@ -669,35 +649,48 @@ const premiumValueStack = useMemo(() => {
           </div>
         )}
 
-        {/* Gift section — same Stripe flow as web, opens in in-app browser */}
+        {/* Gift codes revealed after IAP purchase */}
+        {pendingGiftCodes.length > 0 && (
+          <div style={{ marginTop: 20, padding: 14, background: "rgba(255,215,0,0.08)", border: "1px solid rgba(255,215,0,0.3)", borderRadius: 12 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#111", marginBottom: 4 }}>Gift Purchase Successful</div>
+            <div style={{ fontSize: 12, color: "#666", marginBottom: 10 }}>
+              Share {pendingGiftCodes.length > 1 ? "these codes" : "this code"} with the recipient{pendingGiftCodes.length > 1 ? "s" : ""}:
+            </div>
+            {pendingGiftCodes.map((code) => (
+              <div key={code} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <div style={{ flex: 1, fontFamily: "monospace", fontSize: 15, fontWeight: 700, background: "#fff", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 8, padding: "8px 12px", letterSpacing: 1 }}>{code}</div>
+                <button
+                  onClick={() => navigator.clipboard?.writeText(code)}
+                  style={{ padding: "8px 12px", background: "#007AFF", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                >Copy</button>
+              </div>
+            ))}
+            {pendingGiftCodes.length > 1 && (
+              <button
+                onClick={() => navigator.clipboard?.writeText(pendingGiftCodes.join("\n"))}
+                style={{ width: "100%", padding: "10px", background: "#34C759", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", marginBottom: 8 }}
+              >Copy All Codes</button>
+            )}
+            <button
+              onClick={clearGiftCodes}
+              style={{ width: "100%", padding: "10px", background: "none", border: "1px solid #ccc", borderRadius: 8, fontSize: 14, color: "#666", cursor: "pointer" }}
+            >Done</button>
+          </div>
+        )}
+
+        {/* Gift purchase via Apple IAP */}
         <div style={{ marginTop: 20, padding: 14, background: "rgba(255,215,0,0.08)", border: "1px solid rgba(255,215,0,0.3)", borderRadius: 12 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: "#111", marginBottom: 4 }}>Gift Loggerhead</div>
           <div style={{ fontSize: 12, color: "#666", marginBottom: 10 }}>
-            Purchase a gift subscription and send a redemption code to a coach, parent, or player.
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 13, fontWeight: 700, marginRight: 8, color: "#1C1C1E" }}>Quantity</label>
-            <select
-              value={nativeGiftQuantity}
-              onChange={(e) => setNativeGiftQuantity(Number(e.target.value))}
-              style={{ fontSize: 14, fontWeight: 700, padding: "4px 8px", borderRadius: 8, border: "1px solid rgba(0,0,0,0.15)", background: "#fff" }}
-            >
-              {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-            {nativeGiftQuantity > 1 && (
-              <span style={{ marginLeft: 10, fontSize: 13, color: "#6B7280" }}>${(59.99 * nativeGiftQuantity).toFixed(2)} total</span>
-            )}
+            Buy a gift code and share it with a coach, parent, or player.
           </div>
           <button
-            disabled={nativeGiftBusy}
-            onClick={() => handleNativeGiftPurchase("loggerhead_annual")}
-            style={{ width: "100%", padding: "12px 14px", background: "#F5A623", color: "#fff", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: nativeGiftBusy ? "default" : "pointer", opacity: nativeGiftBusy ? 0.6 : 1 }}
+            disabled={purchasing || !initialized}
+            onClick={() => purchase(APPLE_PRODUCT_IDS.giftAnnual)}
+            style={{ width: "100%", padding: "12px 14px", background: "#F5A623", color: "#fff", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: (purchasing || !initialized) ? "default" : "pointer", opacity: (purchasing || !initialized) ? 0.6 : 1 }}
           >
-            {nativeGiftBusy ? "Opening checkout…" : `Gift Annual${nativeGiftQuantity > 1 ? ` ×${nativeGiftQuantity}` : ""} — $${(59.99 * nativeGiftQuantity).toFixed(2)}`}
+            {purchasing ? "Processing…" : !initialized ? "Loading…" : `Gift Annual — ${storeProducts[APPLE_PRODUCT_IDS.giftAnnual]?.price ?? "$59.99"}`}
           </button>
-          <div style={{ fontSize: 11, color: "#999", marginTop: 8, textAlign: "center" }}>
-            After payment, your gift code(s) will appear in the browser. Copy and share with the recipient.
-          </div>
         </div>
       </div>
     );
