@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkvolleyball_logger_client=self.webpackChunkvolleyball_logger_client||[]).push([[832],{6832(e,l,n){n.d(l,{Share:()=>h});const h=(0,n(9344).F3)("Share",{web:()=>n.e(722).then(n.bind(n,722)).then(e=>new e.ShareWeb)})}}]);

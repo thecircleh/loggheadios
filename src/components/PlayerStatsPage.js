@@ -31,7 +31,31 @@ const savePDF = async (doc, filename, isNative) => {
     doc.save(filename);
   }
 };
- 
+
+const saveFile = async (content, filename, mimeType, isNative) => {
+  if (isNative) {
+    try {
+      const { Filesystem, Directory } = await import('@capacitor/filesystem');
+      const { Share } = await import('@capacitor/share');
+      const base64 = btoa(unescape(encodeURIComponent(content)));
+      await Filesystem.writeFile({ path: filename, data: base64, directory: Directory.Cache });
+      const fileUri = await Filesystem.getUri({ directory: Directory.Cache, path: filename });
+      await Share.share({ title: filename, url: fileUri.uri });
+    } catch (err) {
+      console.error('File share failed:', err);
+    }
+  } else {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+};
+
 const getApiUrl = () => {
   const h = window.location.hostname;
   if (!window.Capacitor?.isNativePlatform?.() && (h === 'localhost' || h === '127.0.0.1' || h.startsWith('10.'))) {
@@ -1772,7 +1796,7 @@ const formatAiInsightsAsNarrative = (parsedJson) => {
   );
 };
  
-  const exportCSV = () => {
+  const exportCSV = async () => {
     const match = matches.find(m => m._id === selectedMatchId);
     const isAllMatches = selectedMatchId === 'all';
     
@@ -2063,14 +2087,7 @@ const formatAiInsightsAsNarrative = (parsedJson) => {
     const filename = `${safeTeam}_${opponentName}_${date}_detailed.csv`;
     
     const csv = csvLines.join("\n");
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    await saveFile(csv, filename, 'text/csv;charset=utf-8;', isNative);
   };
  
   const td = {
@@ -2082,7 +2099,7 @@ const formatAiInsightsAsNarrative = (parsedJson) => {
  
  // Add this function to your PlayerStatsPage component
  
-const exportMaxPreps = () => {
+const exportMaxPreps = async () => {
   // Must select a specific match for MaxPreps export
   const match = matches.find(m => m._id === selectedMatchId);
   if (!match || selectedMatchId === 'all') {
@@ -2206,14 +2223,7 @@ const exportMaxPreps = () => {
  
   // Create and download file
   const content = lines.join("\n");
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.setAttribute("download", filename);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  await saveFile(content, filename, 'text/plain;charset=utf-8;', isNative);
   
   console.log("MaxPreps export created:", filename);
   console.log("Content preview:", content);

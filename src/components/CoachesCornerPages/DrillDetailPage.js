@@ -6,6 +6,25 @@ import { getDrillById, rateDrill } from "./coachDrillsApi";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
+const savePDF = async (doc, filename) => {
+  const isNative = window.Capacitor?.isNativePlatform?.();
+  if (isNative) {
+    try {
+      const { Filesystem, Directory } = await import('@capacitor/filesystem');
+      const { Share } = await import('@capacitor/share');
+      const base64 = doc.output('datauristring').split(',')[1];
+      await Filesystem.writeFile({ path: filename, data: base64, directory: Directory.Cache });
+      const fileUri = await Filesystem.getUri({ directory: Directory.Cache, path: filename });
+      await Share.share({ title: filename, url: fileUri.uri });
+    } catch (err) {
+      console.error('PDF share failed:', err);
+      doc.save(filename);
+    }
+  } else {
+    doc.save(filename);
+  }
+};
+
 const styles = {
   page: { padding: 16, maxWidth: 980, margin: "0 auto" },
   headerRow: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" },
@@ -151,7 +170,7 @@ const normalizePdfText = (s) => {
       : [["Drill", cleaned || "--"]];
   };
 
-  img.onload = () => {
+  img.onload = async () => {
     // Logo + brand header
     doc.addImage(img, "PNG", 14, 10, 20, 20);
     doc.setFont("helvetica", "normal");
@@ -276,10 +295,10 @@ const normalizePdfText = (s) => {
     }
 
     const safeTitle = safe(drill.title, "drill").replace(/[^a-zA-Z0-9]+/g, "_").slice(0, 40);
-    doc.save(`Loggerhead_CoachesCorner_${safeTitle}.pdf`);
+    await savePDF(doc, `Loggerhead_CoachesCorner_${safeTitle}.pdf`);
   };
 
-  img.onerror = () => {
+  img.onerror = async () => {
     // Fallback: still branded, no logo
     doc.setFontSize(14);
     doc.text("Loggerhead — Coaches' Corner Drill", 14, 18);
@@ -287,7 +306,7 @@ const normalizePdfText = (s) => {
     doc.text(`Exported: ${new Date().toLocaleString()}`, 14, 26);
     const lines = doc.splitTextToSize(drill.drillText, 180);
     doc.text(lines, 14, 40);
-    doc.save("Loggerhead_CoachesCorner_Drill.pdf");
+    await savePDF(doc, "Loggerhead_CoachesCorner_Drill.pdf");
   };
 };
 
