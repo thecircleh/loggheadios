@@ -61,7 +61,7 @@ const Register = () => {
         ...(referralCode && { referralCode }) // Include referral code if present
       });
 
-      setToken(response.data.token);
+      await setToken(response.data.token);
       navigate('/profile');
     } catch (err) {
       const message = err.response?.data?.message || 'Registration failed';
