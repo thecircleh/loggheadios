@@ -32,6 +32,11 @@ export function useAppleIAP() {
 
   useEffect(() => { tokenRef.current = token; }, [token]);
 
+  // Clear gift codes on logout so a new user doesn't see the previous user's codes
+  useEffect(() => {
+    if (!token) setPendingGiftCodes([]);
+  }, [token]);
+
   useEffect(() => {
     if (!isNativeApp) return;
 
@@ -87,7 +92,7 @@ export function useAppleIAP() {
           console.log('[IAP] validator server response:', JSON.stringify(data));
           if (data.ok) {
             if (data.data?.giftCodes?.length > 0) {
-              setPendingGiftCodes(data.data.giftCodes);
+              setPendingGiftCodes(prev => [...prev, ...data.data.giftCodes]);
             }
             callback({ ok: true, data: data.data || {} });
           } else {
