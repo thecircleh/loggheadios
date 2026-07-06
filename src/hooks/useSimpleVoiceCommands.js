@@ -17,6 +17,7 @@ const useSimpleVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameS
   const isAndroidTablet = useRef(false);
   const commandQueueRef = useRef([]);
   const queueProcessingRef = useRef(false);
+  const nativePluginActiveRef = useRef(false);
 
   // Detect Android tablet (specifically Samsung devices)
   useEffect(() => {
@@ -952,11 +953,13 @@ const useSimpleVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameS
         }
       };
 
+      nativePluginActiveRef.current = true;
       await startNative();
     })();
 
     return () => {
       cancelled = true;
+      nativePluginActiveRef.current = false;
       nativeListener?.remove();
       if (NativeSR) NativeSR.stop().catch(() => {});
       setIsListening(false);
@@ -964,11 +967,8 @@ const useSimpleVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameS
     };
   }, [voiceEnabled]);
 
-  // Web Speech API setup — skipped on native platforms (handled above)
+  // Web Speech API setup — also runs on native as fallback if the plugin didn't load
   useEffect(() => {
-    // Native platforms use the separate native useEffect above
-    if (window.Capacitor?.isNativePlatform?.()) return;
-
     if (!voiceEnabled) {
       console.log("⚡ Voice disabled - cleaning up");
       if (recognitionRef.current) {
@@ -1027,7 +1027,10 @@ const useSimpleVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameS
    recognition.onend = () => {
   setIsListening(false);
   console.log("⚡ Voice recognition ended");
-  
+
+  // Native plugin is active — don't restart web speech
+  if (nativePluginActiveRef.current) return;
+
   // Only auto-restart if voice is still enabled and we haven't been manually stopped
   if (!voiceEnabled || isRestartingRef.current) {
     console.log("⚡ Not restarting - voice disabled or manual stop");
@@ -1100,6 +1103,9 @@ const useSimpleVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameS
 };
 
 recognition.onresult = (event) => {
+  // Native plugin is active — its listener handles speech, skip web speech results
+  if (nativePluginActiveRef.current) return;
+
   const result = event.results[event.results.length - 1];
   if (!result.isFinal) return;
 
