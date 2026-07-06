@@ -649,32 +649,38 @@ const premiumValueStack = useMemo(() => {
           </div>
         )}
 
-        {/* Gift codes revealed after IAP purchase */}
+        {/* Gift codes revealed after IAP purchase — same card style as web */}
         {pendingGiftCodes.length > 0 && (
-          <div style={{ marginTop: 20, padding: 14, background: "rgba(255,215,0,0.08)", border: "1px solid rgba(255,215,0,0.3)", borderRadius: 12 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#111", marginBottom: 4 }}>Gift Purchase Successful</div>
-            <div style={{ fontSize: 12, color: "#666", marginBottom: 10 }}>
+          <div className="card" style={{ marginTop: 14 }}>
+            <p className="card-title">🎁 Gift Purchase Successful</p>
+            <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 10 }}>
               Share {pendingGiftCodes.length > 1 ? "these codes" : "this code"} with the recipient{pendingGiftCodes.length > 1 ? "s" : ""}:
-            </div>
+            </p>
             {pendingGiftCodes.map((code) => (
               <div key={code} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <div style={{ flex: 1, fontFamily: "monospace", fontSize: 15, fontWeight: 700, background: "#fff", border: "1px solid rgba(0,0,0,0.15)", borderRadius: 8, padding: "8px 12px", letterSpacing: 1 }}>{code}</div>
+                <div className="gift-code-display" style={{ flex: 1 }}>{code}</div>
                 <button
+                  type="button"
+                  className="primary-button"
+                  style={{ width: "auto", padding: "8px 14px" }}
                   onClick={() => navigator.clipboard?.writeText(code)}
-                  style={{ padding: "8px 12px", background: "#007AFF", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
                 >Copy</button>
               </div>
             ))}
             {pendingGiftCodes.length > 1 && (
               <button
+                type="button"
+                className="primary-button"
+                style={{ marginTop: 4 }}
                 onClick={() => navigator.clipboard?.writeText(pendingGiftCodes.join("\n"))}
-                style={{ width: "100%", padding: "10px", background: "#34C759", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", marginBottom: 8 }}
               >Copy All Codes</button>
             )}
             <button
+              type="button"
+              className="secondary-button"
+              style={{ marginTop: 8, width: "100%" }}
               onClick={clearGiftCodes}
-              style={{ width: "100%", padding: "10px", background: "none", border: "1px solid #ccc", borderRadius: 8, fontSize: 14, color: "#666", cursor: "pointer" }}
-            >Done</button>
+            >Dismiss</button>
           </div>
         )}
 

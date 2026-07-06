@@ -5,6 +5,25 @@ import { APPLE_PRODUCT_IDS } from '../iap/appleProducts';
 
 const isNativeApp = !!(window.Capacitor?.isNativePlatform?.());
 
+const lsKey = (userId) => `lh_native_gift_codes_${userId}`;
+
+function loadFromStorage(userId) {
+  if (!userId) return [];
+  try {
+    const raw = localStorage.getItem(lsKey(userId));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
+
+function saveToStorage(userId, codes) {
+  if (!userId) return;
+  try {
+    if (codes.length === 0) localStorage.removeItem(lsKey(userId));
+    else localStorage.setItem(lsKey(userId), JSON.stringify(codes));
+  } catch {}
+}
+
 // Wait for CdvPurchase (cordova-plugin-purchase) to be ready on the window
 function waitForCdvPurchase(timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
@@ -19,7 +38,7 @@ function waitForCdvPurchase(timeoutMs = 10000) {
 }
 
 export function useAppleIAP() {
-  const { token, refreshUser } = useAuth();
+  const { token, refreshUser, user } = useAuth();
   const [storeProducts, setStoreProducts] = useState({});
   const [purchasing, setPurchasing] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -28,14 +47,21 @@ export function useAppleIAP() {
   const [pendingGiftCodes, setPendingGiftCodes] = useState([]);
   const storeRef = useRef(null);
   const tokenRef = useRef(token);
+  const userIdRef = useRef(null);
   const hangGuardRef = useRef(null);
 
   useEffect(() => { tokenRef.current = token; }, [token]);
+  useEffect(() => { userIdRef.current = user?.id ?? null; }, [user?.id]);
 
-  // Clear gift codes on logout so a new user doesn't see the previous user's codes
+  // Load persisted codes when user logs in; clear state on logout (localStorage untouched)
   useEffect(() => {
-    if (!token) setPendingGiftCodes([]);
-  }, [token]);
+    if (!user?.id) {
+      setPendingGiftCodes([]);
+      return;
+    }
+    const stored = loadFromStorage(user.id);
+    if (stored.length > 0) setPendingGiftCodes(stored);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!isNativeApp) return;
@@ -92,7 +118,12 @@ export function useAppleIAP() {
           console.log('[IAP] validator server response:', JSON.stringify(data));
           if (data.ok) {
             if (data.data?.giftCodes?.length > 0) {
-              setPendingGiftCodes(prev => [...prev, ...data.data.giftCodes]);
+              const newCodes = data.data.giftCodes;
+              setPendingGiftCodes(prev => {
+                const updated = [...prev, ...newCodes];
+                saveToStorage(userIdRef.current, updated);
+                return updated;
+              });
             }
             callback({ ok: true, data: data.data || {} });
           } else {
@@ -197,7 +228,10 @@ export function useAppleIAP() {
     }
   }, [initialized]);
 
-  const clearGiftCodes = useCallback(() => setPendingGiftCodes([]), []);
+  const clearGiftCodes = useCallback(() => {
+    saveToStorage(userIdRef.current, []);
+    setPendingGiftCodes([]);
+  }, []);
 
   return { storeProducts, purchase, restore, purchasing, restoring, error, initialized, pendingGiftCodes, clearGiftCodes };
 }
