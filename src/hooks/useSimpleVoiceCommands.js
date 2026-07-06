@@ -15,6 +15,8 @@ const useSimpleVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameS
   const consecutiveRestarts = useRef(0);
   const maxConsecutiveRestarts = useRef(3);
   const isAndroidTablet = useRef(false);
+  const commandQueueRef = useRef([]);
+  const queueProcessingRef = useRef(false);
 
   // Detect Android tablet (specifically Samsung devices)
   useEffect(() => {
@@ -35,6 +37,85 @@ const useSimpleVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameS
     courtPlayersRef.current = courtPlayers;
     gameStateRef.current = gameState;
   }, [handleCommand, courtPlayers, gameState]);
+
+  // Upgrade #1: short audio beep on successful command recognition
+  const playEarcon = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.08);
+    } catch (e) {}
+  };
+
+  // Upgrade #5: replace player first names with jersey numbers before parsing
+  const applyNameSubstitutions = (transcript) => {
+    const players = courtPlayersRef.current || [];
+    if (!players.length) return transcript;
+    const words = transcript.toLowerCase().trim().split(/\s+/);
+    let changed = false;
+    const mapped = words.map(w => {
+      for (const p of players) {
+        if (p.name && p.number) {
+          const firstName = p.name.split(' ')[0].toLowerCase();
+          if (firstName.length >= 3 && w === firstName) {
+            changed = true;
+            return String(p.number);
+          }
+        }
+      }
+      return w;
+    });
+    if (changed) {
+      const result = mapped.join(' ');
+      console.log('⚡ Name substitution:', transcript, '→', result);
+      return result;
+    }
+    return transcript;
+  };
+
+  // Upgrade #4: FIFO command queue so rapid commands don't drop under processing lock
+  const drainQueue = () => {
+    if (commandQueueRef.current.length === 0) {
+      queueProcessingRef.current = false;
+      return;
+    }
+    queueProcessingRef.current = true;
+    const { transcript, confidence } = commandQueueRef.current.shift();
+    const substituted = applyNameSubstitutions(transcript);
+    setLastCommand(substituted);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => setLastCommand(""), 1500);
+    const command = parseSimpleCommand(substituted);
+    if (command) {
+      console.log("⚡ Executing:", command);
+      command.confidence = confidence;
+      try {
+        handleCommandRef.current(command);
+        playEarcon();
+      } catch (e) {
+        console.error("❌ Command execution failed:", e);
+      }
+    } else {
+      console.log("⚡ No command found");
+    }
+    setTimeout(drainQueue, 300);
+  };
+
+  const enqueueTranscript = (transcript, confidence) => {
+    if (commandQueueRef.current.length >= 3) {
+      console.log("⛔ Queue full, dropping oldest");
+      commandQueueRef.current.shift();
+    }
+    commandQueueRef.current.push({ transcript, confidence });
+    if (!queueProcessingRef.current) drainQueue();
+  };
 
   // ENHANCED: Rapid-fire optimized number parsing for volleyball sequences
   const parsePlayerNumbers = (numberStr, courtPlayers) => {
@@ -215,15 +296,13 @@ const useSimpleVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameS
         break;
       }
       
-      // Special handling for "to" - only convert if it's clearly meant as "two"
-      if (word === 'to') {
-        // Don't convert "to" if it's followed by an action word (likely a filler)
+      // Special handling for "to"/"too" - only convert if clearly meant as "two"
+      if (word === 'to' || word === 'too') {
+        // Don't convert if followed by an action word (likely a filler)
         const nextWord = words[i + 1];
         if (nextWord && ['kill', 'error', 'ace', 'in', 'play'].includes(nextWord)) {
-          // Skip this filler word
           continue;
         } else {
-          // Convert to "2" if it seems to be a number
           converted.push('2');
         }
       }
@@ -834,8 +913,62 @@ const useSimpleVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameS
     return null;
   };
 
-  // ENHANCED: Speech recognition setup optimized for volleyball's rapid pace
+  // Upgrade #2: native iOS speech recognition via Capacitor community plugin
   useEffect(() => {
+    if (!voiceEnabled || !window.Capacitor?.isNativePlatform?.()) return;
+
+    let cancelled = false;
+    let nativeListener = null;
+    let NativeSR = null;
+
+    (async () => {
+      try {
+        ({ SpeechRecognition: NativeSR } = await import(/* webpackIgnore: true */ '@capacitor-community/speech-recognition'));
+      } catch {
+        console.log('⚡ Native speech plugin unavailable, web speech will handle');
+        return;
+      }
+      if (cancelled) return;
+
+      const { available } = await NativeSR.available().catch(() => ({ available: false }));
+      if (!available || cancelled) return;
+
+      await NativeSR.requestPermission().catch(() => {});
+      if (cancelled) return;
+
+      nativeListener = await NativeSR.addListener('partialResults', (data) => {
+        const t = data.matches?.[0];
+        if (t && !cancelled) enqueueTranscript(applyNameSubstitutions(t), 1.0);
+      });
+
+      const startNative = async () => {
+        if (cancelled) return;
+        try {
+          await NativeSR.start({ language: 'en-US', maxResults: 1, partialResults: false, popup: false });
+          setIsListening(true);
+          setConnectionStatus('connected');
+        } catch (e) {
+          if (!cancelled) setTimeout(startNative, 1500);
+        }
+      };
+
+      await startNative();
+    })();
+
+    return () => {
+      cancelled = true;
+      nativeListener?.remove();
+      if (NativeSR) NativeSR.stop().catch(() => {});
+      setIsListening(false);
+      setConnectionStatus('disconnected');
+    };
+  }, [voiceEnabled]);
+
+  // Web Speech API setup — skipped on native platforms (handled above)
+  useEffect(() => {
+    // Native platforms use the separate native useEffect above
+    if (window.Capacitor?.isNativePlatform?.()) return;
+
     if (!voiceEnabled) {
       console.log("⚡ Voice disabled - cleaning up");
       if (recognitionRef.current) {
@@ -896,8 +1029,8 @@ const useSimpleVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameS
   console.log("⚡ Voice recognition ended");
   
   // Only auto-restart if voice is still enabled and we haven't been manually stopped
-  if (!voiceEnabled || isRestartingRef.current || window.__voiceResultProcessing) {
-    console.log("⚡ Not restarting - voice disabled, manual stop, or still processing");
+  if (!voiceEnabled || isRestartingRef.current) {
+    console.log("⚡ Not restarting - voice disabled or manual stop");
     isRestartingRef.current = false;
     return;
   }
@@ -928,7 +1061,7 @@ const useSimpleVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameS
     const restartDelay = isAndroidTablet.current ? 1500 : 800;
     
     setTimeout(() => {
-      if (voiceEnabled && !recognitionRef.current && !window.__voiceResultProcessing) {
+      if (voiceEnabled && !recognitionRef.current && !queueProcessingRef.current) {
         try {
           // Create fresh recognition instance for Samsung tablets
           if (isAndroidTablet.current) {
@@ -973,43 +1106,12 @@ recognition.onresult = (event) => {
   const transcript = result[0].transcript;
   console.log("⚡ Heard:", transcript);
 
-  // Add processing lock to prevent duplicate command processing
-  if (window.__voiceResultProcessing) {
-    console.log("⛔ Voice result blocked - already processing");
-    return;
-  }
-  
-  window.__voiceResultProcessing = true;
-  setTimeout(() => (window.__voiceResultProcessing = false), 500);
+  enqueueTranscript(transcript, result[0].confidence);
 
-  // Show what we heard with reduced display time for volleyball pace
-  setLastCommand(transcript);
-  if (timeoutRef.current) clearTimeout(timeoutRef.current);
-  timeoutRef.current = setTimeout(() => setLastCommand(""), 1500);
-
-  // IMMEDIATE processing - no delays for volleyball pace
-  const command = parseSimpleCommand(transcript);
-  if (command) {
-    console.log("⚡ Executing immediately:", command);
-    
-    // Add confidence level for better debugging
-    command.confidence = result[0].confidence;
-    
-    try {
-      handleCommandRef.current(command);
-      console.log("✅ Command executed successfully");
-    } catch (error) {
-      console.error("❌ Command execution failed:", error);
-    }
-  } else {
-    console.log("⚡ No command found");
-  }
-  
-  // IMPROVED: More conservative restart for Samsung tablets
+  // More conservative restart for Samsung tablets
   if (isAndroidTablet.current && voiceEnabled) {
-    // Wait longer before restarting to prevent interference
     setTimeout(() => {
-      if (voiceEnabled && !isRestartingRef.current && !window.__voiceResultProcessing) {
+      if (voiceEnabled && !isRestartingRef.current && !queueProcessingRef.current) {
         console.log("⚡ Tablet restart after processing complete");
         try {
           recognition.start();
@@ -1018,7 +1120,7 @@ recognition.onresult = (event) => {
           setConnectionStatus("failed");
         }
       }
-    }, 800); // Increased delay to prevent interference
+    }, 800);
   }
 };
 
@@ -1148,7 +1250,14 @@ recognition.onresult = (event) => {
     isListening,
     lastCommand,
     connectionStatus,
-    manualRestart
+    manualRestart,
+    // Upgrade #6: consolidation — provide enhanced hook fields so VoiceControlsComponent works
+    usageMinutes: 0,
+    tier: 'FREE',
+    switchTier: () => {},
+    isPremium: false,
+    canUpgrade: false,
+    accuracyLevel: 'Standard',
   };
 };
 
