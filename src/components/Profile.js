@@ -266,11 +266,12 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
         { code: giftCode.trim() },
         { headers: { Authorization: `Bearer ${token}` }, withCredentials: true }
       );
+      setGiftCode("");
+      // Refresh user immediately so giftSubscription state reflects in UI
+      await refreshUser();
       showMessage(
         `Gift redeemed! Access active until ${new Date(res.data.endsAt).toLocaleDateString()}`
       );
-      setGiftCode("");
-      await refreshUser();
     } catch (err) {
       showMessage(err.response?.data?.message || "Unable to redeem gift.", "error");
     }
