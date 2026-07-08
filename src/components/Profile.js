@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "./AuthContext";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -79,6 +79,62 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
     setMessage(text);
     setMessageType(type);
   };
+
+  // ── My Players (ROI) ────────────────────────────────────────────────────
+  const [claimedPlayers,  setClaimedPlayers]  = useState([]);
+  const [showClaimPanel,  setShowClaimPanel]  = useState(false);
+  const [availableTeams,  setAvailableTeams]  = useState([]);
+  const [loadingClaim,    setLoadingClaim]    = useState(false);
+
+  const loadClaimedPlayers = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const res = await axios.get(`${API_URL}/api/roi/claimed-players`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setClaimedPlayers(res.data.players || []);
+    } catch {}
+  }, [user?.id, token]);
+
+  const loadTeamsAndPlayers = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API_URL}/api/roi/teams-and-players`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setAvailableTeams(res.data.teams || []);
+    } catch {}
+  }, [token]);
+
+  const claimPlayer = async (playerId) => {
+    setLoadingClaim(true);
+    try {
+      await axios.post(`${API_URL}/api/roi/claim`, { playerId }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      await Promise.all([loadClaimedPlayers(), loadTeamsAndPlayers()]);
+    } catch {
+      showMessage('Failed to claim player', 'error');
+    } finally {
+      setLoadingClaim(false);
+    }
+  };
+
+  const unclaimPlayer = async (playerId) => {
+    setLoadingClaim(true);
+    try {
+      await axios.delete(`${API_URL}/api/roi/claim/${playerId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      await Promise.all([loadClaimedPlayers(), loadTeamsAndPlayers()]);
+    } catch {
+      showMessage('Failed to unclaim player', 'error');
+    } finally {
+      setLoadingClaim(false);
+    }
+  };
+
+  useEffect(() => { loadClaimedPlayers(); }, [loadClaimedPlayers]);
+  // ────────────────────────────────────────────────────────────────────────
 
   const updateStateList = (selectedCountry) => {
     const selected = Country.getAllCountries().find(
@@ -584,6 +640,89 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
         <button type="button" className="primary-button" onClick={redeemGift}>
           Redeem Gift
         </button>
+      </div>
+
+      {/* ── My Players ── */}
+      <div className="card" style={{ marginTop: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <p className="card-title" style={{ margin: 0 }}>My Players</p>
+          <button
+            type="button"
+            className="primary-button"
+            style={{ width: 'auto', padding: '6px 12px', fontSize: 13 }}
+            onClick={() => {
+              if (!showClaimPanel) loadTeamsAndPlayers();
+              setShowClaimPanel(v => !v);
+            }}
+          >
+            {showClaimPanel ? 'Done' : '+ Claim Player'}
+          </button>
+        </div>
+
+        {claimedPlayers.length === 0 && !showClaimPanel && (
+          <p style={{ color: 'var(--text-muted)', fontSize: 14, margin: 0 }}>
+            Claim your player(s) to track your investment and see their stats in your ROI Calendar.
+          </p>
+        )}
+
+        {claimedPlayers.map(p => (
+          <div key={p._id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border,#e5e7eb)' }}>
+            <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#3b82f622', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#3b82f6', fontSize: 14, flexShrink: 0 }}>
+              {p.number || p.name?.[0] || '?'}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{p.team}{p.linkedCount > 1 ? ` · + ${p.linkedCount - 1} Linked` : ''}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => unclaimPlayer(p._id)}
+              disabled={loadingClaim}
+              style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: 12, cursor: 'pointer', padding: '4px 8px' }}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+
+        {showClaimPanel && (
+          <div style={{ marginTop: 12 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10 }}>Players on your teams</p>
+            {availableTeams.length === 0 && (
+              <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No teams found. Add teams to your profile above.</p>
+            )}
+            {availableTeams.map(team => (
+              <div key={team.name} style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>{team.name}</div>
+                {team.players.length === 0 && (
+                  <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>No players on this team.</p>
+                )}
+                {team.players.map(pl => (
+                  <div key={pl._id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: '1px solid var(--border,#e5e7eb)' }}>
+                    <div style={{ width: 30, height: 30, borderRadius: '50%', background: pl.claimed ? '#10b98122' : '#6b728018', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: pl.claimed ? '#10b981' : '#6b7280', fontSize: 13, flexShrink: 0 }}>
+                      {pl.number || pl.name?.[0] || '?'}
+                    </div>
+                    <span style={{ flex: 1, fontSize: 14 }}>{pl.name}</span>
+                    {pl.claimed
+                      ? <span style={{ fontSize: 12, color: '#10b981', fontWeight: 600 }}>✓ Claimed</span>
+                      : (
+                        <button
+                          type="button"
+                          className="primary-button"
+                          style={{ width: 'auto', padding: '4px 10px', fontSize: 12 }}
+                          onClick={() => claimPlayer(pl._id)}
+                          disabled={loadingClaim}
+                        >
+                          Claim
+                        </button>
+                      )
+                    }
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Subscription ── */}

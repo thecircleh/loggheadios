@@ -128,9 +128,19 @@ const NavBar = () => {
               Player Stats
             </Link>
 
+            {/* ROI Calendar */}
+            <Link
+              to="/roi-calendar"
+              className={`nav-link ${isActive('/roi-calendar') ? 'active' : ''}`}
+              onClick={() => setIsMenuOpen(false)}
+              title="ROI Calendar - Track your investment"
+            >
+              ROI Calendar
+            </Link>
+
             {/* Rosters & Matches */}
-            <Link 
-              to="/settings" 
+            <Link
+              to="/settings"
               className={`nav-link ${isActive('/settings') ? 'active' : ''}`}
               onClick={() => setIsMenuOpen(false)}
               title="Rosters & Matches Management"

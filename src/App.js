@@ -46,6 +46,7 @@ import { useCollaborative } from "./components/collaborative/CollaborativeProvid
 import { CollaborativeProvider } from "./components/collaborative/CollaborativeProvider";
 import CoachesCorner from "./components/CoachesCorner";
 import CoachesCornerHome from "./components/CoachesCornerHome";
+import ROICalendar from "./components/ROICalendar";
 import SavedDrillsPage from "./components/CoachesCornerPages/SavedDrillsPage";
 import DrillDetailPage from "./components/CoachesCornerPages/DrillDetailPage";
 import EditDrillPage from "./components/CoachesCornerPages/EditDrillPage";
@@ -5324,9 +5325,15 @@ const CoachesCornerDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
               } 
             />
             
+            {/* ROI Calendar */}
+            <Route
+              path="/roi-calendar"
+              element={<PrivateRoute><ROICalendar /></PrivateRoute>}
+            />
+
             {/* Profile Page */}
-            <Route 
-              path="/profile" 
+            <Route
+              path="/profile"
               element={
                 <PrivateRoute>
                   <Profile setCurrentMatchId={setCurrentMatchId} isNative={isNativeApp} />
