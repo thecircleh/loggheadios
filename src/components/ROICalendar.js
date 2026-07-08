@@ -30,14 +30,11 @@ const fmt$ = (n) => '$' + Number(n || 0).toFixed(2).replace(/\.00$/, '');
 function catInfo(key) { return CATEGORIES.find(c => c.key === key) || CATEGORIES[5]; }
 function daysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
 function firstDayOf(y, m)  { return new Date(y, m, 1).getDay(); }
-function sameDay(a, b) {
-  return a.getFullYear() === b.getFullYear() &&
-         a.getMonth()    === b.getMonth()    &&
-         a.getDate()     === b.getDate();
-}
+// Use ISO "YYYY-MM-DD" string keys — avoids UTC→local timezone shift
 function dayKey(d) {
-  const dt = new Date(d);
-  return `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
+  if (!d) return '';
+  const s = typeof d === 'string' ? d : new Date(d).toISOString();
+  return s.slice(0, 10);
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────
@@ -112,7 +109,8 @@ export default function ROICalendar() {
   const m          = currentMonth.getMonth();
   const totalDays  = daysInMonth(y, m);
   const startDay   = firstDayOf(y, m);
-  const today      = new Date();
+  const today    = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
 
   // ── Dashboard metrics ───────────────────────────────────────────────────
   const monthTotal   = expenses.reduce((s, e) => s + e.amount, 0);
@@ -125,12 +123,10 @@ export default function ROICalendar() {
   const hitPct       = stats?.attacking?.hittingPercentage ?? null;
 
   // ── Expense actions ─────────────────────────────────────────────────────
-  const openAdd = (day) => {
-    const dateStr = day
-      ? `${y}-${String(m + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
-      : new Date().toISOString().split('T')[0];
+  const openAdd = (dateStr) => {
+    const ds = dateStr || new Date().toISOString().split('T')[0];
     setEditingExpense(null);
-    setFormData({ date: dateStr, category: 'training', amount: '', note: '' });
+    setFormData({ date: ds, category: 'training', amount: '', note: '' });
     setError('');
     setShowModal(true);
   };
@@ -138,7 +134,7 @@ export default function ROICalendar() {
   const openEdit = (exp) => {
     setEditingExpense(exp);
     setFormData({
-      date:     new Date(exp.date).toISOString().split('T')[0],
+      date:     dayKey(exp.date),
       category: exp.category,
       amount:   String(exp.amount),
       note:     exp.note || '',
@@ -175,7 +171,7 @@ export default function ROICalendar() {
     } catch { setError('Failed to delete'); }
   };
 
-  const dayExpenses = selectedDay ? expenses.filter(e => sameDay(new Date(e.date), selectedDay)) : [];
+  const dayExpenses = selectedDay ? expenses.filter(e => dayKey(e.date) === selectedDay) : [];
 
   // ── Empty state ─────────────────────────────────────────────────────────
   if (loadingPlayers) {
@@ -291,17 +287,16 @@ export default function ROICalendar() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
           {Array.from({ length: startDay }).map((_, i) => <div key={`e${i}`} />)}
           {Array.from({ length: totalDays }).map((_, i) => {
-            const day      = i + 1;
-            const cellDate = new Date(y, m, day);
-            const key      = dayKey(cellDate);
-            const dayExps  = byDay[key] || [];
-            const isToday  = sameDay(cellDate, today);
-            const isSel    = selectedDay && sameDay(cellDate, selectedDay);
+            const day     = i + 1;
+            const cellKey = `${y}-${String(m+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+            const dayExps = byDay[cellKey] || [];
+            const isToday = cellKey === todayKey;
+            const isSel   = selectedDay === cellKey;
 
             return (
               <div
                 key={day}
-                onClick={() => setSelectedDay(isSel ? null : cellDate)}
+                onClick={() => setSelectedDay(isSel ? null : cellKey)}
                 style={{
                   minHeight: 46, borderRadius: 8, padding: '4px 2px', cursor: 'pointer',
                   background: isSel ? 'var(--primary,#3b82f6)' : isToday ? 'var(--primary-light,#eff6ff)' : 'transparent',
@@ -328,9 +323,9 @@ export default function ROICalendar() {
           <div className="card" style={{ margin: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <span className="card-title" style={{ margin: 0 }}>
-                {selectedDay.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                {(() => { const [sy,sm,sd] = selectedDay.split('-').map(Number); return new Date(sy, sm-1, sd).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }); })()}
               </span>
-              <button className="primary-button" style={{ padding: '6px 12px', width: 'auto', fontSize: 13 }} onClick={() => openAdd(selectedDay.getDate())}>
+              <button className="primary-button" style={{ padding: '6px 12px', width: 'auto', fontSize: 13 }} onClick={() => openAdd(selectedDay)}>
                 + Add
               </button>
             </div>
