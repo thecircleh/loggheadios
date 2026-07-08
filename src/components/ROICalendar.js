@@ -118,9 +118,7 @@ export default function ROICalendar() {
   const catTotals    = {};
   allExpenses.forEach(e => { catTotals[e.category] = (catTotals[e.category] || 0) + e.amount; });
   const topCat       = Object.entries(catTotals).sort((a, b) => b[1] - a[1])[0];
-  const stats        = player?.seasonStats || {};
-  const killsPG      = stats?.attacking?.killsPerGame ?? stats?.attacking?.kills ?? null;
-  const hitPct       = stats?.attacking?.hittingPercentage ?? null;
+  const aStats = player?.aggregatedStats || null;
 
   // ── Expense actions ─────────────────────────────────────────────────────
   const openAdd = (dateStr) => {
@@ -252,20 +250,33 @@ export default function ROICalendar() {
           ) : <div style={{ fontSize: 13, color: 'var(--text-muted)', paddingTop: 8 }}>–</div>}
         </div>
         <div className="card" style={{ margin: 0, textAlign: 'center', padding: '12px 8px' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Key Stat</div>
-          {killsPG !== null ? (
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Games Logged</div>
+          {aStats ? (
             <>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#f59e0b' }}>{Number(killsPG).toFixed(1)}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>kills / game</div>
-            </>
-          ) : hitPct !== null ? (
-            <>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#f59e0b' }}>{(hitPct * 100).toFixed(1)}%</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>hitting %</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#f59e0b' }}>{aStats.gamesPlayed}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>all seasons</div>
             </>
           ) : <div style={{ fontSize: 13, color: 'var(--text-muted)', paddingTop: 8 }}>No stats yet</div>}
         </div>
       </div>
+
+      {/* Stats strip */}
+      {aStats && (
+        <div style={{ display: 'flex', gap: 8, padding: '0 16px 8px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
+          {[
+            { label: 'Kills/Gm',  value: aStats.killsPerGame   > 0 ? aStats.killsPerGame.toFixed(1)   : null },
+            { label: 'Digs/Gm',   value: aStats.digsPerGame    > 0 ? aStats.digsPerGame.toFixed(1)    : null },
+            { label: 'Aces/Gm',   value: aStats.acesPerGame    > 0 ? aStats.acesPerGame.toFixed(1)    : null },
+            { label: 'Asst/Gm',   value: aStats.assistsPerGame > 0 ? aStats.assistsPerGame.toFixed(1) : null },
+            { label: 'Hit%',       value: aStats.hittingPct != null ? (aStats.hittingPct * 100).toFixed(1) + '%' : null },
+          ].filter(s => s.value !== null).map(s => (
+            <div key={s.label} style={{ textAlign: 'center', background: 'var(--card-bg,#fff)', border: '1px solid var(--border,#e5e7eb)', borderRadius: 8, padding: '6px 14px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>{s.value}</div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Calendar */}
       <div className="card" style={{ margin: '0 16px 12px' }}>
