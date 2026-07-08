@@ -346,6 +346,7 @@ const SubscriptionButtons = ({ isNative }) => {
   const showCoachTone = role === "coach" || role === "trainer";
   const showParentTone = role === "parent";
   const showPlayerTone = role === "player";
+  const showOtherTone = !showCoachTone && !showParentTone && !showPlayerTone;
 
   const statbookUsage = Number(user?.dailyUsage?.statbook?.count || 0);
   const matchUsage = Number(user?.dailyUsage?.match?.count || 0);
