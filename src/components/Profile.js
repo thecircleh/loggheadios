@@ -648,7 +648,7 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
           <div style={{ textAlign: 'center', padding: '8px 0' }}>
             <p className="card-title" style={{ margin: '0 0 8px' }}>My Players</p>
             <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 14, lineHeight: 1.5 }}>
-              Claim your player and unlock the <strong>ROI Calendar</strong> — track every dollar invested in their development alongside their real match stats.
+              Claim your player and unlock the <strong>VB Expense Tracker</strong> — track every dollar invested in their development alongside their real match stats.
             </p>
             <button
               type="button"
@@ -677,7 +677,7 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
 
             {claimedPlayers.length === 0 && !showClaimPanel && (
               <p style={{ color: 'var(--text-muted)', fontSize: 14, margin: 0 }}>
-                Claim your player(s) to track your investment and see their stats in your ROI Calendar.
+                Claim your player(s) to track your investment and see their stats in your VB Expense Tracker.
               </p>
             )}
 

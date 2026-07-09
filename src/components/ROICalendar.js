@@ -339,7 +339,7 @@ export default function ROICalendar() {
       <div style={{ padding: 24, maxWidth: 480, margin: '0 auto' }}>
         <div className="card" style={{ textAlign: 'center', padding: '32px 24px' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>📊</div>
-          <p className="card-title" style={{ fontSize: 20 }}>ROI Calendar</p>
+          <p className="card-title" style={{ fontSize: 20 }}>VB Expense Tracker</p>
           <p style={{ color: 'var(--text-muted)', marginBottom: 20, lineHeight: 1.6 }}>
             Track every dollar you invest in your player's development — training, team fees, travel, tournaments, gear — and see it alongside their actual stats.
           </p>
@@ -365,7 +365,7 @@ export default function ROICalendar() {
     return (
       <div style={{ padding: 24, maxWidth: 480, margin: '0 auto' }}>
         <div className="card">
-          <p className="card-title">ROI Calendar</p>
+          <p className="card-title">VB Expense Tracker</p>
           <p style={{ color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.5 }}>
             Log every dollar you invest in your player's development and watch it alongside their stats.
           </p>
@@ -381,7 +381,7 @@ export default function ROICalendar() {
 
       {/* Header */}
       <div style={{ padding: '16px 16px 0' }}>
-        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>ROI Calendar</h2>
+        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>VB Expense Tracker</h2>
         <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>Track your investment per player</p>
       </div>
 

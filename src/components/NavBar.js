@@ -128,14 +128,14 @@ const NavBar = () => {
               Player Stats
             </Link>
 
-            {/* ROI Calendar */}
+            {/* VB Expense Tracker */}
             <Link
               to="/roi-calendar"
               className={`nav-link ${isActive('/roi-calendar') ? 'active' : ''}`}
               onClick={() => setIsMenuOpen(false)}
-              title="ROI Calendar - Track your investment"
+              title="VB Expense Tracker - Track your investment"
             >
-              ROI Calendar
+              VB Expense Tracker
             </Link>
 
             {/* Rosters & Matches */}

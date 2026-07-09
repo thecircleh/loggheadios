@@ -5056,7 +5056,7 @@ const CoachesCornerDropdown = ({ isOpen, onOpen, onClose, onHoverClose }) => {
 {location.pathname !== "/login" && location.pathname !== "/register" && (
   <nav className={`ios-nav-links ${showMobileMenu ? "visible" : ""}`}>
     <Link to="/profile" onClick={closeAllDropdowns} className="ios-nav-link">Profile</Link>
-    <Link to="/roi-calendar" onClick={closeAllDropdowns} className="ios-nav-link">ROI Calendar</Link>
+    <Link to="/roi-calendar" onClick={closeAllDropdowns} className="ios-nav-link">VB Expense Tracker</Link>
     <Link to="/settings" onClick={closeAllDropdowns} className="ios-nav-link">Rosters & Matches</Link>
     <LoggingModeDropdown
       isOpen={activeDropdown === 'modes'}
