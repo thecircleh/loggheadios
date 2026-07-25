@@ -189,7 +189,29 @@ const [{ isDragging }, drag] = useDrag(
 
 
 
- 
+function splitPlayerName(name, maxLength = 10) {
+  if (!name) return { line1: "", line2: "" };
+  if (name.length <= maxLength) return { line1: name, line2: "" };
+  const lastSpaceIndex = name.lastIndexOf(' ');
+  if (lastSpaceIndex === -1) return { line1: name.slice(0, maxLength), line2: "" };
+  let firstName = name.slice(0, lastSpaceIndex);
+  let lastName = name.slice(lastSpaceIndex + 1);
+  if (firstName.length > maxLength) firstName = firstName.slice(0, maxLength);
+  if (lastName.length > maxLength) lastName = lastName.slice(0, maxLength);
+  return { line1: firstName, line2: lastName };
+}
+
+function MicIcon({ strikethrough = false }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="9" y="1" width="6" height="13" rx="3" fill="rgba(255,255,255,0.25)" stroke="#fff" />
+      <path d="M5 10v2a7 7 0 0 0 14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="23" />
+      <line x1="8" y1="23" x2="16" y2="23" />
+      {strikethrough && <line x1="3" y1="3" x2="21" y2="21" stroke="#fff" strokeWidth="2.2" />}
+    </svg>
+  );
+}
 
 
 function VolleyballCourt({
@@ -370,6 +392,172 @@ const positionLabels = positionMapping
 // REMOVED: creditedPlayersThisSetRef - now managed by App.js parent component
 const prevBallStateRef = useRef(null);
 
+// Stable ref so the CourtSlot component defined below never needs to close over mutable state directly.
+// Updated on every render just before the return statement.
+const courtSlotCtxRef = useRef({});
+
+const CourtSlot = useMemo(() => React.forwardRef(({ player, index, flash }, ref) => {
+  const [{ isOver, canDrop }, drop] = useDrop({
+    accept: "PLAYER",
+    drop: (item) => {
+      const { handlePlayerDrop } = courtSlotCtxRef.current;
+      (async () => { await handlePlayerDrop(item, index); })();
+    },
+    collect: (monitor) => ({
+      isOver: monitor.isOver(),
+      canDrop: monitor.canDrop(),
+    }),
+  });
+
+  const ctx = courtSlotCtxRef.current;
+  const isEmptySlot =
+    !player ||
+    player.name === "?" ||
+    player.number === "?" ||
+    player.number === undefined ||
+    player.number === null;
+  const { line1, line2 } = splitPlayerName(isEmptySlot ? "" : (player.name || ""), 10);
+
+  return (
+    <div
+      ref={(el) => {
+        drop(el);
+        if (ref) ref.current = el;
+      }}
+      data-slot-index={index}
+      onClick={() => {
+        const c = courtSlotCtxRef.current;
+        if (c.showAceTargetModal) {
+          c.setShowAceTargetModal(false);
+          c.pendingAceCallback(index);
+          return;
+        }
+        c.registerTouch(index);
+      }}
+      style={ctx.slotStyle(index, player, flash)}
+    >
+      {!isEmptySlot && (
+        <>
+          <div
+            style={{
+              ...ctx.slotNameStyle,
+              color:
+                ((ctx.slot5TargetId && player._id === ctx.slot5TargetId._id) ||
+                  (ctx.allowedLiberoSubTarget && player._id === ctx.allowedLiberoSubTarget._id))
+                  ? "#FF3B30"
+                  : (ctx.showVideoBackground && !ctx.isMobile && (ctx.youtubeUrl || ctx.localVideoUrl))
+                    ? "#FFFFFF"
+                    : "#333",
+              lineHeight: line2 ? "1.1" : "1.2",
+              textAlign: "center",
+            }}
+          >
+            <div>{line1}</div>
+            {line2 && <div>{line2}</div>}
+          </div>
+          {!isEmptySlot && (
+            <div style={ctx.slotNumberStyle}>
+              #{String(player.number)}
+            </div>
+          )}
+        </>
+      )}
+      <div style={ctx.slotPosStyle}>Pos {ctx.positionLabels[index]}</div>
+      {!isEmptySlot && ctx.positionLabels[index] === "1" && !player.isLibero && (
+        <div style={ctx.serverBadgeStyle}>Server</div>
+      )}
+      {!isEmptySlot && player.isLibero && <div style={ctx.liberoBadgeStyle}>Libero</div>}
+    </div>
+  );
+}), []); // empty deps = stable component reference; state accessed through courtSlotCtxRef
+
+const VoiceInterface = useMemo(() => () => {
+  const ctx = courtSlotCtxRef.current;
+  const {
+    hasPremium, user, voiceEnabled, isListening, voiceCommand, voiceConfidence,
+    lastCommand, isMobile, isPortrait, setVoiceEnabled, getContextualHints,
+  } = ctx;
+  const hasVoiceAccess = hasPremium || user?.role === 'admin';
+
+  const getVoiceStatus = () => {
+    if (!hasVoiceAccess) return { text: "Voice Logging", color: "#FF3B30", icon: <MicIcon strikethrough /> };
+    if (!voiceEnabled) return { text: "Off", color: "#8E8E93", icon: <MicIcon /> };
+    if (isListening) return { text: "Listening", color: "#34C759", icon: <MicIcon /> };
+    return { text: "Ready", color: "#007AFF", icon: <MicIcon /> };
+  };
+  const voiceStatus = getVoiceStatus();
+
+  return (
+    <div style={{
+      position: (isMobile && isPortrait) ? "static" : "absolute",
+      top: (isMobile && isPortrait) ? undefined : "150px",
+      left: (isMobile && isPortrait) ? undefined : "3px",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      gap: "8px",
+      zIndex: 999,
+    }}>
+      {voiceCommand && (
+        <div style={{
+          backgroundColor: voiceConfidence === "high" ? "#34C759" :
+                           voiceConfidence === "medium" ? "#FF9500" : "#FF3B30",
+          color: "#fff",
+          padding: "8px 12px",
+          borderRadius: "20px",
+          fontSize: "12px",
+          fontWeight: "600",
+          maxWidth: "200px",
+          textAlign: "center",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+          animation: "fadeInOut 3s ease-in-out",
+        }}>
+          {lastCommand}
+        </div>
+      )}
+      <button
+        onClick={() => setVoiceEnabled(prev => !prev)}
+        style={{
+          width: "60px",
+          height: "60px",
+          borderRadius: "50%",
+          backgroundColor: voiceStatus.color,
+          border: "none",
+          color: "#fff",
+          fontSize: "24px",
+          fontWeight: "bold",
+          cursor: "pointer",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+          lineHeight: "60px",
+          textAlign: "center",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+        title={`Voice Commands: ${voiceEnabled ? 'ON' : 'OFF'}`}
+      >
+        {voiceStatus.icon}
+      </button>
+      <div style={{ fontSize: "10px", color: "#555", fontWeight: "600", textAlign: "center" }}>
+        {voiceStatus.text}
+      </div>
+      <div style={{
+        backgroundColor: "rgba(0,0,0,0.8)",
+        color: "#fff",
+        padding: "6px 10px",
+        borderRadius: "12px",
+        fontSize: "10px",
+        maxWidth: "100px",
+        textAlign: "center",
+        lineHeight: "1.2",
+        zIndex: 9999,
+      }}>
+        {getContextualHints()}
+      </div>
+    </div>
+  );
+}, []); // stable — reads latest state via courtSlotCtxRef
+
 
 const hasEmptyCourtSlots = courtPlayers.some(
   (p) =>
@@ -403,37 +591,7 @@ useEffect(() => {
 
 
 
-const splitPlayerName = (name, maxLength = 10) => {
-  if (!name) return { line1: "", line2: "" };
-  
-  // If name is short enough, no need to split
-  if (name.length <= maxLength) {
-    return { line1: name, line2: "" };
-  }
-  
-  // Find the last space in the name
-  const lastSpaceIndex = name.lastIndexOf(' ');
-  
-  // If no space found, just truncate to maxLength
-  if (lastSpaceIndex === -1) {
-    return { line1: name.slice(0, maxLength), line2: "" };
-  }
-  
-  // Split on the last space
-  let firstName = name.slice(0, lastSpaceIndex);
-  let lastName = name.slice(lastSpaceIndex + 1);
-  
-  // Ensure each part is within the character limit
-  if (firstName.length > maxLength) {
-    firstName = firstName.slice(0, maxLength);
-  }
-  
-  if (lastName.length > maxLength) {
-    lastName = lastName.slice(0, maxLength);
-  }
-  
-  return { line1: firstName, line2: lastName };
-};
+// splitPlayerName is defined at module level above VolleyballCourt
 
 
 const speak = (text) => {
@@ -625,129 +783,7 @@ const getContextualHints = () => {
   return "Say: 'rotate', 'switch serve', or 'undo'";
 };
 
-const VoiceInterface = () => {
-const hasVoiceAccess = hasPremium || user?.role === 'admin';
-  
-  const MicIcon = ({ strikethrough = false }) => (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="9" y="1" width="6" height="13" rx="3" fill="rgba(255,255,255,0.25)" stroke="#fff" />
-      <path d="M5 10v2a7 7 0 0 0 14 0v-2" />
-      <line x1="12" y1="19" x2="12" y2="23" />
-      <line x1="8" y1="23" x2="16" y2="23" />
-      {strikethrough && <line x1="3" y1="3" x2="21" y2="21" stroke="#fff" strokeWidth="2.2" />}
-    </svg>
-  );
-
-  const getVoiceStatus = () => {
-    if (!hasVoiceAccess) return { text: "Voice Logging", color: "#FF3B30", icon: <MicIcon strikethrough /> };
-    if (!voiceEnabled) return { text: "Off", color: "#8E8E93", icon: <MicIcon /> };
-    if (isListening) return { text: "Listening", color: "#34C759", icon: <MicIcon /> };
-    return { text: "Ready", color: "#007AFF", icon: <MicIcon /> };
-  };
-    const voiceStatus = getVoiceStatus();
-
-const handleVoiceButtonClick = () => {
-  if (!hasVoiceAccess()) {
-    setShowVoiceSubscriptionModal(true);
-    return;
-  }
-  // Only allow toggling if user has access
-  setVoiceEnabled(prev => !prev);
-};
-
-  return (
-    <div
-      style={{
-        position: (isMobile && isPortrait) ? "static" : "absolute",
-        top: (isMobile && isPortrait) ? undefined : "150px",
-        left: (isMobile && isPortrait) ? undefined : "3px",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: "8px",
-        zIndex: 999
-      }}
-    >
-      {/* Voice Command Display */}
-      {voiceCommand && (
-        <div
-          style={{
-            backgroundColor: voiceConfidence === "high" ? "#34C759" : 
-                           voiceConfidence === "medium" ? "#FF9500" : "#FF3B30",
-            color: "#fff",
-            padding: "8px 12px",
-            borderRadius: "20px",
-            fontSize: "12px",
-            fontWeight: "600",
-            maxWidth: "200px",
-            textAlign: "center",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
-            animation: "fadeInOut 3s ease-in-out",
-          }}
-        >
-          {lastCommand}
-        </div>
-      )}
-
-      {/* Main Voice Button */}
-<button
-  onClick={() => setVoiceEnabled(prev => !prev)}
-  style={{
-    width: "60px",
-    height: "60px",
-    borderRadius: "50%",
-    backgroundColor: voiceStatus.color,
-    border: "none",
-    color: "#fff",
-    fontSize: "24px",
-    fontWeight: "bold",
-    cursor: "pointer",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-    transition: "background-color 0.3s ease",
-    lineHeight: "60px", // ✅ Locks text vertically
-    textAlign: "center", // ✅ Avoids weird center shift
-    display: "flex",      // ✅ Ensures consistent alignment
-    alignItems: "center",
-    justifyContent: "center",
-  }}
-  title={`Voice Commands: ${voiceEnabled ? 'ON' : 'OFF'}`}
->
-  {voiceStatus.icon}
-</button>
-
-      {/* Status Text */}
-      <div style={{ 
-        fontSize: "10px", 
-        color: "#555",
-        fontWeight: "600",
-        textAlign: "center"
-      }}>
-        {voiceStatus.text}
-      </div>
-
-      {/* Context Hints */}
-   
-        <div
-          style={{
-            backgroundColor: "rgba(0,0,0,0.8)",
-            color: "#fff",
-            padding: "6px 10px",
-            borderRadius: "12px",
-            fontSize: "10px",
-            maxWidth: "100px",
-            textAlign: "center",
-            lineHeight: "1.2",
-			zindex: 9999,
-          }}
-        >
-          {getContextualHints()}
-        </div>
-    
-
- 
-    </div>
-  );
-};
+// VoiceInterface is now defined via useMemo — see near the top of VolleyballCourt
 
 // Voice Command Help Modal Component - move this OUTSIDE of renderCourtArea
 const VoiceHelpModal = ({ isOpen, onClose }) => {
@@ -3313,84 +3349,7 @@ const handleTwoPlayerBlock = (clickedSlotIndex) => {
   }
 };
 
-const CourtSlot = React.forwardRef(({ player, index, flash }, ref) => {
-  const [{ isOver, canDrop }, drop] = useDrop({
-    accept: "PLAYER",
-    drop: (item) => {
-  (async () => {
-    await handlePlayerDrop(item, index);
-  })();
-},
-    collect: (monitor) => ({
-      isOver: monitor.isOver(),
-      canDrop: monitor.canDrop(),
-    }),
-  });
-
-const isEmptySlot =
-  !player ||
-  player.name === "?" ||
-  player.number === "?" ||
-  player.number === undefined ||
-  player.number === null;
-const { line1, line2 } = splitPlayerName(isEmptySlot ? "" : (player.name || ""), 10);
-
-return (
-  <div
-    ref={(el) => {
-      drop(el);
-      if (ref) ref.current = el;
-    }}
-    data-slot-index={index}
-    onClick={() => {
-      if (showAceTargetModal) {
-        setShowAceTargetModal(false);
-        pendingAceCallback(index);
-        return;
-      }
-      registerTouch(index);
-    }}
-    style={slotStyle(index, player, flash)}
-  >
-    {/* Name + number hidden when empty */}
-    {!isEmptySlot && (
-      <>
-        <div
-          style={{
-            ...slotNameStyle,
-            color:
-              ((slot5TargetId && player._id === slot5TargetId._id) ||
-                (allowedLiberoSubTarget && player._id === allowedLiberoSubTarget._id))
-                ? "#FF3B30"
-                : (showVideoBackground && !isMobile && (youtubeUrl || localVideoUrl))
-                  ? "#FFFFFF"  // White when video is active
-                  : "#333",     // Dark when no video
-            lineHeight: line2 ? "1.1" : "1.2",
-            textAlign: "center",
-          }}
-        >
-          <div>{line1}</div>
-          {line2 && <div>{line2}</div>}
-        </div>
-{!isEmptySlot && (
-        <div style={slotNumberStyle}>
-    #{String(player.number)}
-  </div>
-  )}
-      </>
-    )}
-
-    {/* Always show position */}
-    <div style={slotPosStyle}>Pos {positionLabels[index]}</div>
-
-    {/* Badges only make sense when filled */}
-    {!isEmptySlot && positionLabels[index] === "1" && !player.isLibero && (
-      <div style={serverBadgeStyle}>Server</div>
-    )}
-    {!isEmptySlot && player.isLibero && <div style={liberoBadgeStyle}>Libero</div>}
-  </div>
-);
-});
+// CourtSlot is now defined at module level via useMemo — see top of VolleyballCourt
   
 const resetRally = (wonBy) => {
   // wonBy must be "our" or "opponent"
@@ -5796,6 +5755,39 @@ function renderCourtArea() {
   }
 
 
+
+courtSlotCtxRef.current = {
+  // CourtSlot deps
+  handlePlayerDrop,
+  registerTouch,
+  showAceTargetModal,
+  setShowAceTargetModal,
+  pendingAceCallback,
+  slotStyle,
+  slotNameStyle,
+  slotNumberStyle,
+  slotPosStyle,
+  serverBadgeStyle,
+  liberoBadgeStyle,
+  positionLabels,
+  slot5TargetId,
+  allowedLiberoSubTarget,
+  showVideoBackground,
+  isMobile,
+  isPortrait,
+  youtubeUrl,
+  localVideoUrl,
+  // VoiceInterface deps
+  hasPremium,
+  user,
+  voiceEnabled,
+  isListening,
+  voiceCommand,
+  voiceConfidence,
+  lastCommand,
+  setVoiceEnabled,
+  getContextualHints,
+};
 
 return (
   <>
