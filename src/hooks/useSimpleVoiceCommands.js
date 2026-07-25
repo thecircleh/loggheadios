@@ -1,3 +1,4 @@
+// Reverted to pre-July state (2025-07-25) — removed native iOS plugin, AudioContext, command queue
 import { useEffect, useRef, useState } from "react";
 
 const useSimpleVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameState = {}) => {
