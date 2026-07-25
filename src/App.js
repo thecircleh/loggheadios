@@ -239,10 +239,12 @@ const useDevice = () => {
       window.matchMedia("(min-width: 769px)"),
     ];
  
+    let debounceTimer;
     const update = () => {
-      setDevice(getDevice());
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => setDevice(getDevice()), 250);
     };
- 
+
     // Listen to all media query changes
     mediaQueries.forEach(mq => {
       if (mq.addEventListener) {
@@ -252,15 +254,16 @@ const useDevice = () => {
         mq.addListener(update);
       }
     });
- 
+
     // Listen to resize events (handles orientation change, viewport resize)
     window.addEventListener("resize", update);
-    
+
     // Listen to orientation change events (additional coverage)
     window.addEventListener("orientationchange", update);
- 
+
     // Cleanup
     return () => {
+      clearTimeout(debounceTimer);
       mediaQueries.forEach(mq => {
         if (mq.removeEventListener) {
           mq.removeEventListener("change", update);
