@@ -213,6 +213,24 @@ function MicIcon({ strikethrough = false }) {
   );
 }
 
+function StatBox({ label, value, color = "#111" }) {
+  return (
+    <div style={{ border: `2px solid ${color}`, borderRadius: "16px", padding: "8px 12px", width: "105px", minWidth: "105px", boxShadow: "0 2px 6px rgba(0,0,0,0.1)", textAlign: "center", fontFamily: "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif", color: "#111" }}>
+      <div style={{ fontSize: "0.7rem", fontWeight: "500", marginBottom: "4px", opacity: 0.9 }}>{label}</div>
+      <div style={{ fontSize: "1.4rem", fontWeight: "700" }}>{value}</div>
+    </div>
+  );
+}
+
+function CompactStatBox({ label, value, color = "#111" }) {
+  return (
+    <div style={{ border: `2px solid ${color}`, borderRadius: "12px", padding: "5px 8px", flex: "1 1 0", minWidth: "0", textAlign: "center", fontFamily: "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif", color: "#111" }}>
+      <div style={{ fontSize: "0.6rem", fontWeight: "500", opacity: 0.85, lineHeight: 1.2 }}>{label}</div>
+      <div style={{ fontSize: "1.1rem", fontWeight: "700" }}>{value}</div>
+    </div>
+  );
+}
+
 
 function VolleyballCourt({
   courtPlayers,
@@ -557,6 +575,64 @@ const VoiceInterface = useMemo(() => () => {
     </div>
   );
 }, []); // stable — reads latest state via courtSlotCtxRef
+
+const ActionZone = useMemo(() => ({ label, zoneAction, ballSide, color }) => {
+  const ctx = courtSlotCtxRef.current;
+  const isOpponentBall = ballSide === "opponent" || ctx.currentServeSide === "opponent";
+  const dynamicStyle = {
+    ...ctx.buttonStyle,
+    backgroundColor: color || (isOpponentBall ? "#007AFF" : "#34C759"),
+    margin: "4px",
+    ...(ctx.showVideoBackground && !ctx.isMobile && (ctx.youtubeUrl || ctx.localVideoUrl) ? {
+      boxShadow: "0px 4px 12px rgba(0,0,0,0.4), 0 0 0 2px rgba(255,255,255,0.3)",
+      fontWeight: "700",
+      border: "2px solid rgba(255,255,255,0.5)",
+    } : {}),
+  };
+  return (
+    <button onClick={() => courtSlotCtxRef.current.handleActionDrop(zoneAction)} style={dynamicStyle}>
+      {label}
+    </button>
+  );
+}, []); // stable
+
+const AdvancedLoggingToggle = useMemo(() => () => {
+  const ctx = courtSlotCtxRef.current;
+  const { isMobile, isPortrait, advancedLoggingEnabled, setAdvancedLoggingEnabled } = ctx;
+  return (
+    <button
+      onClick={() => setAdvancedLoggingEnabled(prev => !prev)}
+      style={{
+        position: (isMobile && isPortrait) ? "static" : "absolute",
+        top: (isMobile && isPortrait) ? undefined : (isPortrait ? "5%" : (isMobile ? "75%" : "92%")),
+        right: (isMobile && isPortrait) ? undefined : (isMobile ? "1%" : "1.1%"),
+        width: (isMobile && isPortrait) ? "220px" : (isMobile ? "180px" : "220px"),
+        height: isMobile ? "44px" : "40px",
+        boxSizing: "border-box",
+        borderRadius: "12px",
+        backgroundColor: advancedLoggingEnabled ? "#34C759" : "#8E8E93",
+        border: "none",
+        color: "#FFFFFF",
+        cursor: "pointer",
+        fontFamily: "-apple-system, 'Helvetica Neue', Arial, sans-serif",
+        fontSize: "0.7rem",
+        fontWeight: "600",
+        boxShadow: "0px 2px 4px rgba(0,0,0,0.15)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "column",
+        gap: "2px",
+      }}
+      title={`Advanced Logging: ${advancedLoggingEnabled ? 'ON' : 'OFF'}`}
+    >
+      <div style={{ fontSize: "1.2rem" }}>{advancedLoggingEnabled ? "📊" : "⚡"}</div>
+      <div style={{ fontSize: "0.6rem", textAlign: "center", lineHeight: "1" }}>
+        {advancedLoggingEnabled ? "ADVANCED LOGGING" : "FAST LOGGING"}
+      </div>
+    </button>
+  );
+}, []); // stable
 
 
 const hasEmptyCourtSlots = courtPlayers.some(
@@ -926,44 +1002,7 @@ const VoiceHelpModal = ({ isOpen, onClose }) => {
 };
 
 
-const AdvancedLoggingToggle = () => (
-  <button
-    onClick={() => setAdvancedLoggingEnabled(prev => !prev)}
-    style={{
-       position: (isMobile && isPortrait) ? "static" : "absolute",
-      top: (isMobile && isPortrait) ? undefined : (isPortrait ? "5%" : (isMobile ? "75%" : "92%")),
-      right: (isMobile && isPortrait) ? undefined : (isMobile ? "1%" : "1.1%"),
-      width: (isMobile && isPortrait) ? "220px" : (isMobile ? "180px" : "220px"),
-      height: isMobile ? "44px" : "40px",
-      boxSizing: "border-box",
-      borderRadius: "12px",
-      backgroundColor: advancedLoggingEnabled ? "#34C759" : "#8E8E93",
-      border: "none",
-      color: "#FFFFFF",
-      cursor: "pointer",
-      fontFamily: "-apple-system, 'Helvetica Neue', Arial, sans-serif",
-      fontSize: "0.7rem",
-      fontWeight: "600",
-      boxShadow: "0px 2px 4px rgba(0,0,0,0.15)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      flexDirection: "column",
-      gap: "2px",
-      transition: "background-color 0.2s ease, transform 0.1s ease",
-    }}
-    onMouseDown={(e) => (e.target.style.transform = "scale(0.97)")}
-    onMouseUp={(e) => (e.target.style.transform = "scale(1)")}
-    title={`Advanced Logging: ${advancedLoggingEnabled ? 'ON' : 'OFF'}`}
-  >
-    <div style={{ fontSize: "1.2rem" }}>
-      {advancedLoggingEnabled ? "📊" : "⚡"}
-    </div>
-    <div style={{ fontSize: "0.6rem", textAlign: "center", lineHeight: "1" }}>
-      {advancedLoggingEnabled ? "ADVANCED LOGGING" : "FAST LOGGING"}
-    </div>
-  </button>
-);
+// AdvancedLoggingToggle is defined via useMemo near the top of VolleyballCourt
 
 
 const voiceAnimationStyles = `
@@ -2521,75 +2560,7 @@ const resetBall = (newServeSide, position, shouldRotate = false) => {
 
 
 
-const StatBox = ({ label, value, color = "#111" }) => (
-  <div
-    style={{
-      border: `2px solid ${color}`,
-      borderRadius: "16px",
-      padding: "8px 12px",
-	  width: "105px",
-      minWidth: "105px",
-      boxShadow: "0 2px 6px rgba(0, 0, 0, 0.1)",
-      textAlign: "center",
-      fontFamily: "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif",
-      color: "#111",
-    }}
-  >
-    <div
-      style={{
-        fontSize: "0.7rem",
-        fontWeight: "500",
-        marginBottom: "4px",
-        opacity: 0.9,
-      }}
-    >
-      {label}
-    </div>
-    <div
-      style={{
-        fontSize: "1.4rem",
-        fontWeight: "700",
-      }}
-    >
-      {value}
-    </div>
-  </div>
-);
-
-
-
-const CompactStatBox = ({ label, value, color = "#111" }) => (
-  <div style={{ border: `2px solid ${color}`, borderRadius: "12px", padding: "5px 8px", flex: "1 1 0", minWidth: "0", textAlign: "center", fontFamily: "-apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif", color: "#111" }}>
-    <div style={{ fontSize: "0.6rem", fontWeight: "500", opacity: 0.85, lineHeight: 1.2 }}>{label}</div>
-    <div style={{ fontSize: "1.1rem", fontWeight: "700" }}>{value}</div>
-  </div>
-);
-
-const ActionZone = ({ label, zoneAction, ballSide, color }) => {
-  // Logic to determine default colors if no specific color is passed
-  const isOpponentBall = ballSide === "opponent" || currentServeSide === "opponent";
-  
-  const dynamicStyle = {
-    ...buttonStyle, // Uses your existing buttonStyle object
-    backgroundColor: color || (isOpponentBall ? "#007AFF" : "#34C759"),
-    margin: "4px",
-    // Enhanced visibility when video is active
-    ...(showVideoBackground && !isMobile && (youtubeUrl || localVideoUrl) ? {
-      boxShadow: "0px 4px 12px rgba(0,0,0,0.4), 0 0 0 2px rgba(255,255,255,0.3)",
-      fontWeight: "700",
-      border: "2px solid rgba(255, 255, 255, 0.5)"
-    } : {})
-  };
-
-  return (
-    <button 
-      onClick={() => handleActionDrop(zoneAction)} 
-      style={dynamicStyle}
-    >
-      {label}
-    </button>
-  );
-};
+// StatBox, CompactStatBox, ActionZone are defined at module level or via useMemo near the top of VolleyballCourt
 
 // Clickable box overlaid on video for each player position
 const VideoPlayerBox = ({ position, player, onClick }) => {
@@ -5787,6 +5758,13 @@ courtSlotCtxRef.current = {
   lastCommand,
   setVoiceEnabled,
   getContextualHints,
+  // ActionZone deps
+  currentServeSide,
+  buttonStyle,
+  handleActionDrop,
+  // AdvancedLoggingToggle deps
+  advancedLoggingEnabled,
+  setAdvancedLoggingEnabled,
 };
 
 return (
