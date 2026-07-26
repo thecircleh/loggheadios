@@ -716,8 +716,9 @@ useEffect(() => {
     return;
   }
   
-  // If already credited this set, skip (prevents double credit)
-  if (creditedPlayersThisSet && creditedPlayersThisSet.length > 0) {
+  // Use the ref (sync) not state (async) — state update hasn't propagated
+  // yet when this effect re-fires mid-crediting cycle.
+  if (creditedPlayersThisSetRef?.current?.size > 0) {
     console.log("ℹ️ Players already credited this set - skipping");
     return;
   }

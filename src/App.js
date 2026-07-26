@@ -4106,6 +4106,16 @@ useEffect(() => {
           }))
         ].slice(0, 6);
 
+        // Sync credited players BEFORE setCourtPlayers so the ref is already
+        // populated when VolleyballCourt's useEffect fires — prevents a second
+        // credit cycle from clearing the ref mid-loop.
+        if (match.creditedPlayersThisSet) {
+          console.log("Restoring credited players from database:", match.creditedPlayersThisSet);
+          syncCreditedPlayersFromState(match.creditedPlayersThisSet);
+        } else {
+          syncCreditedPlayersFromState([]);
+        }
+
         setCourtPlayers(filledCourtPlayers);
 
         if (match.collaborativeMode?.enabled) {
@@ -4173,13 +4183,6 @@ setSubstitutionLog(match.substitutionLog || []);
           setPositionMapping({
             0: '4', 1: '3', 2: '2', 3: '5', 4: '6', 5: '1'
           });
-        }
-
-        if (match.creditedPlayersThisSet) {
-          console.log("Restoring credited players from database:", match.creditedPlayersThisSet);
-          syncCreditedPlayersFromState(match.creditedPlayersThisSet);
-        } else {
-          syncCreditedPlayersFromState([]);
         }
 
         const totalSetsCompleted = (match.ourSetsWon || 0) + (match.opponentSetsWon || 0);
