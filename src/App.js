@@ -839,6 +839,7 @@ const [setEndingDialog, setSetEndingDialog] = useState({
   // Refs
   const syncPayloadRef = useRef({});
   const creditedPlayersThisSetRef = useRef(new Set());
+  const creditingInProgressRef = useRef(false);
   const firstServeHandledRef = useRef(false);
   const previousPathname = useRef(location.pathname);
   const isRestoringMatchRef = useRef(false);
@@ -1300,54 +1301,62 @@ const maybeCreditGamesPlayed = useCallback(async (playerId, forceCredit = false,
 
 
 const creditInitialCourtPlayers = useCallback(async () => {
-  console.log("🎯 creditInitialCourtPlayers: Starting initial court player credits");
-  
-  // ✅ CRITICAL: Don't try to credit if match isn't ready yet
+  // Lock: only one invocation runs at a time regardless of how fast React re-fires the effect.
+  // Production React is much faster than dev — without this lock the effect can re-fire
+  // before the first await populates the ref, bypassing all ref-based guards.
+  if (creditingInProgressRef.current) {
+    console.log("⏭️ creditInitialCourtPlayers already in progress - skipping");
+    return;
+  }
+
   if (!currentMatchId) {
     console.warn("⚠️ No currentMatchId - match not ready yet, skipping credit");
     return;
   }
-  
-  // ✅ NEW: Don't try to credit if court is empty
   if (!courtPlayers || courtPlayers.length === 0) {
     console.warn("⚠️ No court players available - skipping credit");
     return;
   }
-  
+
   const validCourtPlayers = courtPlayers.filter(p => p && p.id && p.name !== "?");
-  console.log(`Found ${validCourtPlayers.length} valid court players to credit`);
-  
-  // ✅ NEW: Safeguard - don't credit if no valid players
   if (validCourtPlayers.length === 0) {
     console.log("ℹ️ Court is empty - skipping initial credit");
     return;
   }
-  
-  let creditCount = 0;
-  for (const player of validCourtPlayers) {
-    if (!creditedPlayersThisSetRef.current.has(player.id)) {
-      const success = await maybeCreditGamesPlayed(
-        player.id,
-        false,
-        "initial_court_setup"
-      );
-      if (success) {
-        creditCount++;
-      }
-    } else {
-      console.log(`⏭️ Player ${player.id} (${player.name}) already credited this set, skipping`);
-    }
+  if (creditedPlayersThisSetRef.current.size > 0) {
+    console.log("ℹ️ Players already credited this set - skipping");
+    return;
   }
-  
-  console.log(`✅ Credited ${creditCount} initial court players this set`);
+
+  creditingInProgressRef.current = true;
+  console.log("🎯 creditInitialCourtPlayers: Starting initial court player credits");
+
+  try {
+    let creditCount = 0;
+    for (const player of validCourtPlayers) {
+      if (!creditedPlayersThisSetRef.current.has(player.id)) {
+        const success = await maybeCreditGamesPlayed(
+          player.id,
+          false,
+          "initial_court_setup"
+        );
+        if (success) creditCount++;
+      } else {
+        console.log(`⏭️ Player ${player.id} (${player.name}) already credited this set, skipping`);
+      }
+    }
+    console.log(`✅ Credited ${creditCount} initial court players this set`);
+  } finally {
+    creditingInProgressRef.current = false;
+  }
 }, [currentMatchId, courtPlayers, maybeCreditGamesPlayed]);
 
 const resetGamesPlayedForNewSet = useCallback(() => {
   console.log("🔄 Resetting games played tracking for new set");
   creditedPlayersThisSetRef.current.clear();
+  creditingInProgressRef.current = false;
   setCreditedPlayersThisSet([]);
   firstServeHandledRef.current = false;
-  
   console.log("ℹ️ Credits will be set when court is populated");
 }, []);
 
