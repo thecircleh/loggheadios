@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 
-const BottomTabBar = ({ isNative }) => {
+const BottomTabBar = ({ isNative, offlinePending = 0, isOnline = true }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [openMenu, setOpenMenu] = useState(null);
@@ -103,7 +103,7 @@ const BottomTabBar = ({ isNative }) => {
       onPress: () => toggleMenu("coaches"),
       menuItems: [
         { label: "Coaches' Corner Home", path: "/coaches-corner" },
-        { label: "My Drills", path: "/coaches-corner/saved-drills" },
+        { label: "My Drills", path: "/coaches-corner/drills" },
         { label: "Practice Assist", path: "/coaches-corner/practice" },
         { label: "Jobs", path: "/coaches-corner/jobs" },
       ],
@@ -131,7 +131,7 @@ const BottomTabBar = ({ isNative }) => {
       onPress: () => toggleMenu("profile"),
       menuItems: [
         { label: "My Profile", path: "/profile" },
-        { label: "VB Expense Tracker", path: "/roi-calendar" },
+        { label: "Expenses", path: "/roi-calendar" },
       ],
       icon: (active) => (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -160,6 +160,27 @@ const BottomTabBar = ({ isNative }) => {
             position: "fixed", inset: 0, zIndex: 8999,
           }}
         />
+      )}
+
+      {offlinePending > 0 && (
+        <div style={{
+          position: "fixed",
+          bottom: "calc(70px + env(safe-area-inset-bottom, 0px))",
+          left: 0,
+          right: 0,
+          textAlign: "center",
+          fontSize: 12,
+          fontWeight: 600,
+          padding: "5px 0",
+          color: isOnline ? "#FF9500" : "#FF3B30",
+          backgroundColor: isOnline ? "rgba(255,149,0,0.1)" : "rgba(255,59,48,0.1)",
+          zIndex: 9000,
+          fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
+        }}>
+          {isOnline
+            ? `⟳ Syncing ${offlinePending} action${offlinePending > 1 ? "s" : ""}…`
+            : `⚠ ${offlinePending} action${offlinePending > 1 ? "s" : ""} queued (offline)`}
+        </div>
       )}
 
       <nav style={{

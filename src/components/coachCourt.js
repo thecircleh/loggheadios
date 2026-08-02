@@ -5,6 +5,24 @@ import { useDrag, useDrop } from "react-dnd";
 import { useAuth } from "./AuthContext";
 import { useNavigate } from "react-router-dom";
 
+// Retry a PUT/POST on 5xx or network error, up to maxRetries times.
+// Does NOT retry 4xx (client errors). Never writes to the offline queue —
+// these saves are full-state overwrites, so queuing stale data would corrupt newer state.
+async function withRetry(fn, maxRetries = 2) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (err.response && err.response.status < 500) throw err; // 4xx — don't retry
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 500)); // 500ms, 1s
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 // Slot labels aligned to your existing convention
 // Index 0..5 => positions: 4,3,2,5,6,1
 const positionLabels = ["4", "3", "2", "5", "6", "1"];
@@ -706,20 +724,14 @@ useEffect(() => {
     }
 
     try {
-      await axios.put(
+      await withRetry(() => axios.put(
         `${API_URL}/api/matches/${currentMatchId}/score`,
-        {
-          ourScore: newOurScore,
-          opponentScore: newOpponentScore,
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          withCredentials: true,
-        }
-      );
+        { ourScore: newOurScore, opponentScore: newOpponentScore },
+        { headers: { Authorization: `Bearer ${token}` }, withCredentials: true }
+      ));
       console.log("✅ Score saved:", { ourScore: newOurScore, opponentScore: newOpponentScore });
     } catch (error) {
-      console.error("❌ Failed to save score:", error);
+      console.error("❌ Failed to save score after retries:", error);
     }
   }, [currentMatchId, token]);
 
@@ -827,15 +839,12 @@ const saveCoachAnalytics = useCallback(async (isFinal = false) => {
       }
     };
 
-    // 5. Send to server
-    const response = await axios.put(
+    // 5. Send to server (retry up to 2x on 5xx / network errors)
+    const response = await withRetry(() => axios.put(
       `${API_URL}/api/coach-match-analytics/${currentMatchId}`,
       analyticsPayload,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-        withCredentials: true,
-      }
-    );
+      { headers: { Authorization: `Bearer ${token}` }, withCredentials: true }
+    ));
 
     console.log("✅ Coach analytics saved successfully:", response.data);
 	console.log("pointsNonDeciding:", matchSettings?.pointsNonDeciding);
@@ -845,9 +854,9 @@ console.log("playAllSets:", matchSettings?.playAllSets);
       alert("Coach analytics saved successfully.");
     }
   } catch (error) {
-    console.error("❌ CRITICAL: Failed to save coach analytics:", error);
+    console.error("❌ CRITICAL: Failed to save coach analytics after retries:", error);
     if (showAlert) {
-      alert("CRITICAL ERROR: Data was not saved. Check network connection.");
+      alert("CRITICAL ERROR: Data was not saved after retries. Check network connection.");
     }
   }
 }, [

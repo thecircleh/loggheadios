@@ -204,6 +204,19 @@ export function useOfflineActionQueue({ token, enabled = false }) {
     };
   }, [stopHeartbeat]);
 
+  // ── Cross-module queue updates (from retry interceptor) ─────────────────────
+  // The retry interceptor writes stat actions directly to IndexedDB on final
+  // failure and dispatches this event so the badge count updates immediately.
+  useEffect(() => {
+    if (!enabled) return;
+    const handler = () => {
+      refreshCount();
+      startHeartbeat(); // start draining as soon as something is queued
+    };
+    window.addEventListener("lh-queue-updated", handler);
+    return () => window.removeEventListener("lh-queue-updated", handler);
+  }, [enabled, refreshCount, startHeartbeat]);
+
   // ── Enqueue ─────────────────────────────────────────────────────────────────
   const enqueue = useCallback(async ({ url, method = "post", data, headers = {} }) => {
     if (!enabled) return null;

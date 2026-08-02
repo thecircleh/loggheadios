@@ -5599,7 +5599,7 @@ if (location.pathname === "/match-tracking") {
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
           </Routes>
-        <BottomTabBar isNative={isNativeApp} isMobile={isMobile} />
+        <BottomTabBar isNative={isNativeApp} isMobile={isMobile} offlinePending={offlinePending} isOnline={isOnline} />
         </>
       </DndProvider>
  
