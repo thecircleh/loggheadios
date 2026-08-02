@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
+import { useOfflineActionQueue } from "./hooks/useOfflineActionQueue";
 import {
   BrowserRouter as Router,
   Routes,
@@ -715,8 +716,12 @@ function AppContent({ matchSettings, setMatchSettings }) {
   setUser,
   hasUnusedMatchKey,
   canUseFreeMode,
+  hasPremium,
 } = useAuth();
   const location = useLocation();
+
+  const { enqueue: enqueueOffline, pendingCount: offlinePending, isOnline } =
+    useOfflineActionQueue({ token, enabled: !!hasPremium });
   const navigate = useNavigate();
   
   const clarityIdentifiedRef = useRef(false);
@@ -1251,14 +1256,19 @@ const maybeCreditGamesPlayed = useCallback(async (playerId, forceCredit = false,
     const maxSetsLimit = matchSettings?.totalSets || 3;
     console.log(`Using maxSetsLimit: ${maxSetsLimit} for player ${playerId}`);
     
-    const response = await axios.post(`${API_URL}/api/players/increment-games-played`, {
-      playerIds: [playerId],
-      matchId: currentMatchId,
-      maxSetsLimit: maxSetsLimit,
-    }, {
-      headers: { Authorization: `Bearer ${token}` },
-      withCredentials: true,
-    });
+    const response = hasPremium
+      ? await enqueueOffline({
+          url: `${API_URL}/api/players/increment-games-played`,
+          data: { playerIds: [playerId], matchId: currentMatchId, maxSetsLimit },
+        })
+      : await axios.post(`${API_URL}/api/players/increment-games-played`, {
+          playerIds: [playerId],
+          matchId: currentMatchId,
+          maxSetsLimit: maxSetsLimit,
+        }, {
+          headers: { Authorization: `Bearer ${token}` },
+          withCredentials: true,
+        });
 
     const results = response.data.results || [];
     const playerResult = results.find(r => r.playerId === playerId);
@@ -1295,7 +1305,7 @@ const maybeCreditGamesPlayed = useCallback(async (playerId, forceCredit = false,
     
     return false;
   }
-}, [currentMatchId, token, matchSettings?.totalSets]);
+}, [currentMatchId, token, matchSettings?.totalSets, hasPremium, enqueueOffline]);
 
 
 
@@ -3240,13 +3250,18 @@ const handleDeletePlayer = useCallback(async (id) => {
     try {
       console.log(`Removing games played credit for player: ${playerId}`);
       
-      const response = await axios.post(`${API_URL}/api/players/decrement-games-played`, {
-        playerIds: [playerId],
-        matchId: currentMatchId,
-      }, {
-        headers: { Authorization: `Bearer ${token}` },
-        withCredentials: true,
-      });
+      const response = hasPremium
+        ? await enqueueOffline({
+            url: `${API_URL}/api/players/decrement-games-played`,
+            data: { playerIds: [playerId], matchId: currentMatchId },
+          })
+        : await axios.post(`${API_URL}/api/players/decrement-games-played`, {
+            playerIds: [playerId],
+            matchId: currentMatchId,
+          }, {
+            headers: { Authorization: `Bearer ${token}` },
+            withCredentials: true,
+          });
 
       creditedPlayersThisSetRef.current.delete(playerId);
       setCreditedPlayersThisSet(prev => prev.filter(id => id !== playerId));
@@ -3257,7 +3272,7 @@ const handleDeletePlayer = useCallback(async (id) => {
       console.error(`Failed to remove games played credit for player ${playerId}:`, err.response?.data || err.message);
       return false;
     }
-  }, [currentMatchId, token]);
+  }, [currentMatchId, token, hasPremium, enqueueOffline]);
 
   const handlePlayerCreate = useCallback(async (playerData) => {
     if (!user?.id || !matchSettings?.teamName) {
@@ -4105,15 +4120,21 @@ useEffect(() => {
           }
         });
 
-        const filledCourtPlayers = [
-          ...hydratedCourtPlayers,
-          ...Array.from({ length: Math.max(0, 6 - hydratedCourtPlayers.length) }, (_, i) => ({
-            id: `empty-filler-${i}`,
-            name: "?",
-            number: "?",
-            isLibero: false,
-          }))
-        ].slice(0, 6);
+        // The match always saves courtPlayers in position order ["4","3","2","5","6","1"].
+        // Convert back to slot order using the saved positionMapping so that after any
+        // number of rotations the libero ends up in the correct physical slot.
+        const SAVE_POS_ORDER = ["4", "3", "2", "5", "6", "1"];
+        const savedMapping = match.positionMapping || { 0:'4', 1:'3', 2:'2', 3:'5', 4:'6', 5:'1' };
+
+        const filledCourtPlayers = Array(6).fill(null).map((_, slotIndex) => {
+          const posForSlot = String(savedMapping[slotIndex] ?? SAVE_POS_ORDER[slotIndex]);
+          const saveIdx = SAVE_POS_ORDER.indexOf(posForSlot);
+          const player = saveIdx >= 0 ? hydratedCourtPlayers[saveIdx] : null;
+          if (player && player.name !== "?") {
+            return { ...player, expressPosition: posForSlot };
+          }
+          return { id: `empty-${slotIndex}`, name: "?", number: "?", isLibero: false, expressPosition: posForSlot };
+        });
 
         // Sync credited players BEFORE setCourtPlayers so the ref is already
         // populated when VolleyballCourt's useEffect fires — prevents a second
@@ -5002,7 +5023,6 @@ if (location.pathname === "/match-tracking") {
 {location.pathname !== "/login" && location.pathname !== "/register" && (
   <nav className={`ios-nav-links ${showMobileMenu ? "visible" : ""}`}>
     <Link to="/profile" onClick={closeAllDropdowns} className="ios-nav-link">Profile</Link>
-    <Link to="/roi-calendar" onClick={closeAllDropdowns} className="ios-nav-link">VB Expense Tracker</Link>
     <Link to="/settings" onClick={closeAllDropdowns} className="ios-nav-link">Rosters & Matches</Link>
     <LoggingModeDropdown
       isOpen={activeDropdown === 'modes'}
@@ -5028,6 +5048,7 @@ if (location.pathname === "/match-tracking") {
       onClose={closeAllDropdowns}
       onHoverClose={scheduleCloseDropdowns}
     />
+	<Link to="/roi-calendar" onClick={closeAllDropdowns} className="ios-nav-link">VB Expense Tracker</Link>
   </nav>
 )}
 
@@ -5038,6 +5059,21 @@ if (location.pathname === "/match-tracking") {
 >
   ▴
 </button>
+
+{offlinePending > 0 && (
+  <div style={{
+    textAlign: "center",
+    fontSize: 11,
+    padding: "2px 0 4px",
+    color: isOnline ? "#FF9500" : "#FF3B30",
+    fontWeight: 600,
+    letterSpacing: 0.3,
+  }}>
+    {isOnline
+      ? `⟳ Syncing ${offlinePending} action${offlinePending > 1 ? "s" : ""}…`
+      : `⚠ ${offlinePending} action${offlinePending > 1 ? "s" : ""} queued (offline)`}
+  </div>
+)}
 
             </header>
           )}
@@ -5052,30 +5088,7 @@ if (location.pathname === "/match-tracking") {
     </button>
   )}
 
- { location.pathname !== "/" &&
-  location.pathname !== "/login" &&
-  location.pathname !== "/register" &&
-  !isPortrait  &&(
-  <button
-    onClick={toggleHeader}
-    style={{
-      position: "fixed",
-      top: showHeader ? "70px" : "5px",
-      right: showHeader ? "90%" : "10%",
-      zIndex: 1001,
-      padding: "6px 10px",
-      borderRadius: "6px",
-      fontSize: "12px",
-      background: "#007AFF",
-      color: "white",
-      border: "none",
-      boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-      cursor: "pointer",
-    }}
-  >
-    {showHeader ? "Hide Header" : "Show Header"}
-  </button>
-)}
+
 
           <SaveStatusIndicator />
 

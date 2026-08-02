@@ -397,8 +397,13 @@ const [showVoiceSubscriptionModal, setShowVoiceSubscriptionModal] = useState(fal
 const [selectedServeZone, setSelectedServeZone] = useState(null);
 const [serveZoneMode, setServeZoneMode] = useState(6);
 const [pendingServeZoneAction, setPendingServeZoneAction] = useState(null);
-const [advancedLoggingEnabled, setAdvancedLoggingEnabled] = useState(true);
+const [advancedLoggingEnabled, setAdvancedLoggingEnabled] = useState(false);
 const [rotationHistory, setRotationHistory] = useState([]);
+
+// Reset advanced logging to OFF at the start of every new set
+useEffect(() => {
+  setAdvancedLoggingEnabled(false);
+}, [match?.currentSet]);
 const lastTouchSlotRef = useRef(null); 
 const positionLabels = positionMapping
 ? [positionMapping[0], positionMapping[1], positionMapping[2],
@@ -578,11 +583,14 @@ const VoiceInterface = useMemo(() => () => {
 
 const ActionZone = useMemo(() => ({ label, zoneAction, ballSide, color }) => {
   const ctx = courtSlotCtxRef.current;
+  const blocked = ctx.hasEmptyCourtSlots;
   const isOpponentBall = ballSide === "opponent" || ctx.currentServeSide === "opponent";
   const dynamicStyle = {
     ...ctx.buttonStyle,
-    backgroundColor: color || (isOpponentBall ? "#007AFF" : "#34C759"),
+    backgroundColor: blocked ? "#C7C7CC" : (color || (isOpponentBall ? "#007AFF" : "#34C759")),
     margin: "4px",
+    opacity: blocked ? 0.5 : 1,
+    cursor: blocked ? "not-allowed" : "pointer",
     ...(ctx.showVideoBackground && !ctx.isMobile && (ctx.youtubeUrl || ctx.localVideoUrl) ? {
       boxShadow: "0px 4px 12px rgba(0,0,0,0.4), 0 0 0 2px rgba(255,255,255,0.3)",
       fontWeight: "700",
@@ -590,7 +598,11 @@ const ActionZone = useMemo(() => ({ label, zoneAction, ballSide, color }) => {
     } : {}),
   };
   return (
-    <button onClick={() => courtSlotCtxRef.current.handleActionDrop(zoneAction)} style={dynamicStyle}>
+    <button
+      onClick={() => !courtSlotCtxRef.current.hasEmptyCourtSlots && courtSlotCtxRef.current.handleActionDrop(zoneAction)}
+      style={dynamicStyle}
+      disabled={blocked}
+    >
       {label}
     </button>
   );
@@ -2022,41 +2034,52 @@ const rotatePlayers = async () => {
 
 
 
-// Handle Libero rotation off court
-if (oldCourt[3]?.isLibero && oldCourt[3]?.replacedPlayer) {
+// Handle Libero rotation off court — libero must NEVER reach slot 0 (front row).
+// Check isLibero alone; replacedPlayer may be null on first recall or for starting-lineup liberos.
+if (oldCourt[3]?.isLibero) {
   const libero = oldCourt[3];
-  const replacedPlayer = libero.replacedPlayer;
 
-  try {
-    // Update database: libero off court, replaced player on court
-    await Promise.all([
-      axios.put(`/api/players/${libero._id}`, { isOnCourt: false },{headers: {Authorization: `Bearer ${token}`}}),
-      axios.put(`/api/players/${replacedPlayer._id}`, { isOnCourt: true },{headers: {Authorization: `Bearer ${token}`}})
-    ]);
+  // Prefer explicit replacedPlayer, then fall back to the stored sub targets.
+  const replacement =
+    (libero.replacedPlayer?._id ? libero.replacedPlayer : null) ||
+    allowedLiberoSubTarget ||
+    slot5TargetId ||
+    null;
 
-    // Update local bench: add libero back to bench
-setBenchPlayers(prev => {
-  const alreadyBenched = prev.some(p => p._id === libero._id);
-  const updated = alreadyBenched
-    ? prev
-    : [...prev, { ...libero, isOnCourt: false }];
+  if (replacement && replacement.name !== "?" && replacement._id) {
+    try {
+      await Promise.all([
+        axios.put(`/api/players/${libero._id}`, { isOnCourt: false }, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.put(`/api/players/${replacement._id}`, { isOnCourt: true }, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+    } catch (error) {
+      console.error("❌ Libero rotation-off failed:", error);
+      return;
+    }
 
-  return updated.sort((a, b) => (a.number || 0) - (b.number || 0));
-});
-  } catch (error) {
-    console.error("❌ Libero substitution failed:", error);
-    return;
+    setBenchPlayers(prev => {
+      const alreadyBenched = prev.some(p => p._id === libero._id);
+      const updated = alreadyBenched ? prev : [...prev, { ...libero, isOnCourt: false }];
+      return updated.sort((a, b) => (a.number || 0) - (b.number || 0));
+    });
+
+    newCourt[0] = replacement;
+  } else {
+    // No replacement info available — bench the libero rather than sending them to front row.
+    console.warn("[Libero] No replacement found for libero rotating off court — benching libero, leaving slot 0 empty.");
+    setBenchPlayers(prev => {
+      const alreadyBenched = prev.some(p => p._id === libero._id);
+      return alreadyBenched ? prev : [...prev, { ...libero, isOnCourt: false }];
+    });
+    newCourt[0] = { id: `empty-rotation-0`, name: "?", number: "?", isLibero: false };
   }
 
-  // ⬇️ Move replaced player into slot 0
-  newCourt[0] = replacedPlayer;
-
-  const playerRotatingIntoSlot5 = oldCourt[2]; // Player that moves to slot5
-if (playerRotatingIntoSlot5 && playerRotatingIntoSlot5.name !== "?" && !playerRotatingIntoSlot5.isLibero) {
-  setSlot5TargetId(playerRotatingIntoSlot5);
-  await syncMatchState();  // ensure this is passed from App.js
-  console.log("✅ slot5TargetId updated and synced:", playerRotatingIntoSlot5);
-}
+  const playerRotatingIntoSlot5 = oldCourt[2];
+  if (playerRotatingIntoSlot5 && playerRotatingIntoSlot5.name !== "?" && !playerRotatingIntoSlot5.isLibero) {
+    setSlot5TargetId(playerRotatingIntoSlot5);
+    await syncMatchState();
+    console.log("✅ slot5TargetId updated and synced:", playerRotatingIntoSlot5);
+  }
 } else {
   newCourt[0] = oldCourt[3];
 }
@@ -4510,6 +4533,7 @@ setActionLog((prev) => [
 
 
 const handleActionDrop = (zoneAction, isOurServeOverride = null, voiceBlockInfo = null) => {
+  if (hasEmptyCourtSlots) return;
   if (awaitingRefBlownDecision) return;
   if (window.__dropLock) return;
   window.__dropLock = true;
@@ -5611,6 +5635,11 @@ function renderCourtArea() {
       {/* Action zones + stat boxes — hidden in portrait (rendered as separate flow sections) */}
       {!(isMobile && isPortrait) && (
         <>
+          {hasEmptyCourtSlots && !enableAITracking && (
+            <div style={{ textAlign: "center", fontSize: 12, color: "#FF9500", fontWeight: 600, padding: "4px 0 2px" }}>
+              Fill all 6 positions to enable stat tracking
+            </div>
+          )}
           <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginTop: "5px", position: "relative", zIndex: 1 }}>
             {!enableAITracking && renderActionZones()}
           </div>
@@ -5763,6 +5792,7 @@ courtSlotCtxRef.current = {
   currentServeSide,
   buttonStyle,
   handleActionDrop,
+  hasEmptyCourtSlots,
   // AdvancedLoggingToggle deps
   advancedLoggingEnabled,
   setAdvancedLoggingEnabled,
@@ -5949,8 +5979,15 @@ return (
 
       {/* Portrait-only: action zones (order 1) */}
       {(isMobile && isPortrait) && (
-        <div style={{ order: 1, width: "100%", display: "flex", gap: "8px", justifyContent: "center", padding: "4px 0" }}>
-          {!enableAITracking && renderActionZones()}
+        <div style={{ order: 1, width: "100%" }}>
+          {hasEmptyCourtSlots && !enableAITracking && (
+            <div style={{ textAlign: "center", fontSize: 12, color: "#FF9500", fontWeight: 600, padding: "4px 0 2px" }}>
+              Fill all 6 positions to enable stat tracking
+            </div>
+          )}
+          <div style={{ display: "flex", gap: "8px", justifyContent: "center", padding: "4px 0" }}>
+            {!enableAITracking && renderActionZones()}
+          </div>
         </div>
       )}
 

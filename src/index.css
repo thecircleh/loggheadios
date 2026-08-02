@@ -58,6 +58,8 @@ body {
 }
 
 .ios-header-bar.header-scroll-hidden {
+  position: fixed;
+  width: 100%;
   transform: translateY(-100%);
 }
 
@@ -67,9 +69,9 @@ body {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 14px;
-  color: #bbb;
-  padding: 2px 32px 4px;
+  font-size: 20px;
+  color: #aaa;
+  padding: 4px 32px 6px;
   line-height: 1;
   width: 100%;
   text-align: center;
@@ -77,7 +79,7 @@ body {
 }
 
 .header-collapse-btn:hover {
-  color: #888;
+  color: #555;
 }
 
 .header-reveal-btn {
@@ -85,24 +87,24 @@ body {
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 999; /* sits below the header (z-index 1000) so header covers it */
+  z-index: 999;
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(0, 0, 0, 0.18);
   border-top: none;
-  border-radius: 0 0 16px 16px;
-  padding: 4px 28px 8px;
+  border-radius: 0 0 20px 20px;
+  padding: 6px 36px 10px;
   cursor: pointer;
-  font-size: 14px;
-  color: #555;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.12);
+  font-size: 22px;
+  color: #444;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
   line-height: 1;
   white-space: nowrap;
 }
 
 .header-reveal-btn:hover {
-  color: #222;
+  color: #111;
 }
 
 

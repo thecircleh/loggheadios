@@ -120,7 +120,7 @@ export function useAppleIAP() {
             if (data.data?.giftCodes?.length > 0) {
               const newCodes = data.data.giftCodes;
               setPendingGiftCodes(prev => {
-                const updated = [...prev, ...newCodes];
+                const updated = [...new Set([...prev, ...newCodes])];
                 saveToStorage(userIdRef.current, updated);
                 return updated;
               });

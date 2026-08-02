@@ -56,24 +56,9 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
   const [updating, setUpdating] = useState(false);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("info"); // 'info' | 'error'
-  const [giftCheckoutResult, setGiftCheckoutResult] = useState(() => {
-    try {
-      const stored = sessionStorage.getItem("lh_gift_checkout_result");
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  });
-
-  const saveGiftResult = (data) => {
-    try { sessionStorage.setItem("lh_gift_checkout_result", JSON.stringify(data)); } catch {}
-    setGiftCheckoutResult(data);
-  };
-
-  const clearGiftResult = () => {
-    try { sessionStorage.removeItem("lh_gift_checkout_result"); } catch {}
-    setGiftCheckoutResult(null);
-  };
+  const [myCodes, setMyCodes] = useState([]);
+  const [codesLoading, setCodesLoading] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(null);
 
   const showMessage = (text, type = "info") => {
     setMessage(text);
@@ -104,6 +89,60 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
       setAvailableTeams(res.data.teams || []);
     } catch {}
   }, [token]);
+
+  const loadMyCodes = useCallback(async () => {
+    if (!token) return;
+    setCodesLoading(true);
+    try {
+      const res = await axios.get(`${API_URL}/api/gifts/my-codes`, {
+        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true,
+      });
+      // Deduplicate by code string in case of any legacy duplication
+      const seen = new Set();
+      const deduped = (res.data.codes || []).filter((c) => {
+        if (seen.has(c.code)) return false;
+        seen.add(c.code);
+        return true;
+      });
+      setMyCodes(deduped);
+    } catch (err) {
+      console.error("Failed to load gift codes:", err);
+    } finally {
+      setCodesLoading(false);
+    }
+  }, [token]);
+
+  const markSent = useCallback(async (code) => {
+    try {
+      await axios.post(`${API_URL}/api/gifts/mark-sent/${code}`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true,
+      });
+      await loadMyCodes();
+    } catch (err) {
+      showMessage(err.response?.data?.message || "Failed to mark code as sent.", "error");
+    }
+  }, [token, loadMyCodes]);
+
+  const retireCode = useCallback(async (code) => {
+    try {
+      const res = await axios.post(`${API_URL}/api/gifts/retire/${code}`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+        withCredentials: true,
+      });
+      showMessage(`Code retired. New code generated: ${res.data.replacement.code}`);
+      await loadMyCodes();
+    } catch (err) {
+      showMessage(err.response?.data?.message || "Failed to retire code.", "error");
+    }
+  }, [token, loadMyCodes]);
+
+  const copyCode = useCallback((code) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCode(code);
+    setTimeout(() => setCopiedCode(null), 2000);
+  }, []);
 
   const claimPlayer = async (playerId) => {
     setLoadingClaim(true);
@@ -284,9 +323,9 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
             headers: { Authorization: `Bearer ${token}` },
             withCredentials: true,
           });
-          saveGiftResult(res.data);
           const count = res.data.codes?.length || 1;
-          showMessage(`Gift purchase successful. ${count} code${count > 1 ? "s" : ""} ready.`);
+          showMessage(`Gift purchase successful — ${count} code${count > 1 ? "s" : ""} added to My Gift Codes below.`);
+          await loadMyCodes();
         } else {
           showMessage("Purchase successful.");
         }
@@ -304,6 +343,11 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
 
     processCheckout();
   }, [token]);
+
+  // Load gift codes whenever the user/token is ready
+  useEffect(() => {
+    if (user?.id && token) loadMyCodes();
+  }, [user?.id, token, loadMyCodes]);
 
   // Scroll to subscription section
   useEffect(() => {
@@ -325,6 +369,7 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
       setGiftCode("");
       // Refresh user immediately so giftSubscription state reflects in UI
       await refreshUser();
+      await loadMyCodes();
       showMessage(
         `Gift redeemed! Access active until ${new Date(res.data.endsAt).toLocaleDateString()}`
       );
@@ -578,49 +623,83 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
         </div>
       )}
 
-      {/* ── Gift Code Result (after purchase) ── */}
-      {!isNative && giftCheckoutResult?.codes?.length > 0 && (
+      {/* ── My Gift Codes ── */}
+      {(myCodes.length > 0 || codesLoading) && (
         <div className="card" style={{ marginTop: 14 }}>
-          <p className="card-title">🎁 Gift Purchase Successful</p>
-          <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 10 }}>
-            Share {giftCheckoutResult.codes.length > 1 ? "these codes" : "this code"} with the recipient{giftCheckoutResult.codes.length > 1 ? "s" : ""}:
-          </p>
-          {giftCheckoutResult.codes.map((code) => (
-            <div
-              key={code}
-              style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}
-            >
-              <div className="gift-code-display" style={{ flex: 1 }}>{code}</div>
-              <button
-                type="button"
-                className="primary-button"
-                style={{ width: "auto", padding: "8px 14px" }}
-                onClick={() => navigator.clipboard.writeText(code)}
-              >
-                Copy
-              </button>
-            </div>
-          ))}
-          {giftCheckoutResult.codes.length > 1 && (
-            <button
-              type="button"
-              className="primary-button"
-              style={{ marginTop: 4 }}
-              onClick={() =>
-                navigator.clipboard.writeText(giftCheckoutResult.codes.join("\n"))
-              }
-            >
-              Copy All Codes
-            </button>
+          <p className="card-title">🎁 My Gift Codes</p>
+
+          {codesLoading && (
+            <p style={{ fontSize: 14, color: "var(--text-muted)" }}>Loading…</p>
           )}
-          <button
-            type="button"
-            className="secondary-button"
-            style={{ marginTop: 8, width: "100%" }}
-            onClick={clearGiftResult}
-          >
-            Dismiss
-          </button>
+
+          {/* Available */}
+          {myCodes.filter(c => c.status === "available").length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "#34C759", letterSpacing: 1, marginBottom: 8 }}>
+                Available
+              </p>
+              {myCodes.filter(c => c.status === "available").map(c => (
+                <div key={c._id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                  <div className="gift-code-display" style={{ flex: 1, minWidth: 180 }}>{c.code}</div>
+                  <button type="button" className="primary-button" style={{ width: "auto", padding: "8px 14px" }}
+                    onClick={() => copyCode(c.code)}>
+                    {copiedCode === c.code ? "Copied!" : "Copy"}
+                  </button>
+                  <button type="button" className="secondary-button" style={{ width: "auto", padding: "8px 14px" }}
+                    onClick={() => markSent(c.code)}>
+                    Mark as Sent
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Pending Redemption */}
+          {myCodes.filter(c => c.status === "sent").length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "#FF9500", letterSpacing: 1, marginBottom: 8 }}>
+                Pending Redemption
+              </p>
+              {myCodes.filter(c => c.status === "sent").map(c => (
+                <div key={c._id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                  <div className="gift-code-display" style={{ flex: 1, minWidth: 180, opacity: 0.7 }}>{c.code}</div>
+                  <button type="button" className="primary-button" style={{ width: "auto", padding: "8px 14px" }}
+                    onClick={() => copyCode(c.code)}>
+                    {copiedCode === c.code ? "Copied!" : "Copy"}
+                  </button>
+                  <button type="button" className="secondary-button"
+                    style={{ width: "auto", padding: "8px 14px", borderColor: "#FF3B30", color: "#FF3B30" }}
+                    onClick={() => {
+                      if (window.confirm("Pull back this code? It will be retired and a new code will be generated to replace it.")) {
+                        retireCode(c.code);
+                      }
+                    }}>
+                    Pull Back
+                  </button>
+                </div>
+              ))}
+              <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                Pull Back retires the sent code and generates a fresh one — prevents two copies of the same code being active.
+              </p>
+            </div>
+          )}
+
+          {/* Redeemed */}
+          {myCodes.filter(c => c.status === "redeemed").length > 0 && (
+            <div>
+              <p style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", color: "var(--text-muted)", letterSpacing: 1, marginBottom: 8 }}>
+                Redeemed
+              </p>
+              {myCodes.filter(c => c.status === "redeemed").map(c => (
+                <div key={c._id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, opacity: 0.5 }}>
+                  <div className="gift-code-display" style={{ flex: 1, minWidth: 180, fontSize: 14 }}>{c.code}</div>
+                  <span style={{ fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                    {c.redeemedAt ? new Date(c.redeemedAt).toLocaleDateString() : "Redeemed"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

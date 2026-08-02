@@ -4,16 +4,16 @@ import { useNavigate, useLocation } from "react-router-dom";
 const BottomTabBar = ({ isNative }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [openMenu, setOpenMenu] = useState(null); // 'log' | 'stats' | null
+  const [openMenu, setOpenMenu] = useState(null);
 
   if (!isNative) return null;
 
   const hiddenPaths = ["/login", "/register"];
   if (hiddenPaths.includes(location.pathname)) return null;
 
-  const isActive = (paths) => paths.some(p =>
+  const isActive = (paths, exclude) => paths.some(p =>
     p === "/" ? location.pathname === "/" : location.pathname.startsWith(p)
-  );
+  ) && (!exclude || !exclude.some(e => location.pathname.startsWith(e)));
 
   const toggleMenu = (key) => setOpenMenu(prev => prev === key ? null : key);
   const closeMenus = () => setOpenMenu(null);
@@ -55,7 +55,7 @@ const BottomTabBar = ({ isNative }) => {
     },
     {
       key: "log",
-      label: "Log Stats",
+      label: "Log",
       paths: ["/stat-book", "/match-tracking", "/classic"],
       hasMenu: true,
       onPress: () => toggleMenu("log"),
@@ -78,7 +78,7 @@ const BottomTabBar = ({ isNative }) => {
     },
     {
       key: "stats",
-      label: "View Stats",
+      label: "Stats",
       paths: ["/stats", "/coaches-corner/stats"],
       hasMenu: true,
       onPress: () => toggleMenu("stats"),
@@ -95,10 +95,44 @@ const BottomTabBar = ({ isNative }) => {
       ),
     },
     {
+      key: "coaches",
+      label: "Coaches",
+      paths: ["/coaches-corner"],
+      exclude: ["/coaches-corner/stats"],
+      hasMenu: true,
+      onPress: () => toggleMenu("coaches"),
+      menuItems: [
+        { label: "Coaches' Corner Home", path: "/coaches-corner" },
+        { label: "My Drills", path: "/coaches-corner/saved-drills" },
+        { label: "Practice Assist", path: "/coaches-corner/practice" },
+        { label: "Jobs", path: "/coaches-corner/jobs" },
+      ],
+      icon: (active) => (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+          <rect x="4" y="2" width="14" height="18" rx="2"
+            fill={active ? "#34C759" : "none"}
+            stroke={active ? "#34C759" : "#8E8E93"}
+            strokeWidth="1.8"/>
+          <path d="M8 2V4M14 2V4" stroke={active ? "white" : "#8E8E93"} strokeWidth="1.8" strokeLinecap="round"/>
+          <rect x="4" y="2" width="14" height="4" rx="1"
+            fill={active ? "#2aa84a" : "#8E8E93"}
+            stroke="none"/>
+          <path d="M7 11H15M7 14H12"
+            stroke={active ? "white" : "#C7C7CC"}
+            strokeWidth="1.8" strokeLinecap="round"/>
+        </svg>
+      ),
+    },
+    {
       key: "profile",
       label: "Profile",
-      paths: ["/profile"],
-      onPress: () => navigateTo("/profile"),
+      paths: ["/profile", "/roi-calendar"],
+      hasMenu: true,
+      onPress: () => toggleMenu("profile"),
+      menuItems: [
+        { label: "My Profile", path: "/profile" },
+        { label: "VB Expense Tracker", path: "/roi-calendar" },
+      ],
       icon: (active) => (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
           <circle cx="12" cy="8" r="4"
@@ -144,7 +178,7 @@ const BottomTabBar = ({ isNative }) => {
         zIndex: 9000,
       }}>
         {tabs.map((tab) => {
-          const active = isActive(tab.paths);
+          const active = isActive(tab.paths, tab.exclude);
           const menuOpen = openMenu === tab.key;
 
           return (

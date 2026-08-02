@@ -5,6 +5,9 @@ import App from "./App";
 import { AuthProvider } from "./components/AuthContext";
 import "./index.css";
 import "./global.css";
+import { setupStatRetryInterceptor } from "./utils/statRetryInterceptor";
+
+setupStatRetryInterceptor();
 
 // 🔥 FORCE CACHE CLEAR ON LOAD
 if ('caches' in window) {

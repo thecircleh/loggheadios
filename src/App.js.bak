@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
+import { useOfflineActionQueue } from "./hooks/useOfflineActionQueue";
 import {
   BrowserRouter as Router,
   Routes,
@@ -13,6 +14,7 @@ import axios from "axios";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { TouchBackend } from "react-dnd-touch-backend";
+import Clarity from '@microsoft/clarity';
 import { AuthProvider, useAuth } from "./components/AuthContext";
 // Component imports
 import VolleyballCourt from "./components/VolleyballCourt";
@@ -45,9 +47,12 @@ import { useCollaborative } from "./components/collaborative/CollaborativeProvid
 import { CollaborativeProvider } from "./components/collaborative/CollaborativeProvider";
 import CoachesCorner from "./components/CoachesCorner";
 import CoachesCornerHome from "./components/CoachesCornerHome";
+import ROICalendar from "./components/ROICalendar";
 import SavedDrillsPage from "./components/CoachesCornerPages/SavedDrillsPage";
 import DrillDetailPage from "./components/CoachesCornerPages/DrillDetailPage";
 import EditDrillPage from "./components/CoachesCornerPages/EditDrillPage";
+import GiftSubscriptionPage from "./components/GiftSubscriptionPage";
+import GiftSuccessPage from "./components/GiftSuccessPage";
 import ReferralPage from "./components/ReferralPage";
 import CoachCourt from "./components/coachCourt";
 import CoachStats from "./components/coachStats";
@@ -61,12 +66,14 @@ import PracticeHomePage from "./components/PracticeHomePage";
 import PracticePlannerPage from "./components/PracticePlannerPage";
 import PracticeLivePage from "./components/PracticeLivePage";
 import PracticeRecapPage from "./components/PracticeRecapPage";
+import BottomTabBar from "./components/BottomTabBar";
 
 
 // Constants
 const getApiUrl = () => {
-  if (window.location.hostname.startsWith("10.")) {
-    return `http://${window.location.hostname}:3000`;
+  const h = window.location.hostname;
+  if (!window.Capacitor?.isNativePlatform?.() && (h === 'localhost' || h === '127.0.0.1' || h.startsWith("10."))) {
+    return `http://${h}:3000`;
   }
   return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
 };
@@ -78,7 +85,12 @@ const PERIODIC_SAVE_INTERVAL = 300000;
 
 
 
-  // 5 minutes
+ const isNativePlatform = !!(window.Capacitor?.isNativePlatform?.());
+ if (process.env.NODE_ENV !== "development" && !isNativePlatform) {
+  Clarity.init("x4h28kex3q");
+};
+
+ // 5 minutes
  
 
 console.log(`Loggerhead deployed version: ${APP_VERSION}`);
@@ -228,10 +240,12 @@ const useDevice = () => {
       window.matchMedia("(min-width: 769px)"),
     ];
  
+    let debounceTimer;
     const update = () => {
-      setDevice(getDevice());
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => setDevice(getDevice()), 250);
     };
- 
+
     // Listen to all media query changes
     mediaQueries.forEach(mq => {
       if (mq.addEventListener) {
@@ -241,15 +255,16 @@ const useDevice = () => {
         mq.addListener(update);
       }
     });
- 
+
     // Listen to resize events (handles orientation change, viewport resize)
     window.addEventListener("resize", update);
-    
+
     // Listen to orientation change events (additional coverage)
     window.addEventListener("orientationchange", update);
- 
+
     // Cleanup
     return () => {
+      clearTimeout(debounceTimer);
       mediaQueries.forEach(mq => {
         if (mq.removeEventListener) {
           mq.removeEventListener("change", update);
@@ -366,6 +381,7 @@ function PrivateRoute({ children, requiredRole }) {
   const { user, token, loading } = useAuth();
   if (loading) return <div>Loading...</div>;
   if (!token) return <Navigate to="/login" />;
+  if (!user) return <Navigate to="/login" />;
   if (requiredRole && user?.role !== requiredRole) return <Navigate to="/settings" replace />;
   return children;
 }
@@ -622,6 +638,75 @@ function AppWrapper() {
 }   
   
 
+function BlogDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
+  return (
+    <div className="ios-nav-dropdown-wrapper" onMouseEnter={() => onOpen('blog')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}>
+      <a href="#" onClick={(e) => { e.preventDefault(); isOpen ? onClose() : onOpen('blog'); }} onFocus={() => onOpen('blog')} className="ios-nav-link">
+        Blog<span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
+      </a>
+      {isOpen && (
+        <div className="ios-dropdown-menu">
+          <a href="https://www.loggerhead.app/blog" target="_blank" rel="noopener noreferrer" onClick={onClose} className="ios-dropdown-item primary-green">See the Blog</a>
+          <a href="/blogs/submit" onClick={onClose} className="ios-dropdown-item">Submit a Blog</a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
+  return (
+    <div className="ios-nav-dropdown-wrapper" onMouseEnter={() => onOpen('stats')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}>
+      <a href="#" onClick={(e) => { e.preventDefault(); isOpen ? onClose() : onOpen('stats'); }} onFocus={() => onOpen('stats')} className="ios-nav-link">
+        Stats<span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
+      </a>
+      {isOpen && (
+        <div className="ios-dropdown-menu">
+          <a href="/stats" onClick={onClose} className="ios-dropdown-item">Stat Book/Classic Stats</a>
+          <a href="/coaches-corner/stats" onClick={onClose} className="ios-dropdown-item">Match Mode Stats</a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LoggingModeDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
+  return (
+    <div className="ios-nav-dropdown-wrapper" onMouseEnter={() => onOpen('modes')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}>
+      <a href="#" onClick={(e) => { e.preventDefault(); isOpen ? onClose() : onOpen('modes'); }} onFocus={() => onOpen('modes')} className="ios-nav-link">
+        Logging Modes<span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
+      </a>
+      {isOpen && (
+        <div className="ios-dropdown-menu">
+          <a href="/stat-book" onClick={onClose} className="ios-dropdown-item">Stat Book Mode</a>
+          <a href="/match-tracking" onClick={onClose} className="ios-dropdown-item">Match Mode</a>
+          <a href="/classic" onClick={onClose} className="ios-dropdown-item">Classic Mode</a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CoachesCornerDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
+  return (
+    <div className="ios-nav-dropdown-wrapper" onMouseEnter={() => onOpen('coaches')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}>
+      <a href="#" onClick={(e) => { e.preventDefault(); isOpen ? onClose() : onOpen('coaches'); }} onFocus={() => onOpen('coaches')} className="ios-nav-link">
+        Coaches' Corner<span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
+      </a>
+      {isOpen && (
+        <div className="ios-dropdown-menu">
+          <a href="/coaches-corner" onClick={onClose} className="ios-dropdown-item primary-green">Home</a>
+          <a href="/coaches-corner/drills" onClick={onClose} className="ios-dropdown-item">My Drills</a>
+          <a href="/coaches-corner/practice" onClick={onClose} className="ios-dropdown-item">Practice Assist</a>
+          <a href="/coaches-corner/referrals" onClick={onClose} className="ios-dropdown-item">Referrals</a>
+          <a href="/coaches-corner/jobs" onClick={onClose} className="ios-dropdown-item">Jobs</a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function AppContent({ matchSettings, setMatchSettings }) {
   // FIXED: Add missing hooks at the top
   const {
@@ -631,13 +716,39 @@ function AppContent({ matchSettings, setMatchSettings }) {
   setUser,
   hasUnusedMatchKey,
   canUseFreeMode,
+  hasPremium,
 } = useAuth();
   const location = useLocation();
+
+  const { enqueue: enqueueOffline, pendingCount: offlinePending, isOnline } =
+    useOfflineActionQueue({ token, enabled: !!hasPremium });
   const navigate = useNavigate();
   
+  const clarityIdentifiedRef = useRef(false);
+
+useEffect(() => {
+  if (
+    clarityIdentifiedRef.current ||
+    !user ||
+    process.env.NODE_ENV === "development" ||
+    isNativeApp
+  ) {
+    return;
+  }
+
+  Clarity.identify(
+    String(user.id || user._id),
+    undefined,
+    undefined,
+    user.email || ""
+  );
+
+  clarityIdentifiedRef.current = true;
+}, [user]);
   // State variables
   const [loadingMatch, setLoadingMatch] = useState(true);
   const [showHeader, setShowHeader] = useState(true);
+  const [headerScrollHidden, setHeaderScrollHidden] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
   const [courtPlayers, setCourtPlayers] = useState(
     Array.from({ length: 6 }, (_, i) => ({ id: `empty-${i}`, name: "?", number: "?", isLibero: false }))
@@ -698,15 +809,24 @@ const [pendingMatchMode, setPendingMatchMode] = useState(null);
   const [hasEmailConsent, setHasEmailConsent] = useState(false);
   
 const [activeDropdown, setActiveDropdown] = useState(null); // 'blog', 'coaches', or null
-
+const dropdownCloseTimer = useRef(null);
 
 const handleToggleDropdown = (name) => {
   setActiveDropdown(activeDropdown === name ? null : name);
 };
 
+const handleOpenDropdown = (name) => {
+  clearTimeout(dropdownCloseTimer.current);
+  setActiveDropdown(name);
+};
+
 const closeAllDropdowns = () => {
   setActiveDropdown(null);
-  setShowMobileMenu(false); 
+  setShowMobileMenu(false);
+};
+
+const scheduleCloseDropdowns = () => {
+  dropdownCloseTimer.current = setTimeout(() => setActiveDropdown(null), 150);
 };
 
 const [setEndingDialog, setSetEndingDialog] = useState({
@@ -724,6 +844,7 @@ const [setEndingDialog, setSetEndingDialog] = useState({
   // Refs
   const syncPayloadRef = useRef({});
   const creditedPlayersThisSetRef = useRef(new Set());
+  const creditingInProgressRef = useRef(false);
   const firstServeHandledRef = useRef(false);
   const previousPathname = useRef(location.pathname);
   const isRestoringMatchRef = useRef(false);
@@ -735,6 +856,7 @@ const [setEndingDialog, setSetEndingDialog] = useState({
 const saveInFlightRef = useRef(false);
 
 const { isMobile, isPortrait, isTouch } = useDevice();
+const isNativeApp = !!(window.Capacitor?.isNativePlatform?.());
 
   // Collaborative hooks
   const {
@@ -964,7 +1086,7 @@ const saveMatchData = useCallback(async (showAlert = false) => {
       userId: user.id,
       timestamp: new Date().toISOString(),
       teamName: matchSettings?.teamName || "",
-      opponentName: opponentName || "Opponent",
+      opponentName: matchSettings?.opponentName || opponentName || "Opponent",
       eventName: matchSettings?.eventName || "",
       location: matchSettings?.location || "",
       currentSet: matchSettings?.currentSet || 1,
@@ -1134,14 +1256,19 @@ const maybeCreditGamesPlayed = useCallback(async (playerId, forceCredit = false,
     const maxSetsLimit = matchSettings?.totalSets || 3;
     console.log(`Using maxSetsLimit: ${maxSetsLimit} for player ${playerId}`);
     
-    const response = await axios.post(`${API_URL}/api/players/increment-games-played`, {
-      playerIds: [playerId],
-      matchId: currentMatchId,
-      maxSetsLimit: maxSetsLimit,
-    }, {
-      headers: { Authorization: `Bearer ${token}` },
-      withCredentials: true,
-    });
+    const response = hasPremium
+      ? await enqueueOffline({
+          url: `${API_URL}/api/players/increment-games-played`,
+          data: { playerIds: [playerId], matchId: currentMatchId, maxSetsLimit },
+        })
+      : await axios.post(`${API_URL}/api/players/increment-games-played`, {
+          playerIds: [playerId],
+          matchId: currentMatchId,
+          maxSetsLimit: maxSetsLimit,
+        }, {
+          headers: { Authorization: `Bearer ${token}` },
+          withCredentials: true,
+        });
 
     const results = response.data.results || [];
     const playerResult = results.find(r => r.playerId === playerId);
@@ -1178,60 +1305,68 @@ const maybeCreditGamesPlayed = useCallback(async (playerId, forceCredit = false,
     
     return false;
   }
-}, [currentMatchId, token, matchSettings?.totalSets]);
+}, [currentMatchId, token, matchSettings?.totalSets, hasPremium, enqueueOffline]);
 
 
 
 
 const creditInitialCourtPlayers = useCallback(async () => {
-  console.log("🎯 creditInitialCourtPlayers: Starting initial court player credits");
-  
-  // ✅ CRITICAL: Don't try to credit if match isn't ready yet
+  // Lock: only one invocation runs at a time regardless of how fast React re-fires the effect.
+  // Production React is much faster than dev — without this lock the effect can re-fire
+  // before the first await populates the ref, bypassing all ref-based guards.
+  if (creditingInProgressRef.current) {
+    console.log("⏭️ creditInitialCourtPlayers already in progress - skipping");
+    return;
+  }
+
   if (!currentMatchId) {
     console.warn("⚠️ No currentMatchId - match not ready yet, skipping credit");
     return;
   }
-  
-  // ✅ NEW: Don't try to credit if court is empty
   if (!courtPlayers || courtPlayers.length === 0) {
     console.warn("⚠️ No court players available - skipping credit");
     return;
   }
-  
+
   const validCourtPlayers = courtPlayers.filter(p => p && p.id && p.name !== "?");
-  console.log(`Found ${validCourtPlayers.length} valid court players to credit`);
-  
-  // ✅ NEW: Safeguard - don't credit if no valid players
   if (validCourtPlayers.length === 0) {
     console.log("ℹ️ Court is empty - skipping initial credit");
     return;
   }
-  
-  let creditCount = 0;
-  for (const player of validCourtPlayers) {
-    if (!creditedPlayersThisSetRef.current.has(player.id)) {
-      const success = await maybeCreditGamesPlayed(
-        player.id,
-        false,
-        "initial_court_setup"
-      );
-      if (success) {
-        creditCount++;
-      }
-    } else {
-      console.log(`⏭️ Player ${player.id} (${player.name}) already credited this set, skipping`);
-    }
+  if (creditedPlayersThisSetRef.current.size > 0) {
+    console.log("ℹ️ Players already credited this set - skipping");
+    return;
   }
-  
-  console.log(`✅ Credited ${creditCount} initial court players this set`);
+
+  creditingInProgressRef.current = true;
+  console.log("🎯 creditInitialCourtPlayers: Starting initial court player credits");
+
+  try {
+    let creditCount = 0;
+    for (const player of validCourtPlayers) {
+      if (!creditedPlayersThisSetRef.current.has(player.id)) {
+        const success = await maybeCreditGamesPlayed(
+          player.id,
+          false,
+          "initial_court_setup"
+        );
+        if (success) creditCount++;
+      } else {
+        console.log(`⏭️ Player ${player.id} (${player.name}) already credited this set, skipping`);
+      }
+    }
+    console.log(`✅ Credited ${creditCount} initial court players this set`);
+  } finally {
+    creditingInProgressRef.current = false;
+  }
 }, [currentMatchId, courtPlayers, maybeCreditGamesPlayed]);
 
 const resetGamesPlayedForNewSet = useCallback(() => {
   console.log("🔄 Resetting games played tracking for new set");
   creditedPlayersThisSetRef.current.clear();
+  creditingInProgressRef.current = false;
   setCreditedPlayersThisSet([]);
   firstServeHandledRef.current = false;
-  
   console.log("ℹ️ Credits will be set when court is populated");
 }, []);
 
@@ -2633,7 +2768,7 @@ const shouldAttachAccessKey =
 payload = {
   userId: user?.id,
   teamName: newSettings?.teamName || "Our Team",
-  opponentName: newSettings?.opponentName || opponentName || "Opponent",
+  opponentName: newSettings?.opponentName || matchSettings?.opponentName || opponentName || "Opponent",
   eventName: newSettings?.eventName || "",
   location: newSettings?.location || "",
   currentSet: 1,
@@ -2685,7 +2820,7 @@ payload = {
 
     setMatchSettings({
       teamName: newMatch.teamName,
-      opponentName: newMatch.opponentName || newSettings?.opponentName || opponentName || "Opponent",
+      opponentName: newMatch.opponentName || newSettings?.opponentName || matchSettings?.opponentName || opponentName || "Opponent",
       eventName: newMatch.eventName || "",
       location: newMatch.location || "",
       currentSet: newMatch.currentSet || 1,
@@ -3115,13 +3250,18 @@ const handleDeletePlayer = useCallback(async (id) => {
     try {
       console.log(`Removing games played credit for player: ${playerId}`);
       
-      const response = await axios.post(`${API_URL}/api/players/decrement-games-played`, {
-        playerIds: [playerId],
-        matchId: currentMatchId,
-      }, {
-        headers: { Authorization: `Bearer ${token}` },
-        withCredentials: true,
-      });
+      const response = hasPremium
+        ? await enqueueOffline({
+            url: `${API_URL}/api/players/decrement-games-played`,
+            data: { playerIds: [playerId], matchId: currentMatchId },
+          })
+        : await axios.post(`${API_URL}/api/players/decrement-games-played`, {
+            playerIds: [playerId],
+            matchId: currentMatchId,
+          }, {
+            headers: { Authorization: `Bearer ${token}` },
+            withCredentials: true,
+          });
 
       creditedPlayersThisSetRef.current.delete(playerId);
       setCreditedPlayersThisSet(prev => prev.filter(id => id !== playerId));
@@ -3132,7 +3272,7 @@ const handleDeletePlayer = useCallback(async (id) => {
       console.error(`Failed to remove games played credit for player ${playerId}:`, err.response?.data || err.message);
       return false;
     }
-  }, [currentMatchId, token]);
+  }, [currentMatchId, token, hasPremium, enqueueOffline]);
 
   const handlePlayerCreate = useCallback(async (playerData) => {
     if (!user?.id || !matchSettings?.teamName) {
@@ -3207,40 +3347,7 @@ const handleDeletePlayer = useCallback(async (id) => {
     }
   }, [user?.id, courtPlayers]);
 
-  const SaveStatusIndicator = useCallback(() => {
-    if (!saveStatus) return null;
-    
-    const statusConfig = {
-      saving: { text: "Saving...", color: "#FFA500", icon: "Loading" },
-      saved: { text: "Saved", color: "#4CAF50", icon: "Check" },
-      error: { text: "Save Failed", color: "#F44336", icon: "Error" }
-    };
-    
-    const config = statusConfig[saveStatus];
-    
-    return (
-      <div style={{
-        position: "fixed",
-        top: showHeader ? "120px" : "60px",
-        left: "10px",
-        zIndex: 1001,
-        padding: "8px 12px",
-        borderRadius: "6px",
-        fontSize: "14px",
-        background: config.color,
-        color: "white",
-        border: "none",
-        boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-        display: "flex",
-        alignItems: "center",
-        gap: "5px",
-        transition: "all 0.3s ease"
-      }}>
-        <span>{config.icon}</span>
-        <span>{config.text}</span>
-      </div>
-    );
-  }, [saveStatus, showHeader]);
+  const SaveStatusIndicator = useCallback(() => null, []);
 
 const CONSENT_INTERVAL_DAYS = 28;
 const CONSENT_MAX_DISMISSES = 3;
@@ -3886,6 +3993,7 @@ useEffect(() => {
     useEffect(() => {
     const loadMatch = async () => {
       if (!matchRestored || !currentMatchId || !user?.id) return;
+      if (matchSettings?._id === currentMatchId) return;
 
       console.log(`Loading match ${currentMatchId} for user ${user.id}`);
       setLoadingMatch(true);
@@ -4012,15 +4120,31 @@ useEffect(() => {
           }
         });
 
-        const filledCourtPlayers = [
-          ...hydratedCourtPlayers,
-          ...Array.from({ length: Math.max(0, 6 - hydratedCourtPlayers.length) }, (_, i) => ({
-            id: `empty-filler-${i}`,
-            name: "?",
-            number: "?",
-            isLibero: false,
-          }))
-        ].slice(0, 6);
+        // The match always saves courtPlayers in position order ["4","3","2","5","6","1"].
+        // Convert back to slot order using the saved positionMapping so that after any
+        // number of rotations the libero ends up in the correct physical slot.
+        const SAVE_POS_ORDER = ["4", "3", "2", "5", "6", "1"];
+        const savedMapping = match.positionMapping || { 0:'4', 1:'3', 2:'2', 3:'5', 4:'6', 5:'1' };
+
+        const filledCourtPlayers = Array(6).fill(null).map((_, slotIndex) => {
+          const posForSlot = String(savedMapping[slotIndex] ?? SAVE_POS_ORDER[slotIndex]);
+          const saveIdx = SAVE_POS_ORDER.indexOf(posForSlot);
+          const player = saveIdx >= 0 ? hydratedCourtPlayers[saveIdx] : null;
+          if (player && player.name !== "?") {
+            return { ...player, expressPosition: posForSlot };
+          }
+          return { id: `empty-${slotIndex}`, name: "?", number: "?", isLibero: false, expressPosition: posForSlot };
+        });
+
+        // Sync credited players BEFORE setCourtPlayers so the ref is already
+        // populated when VolleyballCourt's useEffect fires — prevents a second
+        // credit cycle from clearing the ref mid-loop.
+        if (match.creditedPlayersThisSet) {
+          console.log("Restoring credited players from database:", match.creditedPlayersThisSet);
+          syncCreditedPlayersFromState(match.creditedPlayersThisSet);
+        } else {
+          syncCreditedPlayersFromState([]);
+        }
 
         setCourtPlayers(filledCourtPlayers);
 
@@ -4089,13 +4213,6 @@ setSubstitutionLog(match.substitutionLog || []);
           setPositionMapping({
             0: '4', 1: '3', 2: '2', 3: '5', 4: '6', 5: '1'
           });
-        }
-
-        if (match.creditedPlayersThisSet) {
-          console.log("Restoring credited players from database:", match.creditedPlayersThisSet);
-          syncCreditedPlayersFromState(match.creditedPlayersThisSet);
-        } else {
-          syncCreditedPlayersFromState([]);
         }
 
         const totalSetsCompleted = (match.ourSetsWon || 0) + (match.opponentSetsWon || 0);
@@ -4538,124 +4655,8 @@ if (location.pathname === "/match-tracking") {
   showWaitForOwnerOverlay
 ]);
 
- const BlogDropdown = ({ isOpen, onToggle, onClose }) => {
-  return (
-    <div 
-      className="ios-nav-dropdown-wrapper" 
-      onMouseLeave={onClose} // Optional: close when mouse leaves
-    >
-      <a href="#" onClick={(e) => { e.preventDefault(); onToggle('blog'); }} className="ios-nav-link">
-        Blog
-        <span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
-      </a>
-
-      {isOpen && (
-        <div className="ios-dropdown-menu">
-          <a 
-            href="https://www.loggerhead.app/blog"
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={onClose}
-            className="ios-dropdown-item primary-green"
-          >
-            See the Blog
-          </a>
-          <a href="/blogs/submit" onClick={onClose} className="ios-dropdown-item">
-            Submit a Blog
-          </a>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const StatDropdown = ({ isOpen, onToggle, onClose }) => {
-  return (
-    <div className="ios-nav-dropdown-wrapper" onMouseLeave={onClose}>
-      <a href="#" onClick={(e) => { e.preventDefault(); onToggle('stats'); }} className="ios-nav-link">
-        Stats
-        <span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
-      </a>
-      {isOpen && (
-        <div className="ios-dropdown-menu">
-          <a href="/stats" onClick={onClose} className="ios-dropdown-item">
-            Stat Book/Classic Stats
-          </a>
-          <a href="/coaches-corner/stats"  onClick={onClose} className="ios-dropdown-item">
-            Match Mode Stats
-          </a>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const LoggingModeDropdown = ({ isOpen, onToggle, onClose }) => {
-  return (
-    <div className="ios-nav-dropdown-wrapper" onMouseLeave={onClose}>
-      <a href="#" onClick={(e) => { e.preventDefault(); onToggle('modes'); }} className="ios-nav-link">
-        Logging Modes
-        <span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
-      </a>
-      {isOpen && (
-        <div className="ios-dropdown-menu">
-          <a href="/stat-book" onClick={onClose} className="ios-dropdown-item">
-            Stat Book Mode
-          </a>
-          <a href="/match-tracking"  onClick={onClose} className="ios-dropdown-item">
-            Match Mode
-          </a>
-		  <a href="/classic"  onClick={onClose} className="ios-dropdown-item">
-            Classic Mode
-          </a>
-        </div>
-      )}
-    </div>
-  );
-};
-
-  // 🏆 COACHES CORNER DROPDOWN COMPONENT
-const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
-  return (
-    <div className="ios-nav-dropdown-wrapper" onMouseLeave={onClose}>
-      <a
-        href="#"
-        onClick={(e) => {
-          e.preventDefault();
-          onToggle("coaches");
-        }}
-        className="ios-nav-link"
-      >
-        Coaches' Corner
-        <span className={`dropdown-arrow ${isOpen ? "open" : ""}`}>›</span>
-      </a>
-
-      {isOpen && (
-        <div className="ios-dropdown-menu">
-          <a href="/coaches-corner" onClick={onClose} className="ios-dropdown-item primary-green">
-            Home
-          </a>
-
-          <a href="/coaches-corner/drills" onClick={onClose} className="ios-dropdown-item">
-            My Drills
-          </a>
-
-          <a href="/coaches-corner/practice" onClick={onClose} className="ios-dropdown-item">
-            Practice Assist
-          </a>
-
-          <a href="/coaches-corner/referrals" onClick={onClose} className="ios-dropdown-item">
-            Referrals
-          </a>
-		  
-		  <a href="/coaches-corner/jobs" onClick={onClose} className="ios-dropdown-item">
-   Jobs
-</a>
-        </div>
-      )}
-    </div>
-  );
-};
+// BlogDropdown, StatDropdown, LoggingModeDropdown, CoachesCornerDropdown
+// are defined at module level above AppContent
 
 
 
@@ -4921,8 +4922,8 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
 )}
 
 
-  {showHeader && (
-            <header className="ios-header-bar" key={location.pathname}>
+  {showHeader && !isNativeApp && (
+            <header className={`ios-header-bar${headerScrollHidden ? ' header-scroll-hidden' : ''}`} key={location.pathname}>
               <div className="ios-header-content">
                 <div className="ios-logo-title">
                   <img
@@ -4997,29 +4998,19 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
                     }
                   `}</style>
                 </div>
-                {location.pathname !== "/login" &&
-  location.pathname !== "/register" && (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-     
-
-      <button
-        className="ios-menu-toggle"
-        onClick={() => setShowMobileMenu((prev) => !prev)}
-      >
-        Menu
-      </button>
-    </div>
-)}
+                {user && location.pathname !== "/login" && location.pathname !== "/register" && (
+                  <button onClick={handleLogout} className="ios-logout-btn">
+                    Logout
+                  </button>
+                )}
               </div>
-			  
+
 {emailConsentChecked && !hasEmailConsent && showEmailConsentModal && (
   <EmailConsentModal
     onEnable={enableEmailConsent}
     onNotNow={dismissEmailConsent}
   />
 )}
-
-
 
 <NotificationModal
   open={showNotificationModal}
@@ -5029,55 +5020,73 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
   onClose={() => setShowNotificationModal(false)}
 />
 
-
-
 {location.pathname !== "/login" && location.pathname !== "/register" && (
   <nav className={`ios-nav-links ${showMobileMenu ? "visible" : ""}`}>
-    <Link to="/profile" className="ios-nav-link">Profile</Link>
-    <Link to="/settings" className="ios-nav-link">Rosters & Matches</Link>
-	<LoggingModeDropdown
-  isOpen={activeDropdown === 'modes'}
-  onToggle={handleToggleDropdown}
-  onClose={closeAllDropdowns}
-/>
-    
-   <div className="ios-nav-dropdown-wrapper">
-    <StatDropdown 
-    isOpen={activeDropdown === 'stats'} 
-    onToggle={handleToggleDropdown} 
-    onClose={closeAllDropdowns} 
-  />
-  </div>
-    
-    <div className="ios-nav-dropdown-wrapper">
-    <CoachesCornerDropdown 
-    isOpen={activeDropdown === 'coaches'} 
-    onToggle={handleToggleDropdown} 
-    onClose={closeAllDropdowns} 
-  />
-  </div>
-
-
-    <div className="ios-nav-dropdown-wrapper">
-      <BlogDropdown 
-    isOpen={activeDropdown === 'blog'} 
-    onToggle={handleToggleDropdown} 
-    onClose={closeAllDropdowns} 
-  />
-    </div>
-
-    {user && (
-      <button onClick={handleLogout} className="ios-logout-btn">
-        Logout
-      </button>
-    )}
+    <Link to="/profile" onClick={closeAllDropdowns} className="ios-nav-link">Profile</Link>
+    <Link to="/settings" onClick={closeAllDropdowns} className="ios-nav-link">Rosters & Matches</Link>
+    <LoggingModeDropdown
+      isOpen={activeDropdown === 'modes'}
+      onOpen={handleOpenDropdown}
+      onClose={closeAllDropdowns}
+      onHoverClose={scheduleCloseDropdowns}
+    />
+    <StatDropdown
+      isOpen={activeDropdown === 'stats'}
+      onOpen={handleOpenDropdown}
+      onClose={closeAllDropdowns}
+      onHoverClose={scheduleCloseDropdowns}
+    />
+    <CoachesCornerDropdown
+      isOpen={activeDropdown === 'coaches'}
+      onOpen={handleOpenDropdown}
+      onClose={closeAllDropdowns}
+      onHoverClose={scheduleCloseDropdowns}
+    />
+    <BlogDropdown
+      isOpen={activeDropdown === 'blog'}
+      onOpen={handleOpenDropdown}
+      onClose={closeAllDropdowns}
+      onHoverClose={scheduleCloseDropdowns}
+    />
+	<Link to="/roi-calendar" onClick={closeAllDropdowns} className="ios-nav-link">VB Expense Tracker</Link>
   </nav>
 )}
 
-                
+<button
+  className="header-collapse-btn"
+  onClick={() => setHeaderScrollHidden(true)}
+  aria-label="Hide navigation"
+>
+  ▴
+</button>
+
+{offlinePending > 0 && (
+  <div style={{
+    textAlign: "center",
+    fontSize: 11,
+    padding: "2px 0 4px",
+    color: isOnline ? "#FF9500" : "#FF3B30",
+    fontWeight: 600,
+    letterSpacing: 0.3,
+  }}>
+    {isOnline
+      ? `⟳ Syncing ${offlinePending} action${offlinePending > 1 ? "s" : ""}…`
+      : `⚠ ${offlinePending} action${offlinePending > 1 ? "s" : ""} queued (offline)`}
+  </div>
+)}
 
             </header>
           )}
+
+  {!isNativeApp && (
+    <button
+      className="header-reveal-btn"
+      onClick={() => setHeaderScrollHidden(false)}
+      aria-label="Show navigation"
+    >
+      ▾
+    </button>
+  )}
 
  { location.pathname !== "/" &&
   location.pathname !== "/login" &&
@@ -5165,15 +5174,19 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
               <nav style={{
                 display: "flex",
                 justifyContent: "center",
+                flexWrap: "wrap",
                 backgroundColor: "#333",
                 color: "#fff",
-                padding: "10px",
-                gap: "20px",
-                fontSize: "16px"
+                paddingTop: isNativeApp ? "max(env(safe-area-inset-top), 10px)" : "10px",
+                paddingBottom: "10px",
+                paddingLeft: "10px",
+                paddingRight: "10px",
+                gap: isMobile ? "12px" : "20px",
+                fontSize: isMobile ? "13px" : "16px"
               }}>
                 <Link to="/beta-admin" style={{ color: "#fff", textDecoration: "none" }}>Admin</Link>
                 <Link to="/env" style={{ color: "#fff", textDecoration: "none" }}>Env Check</Link>
-				<Link to="/viewer" style={{ color: "#fff", textDecoration: "none" }}>Viewer</Link>
+                <Link to="/viewer" style={{ color: "#fff", textDecoration: "none" }}>Viewer</Link>
                 <Link to="/admin/blogs" style={{ color: "#fff", textDecoration: "none" }}>Blog Approvals</Link>
               </nav>
             </header>
@@ -5221,7 +5234,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
             <Route path="/contact" element={<Contact />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsOfService />} />
-            <Route path="/beta-admin" element={<PrivateRoute requiredRole="admin"><BetaAdminPage /></PrivateRoute>} />
+            <Route path="/beta-admin" element={<PrivateRoute requiredRole="admin"><BetaAdminPage isMobile={isMobile} isNative={isNativeApp} /></PrivateRoute>} />
             <Route path="/blogs" element={<BlogList />} />
             <Route path="/blogs/:id" element={<BlogPostPage />} />
             <Route path="/blogs/submit" element={<PrivateRoute><SubmitBlog /></PrivateRoute>} />
@@ -5254,11 +5267,11 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
               <Route path="drill-generator" element={<CoachesCorner />} />
 
               {/* /coaches-corner/stats */}
-              <Route path="stats" element={<CoachStats />} />
+              <Route path="stats" element={<CoachStats isMobile={isMobile} />} />
 
               {/* /coaches-corner/drills */}
               <Route path="drills" element={<SavedDrillsPage />} />
-              <Route path="drills/:drillId" element={<DrillDetailPage />} />
+              <Route path="drills/:drillId" element={<DrillDetailPage isNative={isNativeApp} />} />
               <Route path="drills/:drillId/edit" element={<EditDrillPage />} />
 
               {/* /coaches-corner/practice routes */}
@@ -5290,17 +5303,23 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
               path="/" 
               element={
                 <PrivateRoute>
-                  <HomePage matchSettings={matchSettings} />
+                  <HomePage matchSettings={matchSettings} isMobile={isMobile} />
                 </PrivateRoute>
               } 
             />
             
+            {/* ROI Calendar */}
+            <Route
+              path="/roi-calendar"
+              element={<PrivateRoute><ROICalendar /></PrivateRoute>}
+            />
+
             {/* Profile Page */}
-            <Route 
-              path="/profile" 
+            <Route
+              path="/profile"
               element={
                 <PrivateRoute>
-                  <Profile setCurrentMatchId={setCurrentMatchId} />
+                  <Profile setCurrentMatchId={setCurrentMatchId} isNative={isNativeApp} />
                 </PrivateRoute>
               } 
             />
@@ -5385,6 +5404,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
         onOurPoint={onOurPoint}
         onOpponentPoint={onOpponentPoint}
         updatePlayersOnCourt={updateCourtPositions}
+        isRestoringMatch={isRestoringMatch}
       />
     </PrivateRoute>
   }
@@ -5443,6 +5463,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
         matchFinalizedRef={matchFinalizedRef}
         setEndingInProgressRef={setEndingInProgressRef}
         coachCourtKey={coachCourtKey}
+        isRestoringMatch={isRestoringMatch}
       />
     </SubscriptionRoute>
   }
@@ -5571,6 +5592,7 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
       token={token}
       isMatchOwner={isMatchOwner}
       updatePlayersOnCourt={updateCourtPositions}
+      isRestoringMatch={isRestoringMatch}
     />
   </SubscriptionRoute>
 } />
@@ -5588,16 +5610,19 @@ const CoachesCornerDropdown = ({ isOpen, onToggle, onClose }) => {
                     currentMatchId={currentMatchId}
                     teamName={matchSettings?.teamName}
                     opponentName={matchSettings?.opponentName || "Opponent"}
+                    isNative={isNativeApp}
                   />
                 </PrivateRoute>
               }
             />
-            
+            <Route path="/gift" element={<PrivateRoute><GiftSubscriptionPage /></PrivateRoute>} />
+            <Route path="/gift/success" element={<PrivateRoute><GiftSuccessPage /></PrivateRoute>} />
             <Route path="/ads-preview" element={<AdsPreviewPage />} />
             <Route path="*" element={<Navigate to="/" />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password/:token" element={<ResetPassword />} />
           </Routes>
+        <BottomTabBar isNative={isNativeApp} isMobile={isMobile} />
         </>
       </DndProvider>
  

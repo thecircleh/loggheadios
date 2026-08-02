@@ -210,7 +210,7 @@ export default function SavedDrillsPage() {
                 Let's build your first drill!
               </div>
 
-              <Link to="/coaches-corner" style={styles.btn}>
+              <Link to="/coaches-corner/drill-generator" style={styles.btn}>
                 Generate Your First Drill
               </Link>
             </>
