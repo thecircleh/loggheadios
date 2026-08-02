@@ -200,7 +200,10 @@ const BetaAdminPage = ({ isMobile = false, isNative = false }) => {
     const todayStart = now.startOf("day");
     const weekStart = now.startOf("week");
 
-    const activeNow = userList.filter((u) => u.isOnline).length;
+    const twelveHoursAgo = now.subtract(12, "hour");
+    const activeNow = userList.filter(
+      (u) => u.isOnline && u.lastSeen && dayjs(u.lastSeen).isAfter(twelveHoursAgo)
+    ).length;
     const activeToday = userList.filter(
       (u) => u.lastSeen && dayjs(u.lastSeen).isAfter(todayStart)
     ).length;
@@ -636,8 +639,11 @@ const handleSendEmails = async () => {
     return dayjs(lastSeen).fromNow();
   };
 
+  const INACTIVITY_MS = 12 * 60 * 60 * 1000;
   const getOnlineStatus = (u) => {
-    if (u.isOnline) return <span style={{ color: "green" }}>● Online</span>;
+    const stale = u.lastSeen && Date.now() - new Date(u.lastSeen).getTime() > INACTIVITY_MS;
+    if (u.isOnline && !stale) return <span style={{ color: "green" }}>● Online</span>;
+    if (u.isOnline && stale) return <span style={{ color: "#FF9500" }}>⏱ Timed out</span>;
     return formatLastSeen(u.lastSeen);
   };
 

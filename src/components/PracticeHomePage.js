@@ -223,9 +223,12 @@ export default function PracticeHomePage() {
                   ✓ Practice plan ready
                 </div>
               ) : (
-                <div style={styles.todayPracticeWarning}>
-                  ⚠️ Add drills to enable live practice
-                </div>
+                <button
+                  onClick={() => navigate("/coaches-corner/practice-planner")}
+                  style={styles.todayPracticeWarning}
+                >
+                  ＋ Add drills to enable live practice
+                </button>
               )}
             </div>
           </div>
@@ -411,12 +414,17 @@ const styles = {
   },
   todayPracticeWarning: {
     marginTop: 8,
-    padding: "8px 12px",
-    background: "rgba(255,255,255,0.2)",
+    padding: "10px 14px",
+    background: "rgba(255,214,10,0.25)",
+    border: "1px solid rgba(255,214,10,0.6)",
     borderRadius: 8,
     fontSize: 14,
     fontWeight: 600,
     color: "#FFD60A",
+    cursor: "pointer",
+    textAlign: "left",
+    width: "100%",
+    WebkitTapHighlightColor: "transparent",
   },
   noPracticeCard: {
     marginTop: 16,
