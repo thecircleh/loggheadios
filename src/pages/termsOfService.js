@@ -12,7 +12,7 @@ const TermsOfService = () => {
   }, []);
 
   return (
-    <div style={{ padding: '20px' }}>
+    <div style={{ padding: '20px', paddingTop: 'calc(20px + env(safe-area-inset-top, 0px))' }}>
       <div dangerouslySetInnerHTML={{ __html: html }} />
 
 

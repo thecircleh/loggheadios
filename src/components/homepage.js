@@ -75,6 +75,7 @@ const HomePage = ({ matchSettings, isMobile }) => {
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
       padding: isMobile ? '16px' : '20px',
+      paddingTop: `calc(${isMobile ? '16px' : '20px'} + env(safe-area-inset-top, 0px))`,
       paddingBottom: isMobile ? '100px' : '60px'
     },
     header: {

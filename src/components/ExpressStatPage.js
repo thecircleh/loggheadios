@@ -321,7 +321,8 @@ const orderedNumbers = React.useMemo(() => {
   const pageStyle = {
     minHeight: '100vh',
     backgroundColor: '#f8f9fa',
-    padding: isMobile ? '12px 0' : '20px 0'
+    padding: isMobile ? '12px 0' : '20px 0',
+    paddingTop: isMobile ? 'calc(12px + env(safe-area-inset-top, 0px))' : 'calc(20px + env(safe-area-inset-top, 0px))'
   };
 
   const headerStyle = {

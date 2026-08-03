@@ -2244,7 +2244,7 @@ const handleSaveInsights = async () => {
   };
  
   return (
-    <div style={{ padding: '20px', maxWidth: 1000, margin: '0 auto' }}>
+    <div style={{ padding: '20px', paddingTop: 'calc(20px + env(safe-area-inset-top, 0px))', maxWidth: 1000, margin: '0 auto' }}>
       <h2>Player Stats – {selectedTeam}</h2>
  
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>

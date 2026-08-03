@@ -1582,6 +1582,7 @@ const nextScheduled = scheduledMatches
       backgroundColor: '#F8F9FA',
       minHeight: '100vh',
       width: '100%',
+      paddingTop: "env(safe-area-inset-top, 0px)",
       paddingBottom: isMobile ? '24px' : '32px',
     },
     

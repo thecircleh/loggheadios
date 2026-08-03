@@ -598,7 +598,7 @@ const NotificationBell = ({ count, onClick }) => (
 
 function CoachBridgeJobsPage() {
   return (
-    <div style={{ height: "calc(100vh - 60px)", background: "#fff" }}>
+    <div style={{ height: "calc(100vh - 60px)", background: "#fff", paddingTop: "env(safe-area-inset-top, 0px)", boxSizing: "border-box" }}>
       <iframe
         title="CoachBridge Volleyball Jobs"
         src="https://coachbridge.org/jobs/?q=volleyball&l="
@@ -5233,7 +5233,9 @@ if (location.pathname === "/match-tracking") {
               path="/coaches-corner"
               element={
                 <PrivateRoute>
-                  <Outlet />
+                  <div style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
+                    <Outlet />
+                  </div>
                 </PrivateRoute>
               }
             >
