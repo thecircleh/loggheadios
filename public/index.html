@@ -57,10 +57,10 @@
 	
 
 
-<footer style="text-align: center; font-size: 13px; margin-top: 40px;">
+<footer id="site-footer" style="text-align: center; font-size: 13px; margin-top: 40px;">
   <a href="/login">Login</a> |
   <a href="/register">Register</a> |
-  <a id="faq-link" href="#">FAQs</a> |  
+  <a id="faq-link" href="#">FAQs</a> |
   <a id="howto-link" href="#">Getting Started</a> |
   <a href="/about">About</a> |
   <a href="/contact">Contact</a> |
@@ -75,13 +75,18 @@
     const host = window.location.hostname;
     const isCapacitor = window.location.protocol === "capacitor:";
 
-    const isDev = !isCapacitor && (
+    if (isCapacitor) {
+      var footer = document.getElementById("site-footer");
+      if (footer) footer.style.display = "none";
+      return;
+    }
+
+    const isDev =
       host === "localhost" ||
       host === "127.0.0.1" ||
       host.endsWith(".local") ||
       /^10\./.test(host) ||
-      /^192\.168\./.test(host)
-    );
+      /^192\.168\./.test(host);
 
     const publicSite = isDev
       ? "http://localhost:3001"
