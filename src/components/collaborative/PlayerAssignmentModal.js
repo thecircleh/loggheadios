@@ -178,7 +178,7 @@ const PlayerAssignmentModal = ({
         assignedByName: currentUser?.username || 'A teammate',
         players: assignmentData.players, // 🔥 Now sending array of players
         matchId: matchId,
-        matchUrl: `${window.location.origin}/express/match/${matchId}`
+        matchUrl: `https://www.loggerhead.app/express/match/${matchId}`
       }),
     });
 

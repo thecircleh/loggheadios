@@ -5,7 +5,7 @@ const PrivacyPolicy = () => {
   const [html, setHtml] = useState('');
 
   useEffect(() => {
-    fetch('\privacy_policy.html')
+    fetch('/privacy_policy.html')
       .then(res => res.text())
       .then(setHtml)
       .catch(err => console.error('Failed to load privacy policy:', err));
