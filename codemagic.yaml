@@ -184,3 +184,73 @@ workflows:
         submit_to_testflight: true
         beta_groups:
           - "Family"
+
+  loggerhead-android:
+    name: Loggerhead Android - Play Store
+    max_build_duration: 60
+    instance_type: linux_x2
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: android-release
+          include: true
+
+    environment:
+      android_signing:
+        - loggerhead_keystore
+      vars:
+        PACKAGE_NAME: "com.loggerheadstat.app"
+        REACT_APP_API_URL: "https://api.loggerhead.app"
+        APP_VERSION: "1.1"
+      node: v22.0.0
+
+    scripts:
+      - name: Install npm dependencies
+        script: |
+          cd $CM_BUILD_DIR
+          npm install
+
+      - name: Build React app
+        script: |
+          cd $CM_BUILD_DIR
+          REACT_APP_API_URL=$REACT_APP_API_URL npm run build
+
+      - name: Add Android platform
+        script: |
+          cd $CM_BUILD_DIR
+          rm -rf android
+          npx cap add android
+          npx cap sync android
+
+      - name: Add Android permissions to AndroidManifest.xml
+        script: |
+          MANIFEST=$CM_BUILD_DIR/android/app/src/main/AndroidManifest.xml
+          # RECORD_AUDIO for speech recognition
+          grep -q 'RECORD_AUDIO' "$MANIFEST" || \
+            sed -i 's|<uses-permission android:name="android.permission.INTERNET"|<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.INTERNET"|' "$MANIFEST"
+          echo "✅ AndroidManifest permissions set"
+
+      - name: Set version in build.gradle
+        script: |
+          GRADLE=$CM_BUILD_DIR/android/app/build.gradle
+          sed -i "s/versionName \".*\"/versionName \"$APP_VERSION\"/" "$GRADLE"
+          sed -i "s/versionCode .*/versionCode $BUILD_NUMBER/" "$GRADLE"
+          echo "✅ Version: $APP_VERSION ($BUILD_NUMBER)"
+
+      - name: Build release AAB
+        script: |
+          cd $CM_BUILD_DIR/android
+          ./gradlew bundleRelease
+
+    artifacts:
+      - android/app/build/outputs/bundle/release/*.aab
+      - android/app/build/outputs/apk/release/*.apk
+      - /tmp/android-build-logs/*.log
+
+    publishing:
+      google_play:
+        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal
+        submit_as_draft: true
