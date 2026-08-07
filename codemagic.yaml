@@ -249,8 +249,8 @@ workflows:
       - android/app/build/outputs/apk/release/*.apk
       - /tmp/android-build-logs/*.log
 
-    publishing:
-      google_play:
-        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
-        track: internal
-        submit_as_draft: true
+    # publishing:           # Uncomment after first manual upload to Play Console
+    #   google_play:        # and service account is configured in Codemagic env vars
+    #     credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+    #     track: internal
+    #     submit_as_draft: true
