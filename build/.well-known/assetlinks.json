@@ -1,0 +1,11 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.loggerheadstat.app",
+      "sha256_cert_fingerprints":
+        ["C6:75:37:A3:74:F7:39:5F:5F:8A:90:96:C5:5D:D8:96:A0:03:4E:8F:E2:79:33:C7:89:4A:BB:22:06:64:BA:D4"]
+    }
+  }
+]
