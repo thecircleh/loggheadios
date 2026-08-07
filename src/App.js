@@ -32,6 +32,7 @@ import About from './pages/about';
 import Contact from './pages/contact';
 import PrivacyPolicy from './pages/privacyPolicy';
 import TermsOfService from './pages/termsOfService';
+import DeleteAccount from './pages/deleteAccount';
 import StatBookContainer from "./components/StatBookContainer";
 import MatchTrackingContainer from "./components/MatchTrackingContainer";
 import ClassicContainer from "./components/ClassicContainer";
@@ -5211,6 +5212,7 @@ if (location.pathname === "/match-tracking") {
             <Route path="/contact" element={<Contact />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsOfService />} />
+            <Route path="/delete-account" element={<DeleteAccount />} />
             <Route path="/beta-admin" element={<PrivateRoute requiredRole="admin"><BetaAdminPage isMobile={isMobile} isNative={isNativeApp} /></PrivateRoute>} />
             <Route path="/blogs" element={<BlogList />} />
             <Route path="/blogs/:id" element={<BlogPostPage />} />
