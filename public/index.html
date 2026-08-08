@@ -73,7 +73,9 @@
 <script>
   (function () {
     const host = window.location.hostname;
-    const isCapacitor = window.location.protocol === "capacitor:";
+    // iOS uses capacitor:// scheme; Android uses https://localhost (androidScheme: https)
+    const isCapacitor = window.location.protocol === "capacitor:" ||
+                        !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
     if (isCapacitor) {
       var footer = document.getElementById("site-footer");
