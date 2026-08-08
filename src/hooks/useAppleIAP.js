@@ -2,8 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../components/AuthContext';
 import { getApiUrl } from '../utils/getApiUrl';
 import { APPLE_PRODUCT_IDS } from '../iap/appleProducts';
+import { ANDROID_PRODUCT_IDS } from '../iap/androidProducts';
 
 const isNativeApp = !!(window.Capacitor?.isNativePlatform?.());
+// getPlatform() returns 'ios' | 'android' | 'web'
+const isAndroid   = window.Capacitor?.getPlatform?.() === 'android';
 
 const lsKey = (userId) => `lh_native_gift_codes_${userId}`;
 
@@ -80,28 +83,38 @@ export function useAppleIAP() {
       const { store, ProductType, Platform } = CdvPurchase;
       storeRef.current = store;
 
-      // Use string literals as fallbacks in case the plugin hasn't populated enums yet
-      const APPSTORE   = Platform?.APPLE_APP_STORE   ?? 'ios-appstore';
-      const SUB_TYPE   = ProductType?.PAID_SUBSCRIPTION ?? 'paid subscription';
-      const CONS_TYPE  = ProductType?.CONSUMABLE        ?? 'consumable';
+      // Pick platform constants — fall back to string literals in case enums aren't populated
+      const PLATFORM     = isAndroid
+        ? (Platform?.GOOGLE_PLAY     ?? 'android-playstore')
+        : (Platform?.APPLE_APP_STORE ?? 'ios-appstore');
 
-      // Register subscription products
+      const PLATFORM_STR = isAndroid ? 'android-playstore' : 'ios-appstore';
+      const PRODUCT_IDS  = isAndroid ? ANDROID_PRODUCT_IDS : APPLE_PRODUCT_IDS;
+
+      const SUB_TYPE  = ProductType?.PAID_SUBSCRIPTION ?? 'paid subscription';
+      const CONS_TYPE = ProductType?.CONSUMABLE        ?? 'consumable';
+
+      // Register products on the correct storefront
       store.register([
-        { id: APPLE_PRODUCT_IDS.weekly,      type: SUB_TYPE,  platform: APPSTORE },
-        { id: APPLE_PRODUCT_IDS.monthly,     type: SUB_TYPE,  platform: APPSTORE },
-        { id: APPLE_PRODUCT_IDS.sixMonth,    type: SUB_TYPE,  platform: APPSTORE },
-        { id: APPLE_PRODUCT_IDS.annual,      type: SUB_TYPE,  platform: APPSTORE },
-        { id: APPLE_PRODUCT_IDS.matchKey,    type: CONS_TYPE, platform: APPSTORE },
-        { id: APPLE_PRODUCT_IDS.statbookKey, type: CONS_TYPE, platform: APPSTORE },
-        { id: APPLE_PRODUCT_IDS.giftAnnual,  type: CONS_TYPE, platform: APPSTORE },
+        { id: PRODUCT_IDS.weekly,      type: SUB_TYPE,  platform: PLATFORM },
+        { id: PRODUCT_IDS.monthly,     type: SUB_TYPE,  platform: PLATFORM },
+        { id: PRODUCT_IDS.sixMonth,    type: SUB_TYPE,  platform: PLATFORM },
+        { id: PRODUCT_IDS.annual,      type: SUB_TYPE,  platform: PLATFORM },
+        { id: PRODUCT_IDS.matchKey,    type: CONS_TYPE, platform: PLATFORM },
+        { id: PRODUCT_IDS.statbookKey, type: CONS_TYPE, platform: PLATFORM },
+        { id: PRODUCT_IDS.giftAnnual,  type: CONS_TYPE, platform: PLATFORM },
       ]);
 
-      // Receipt validator — sends to our Node backend which calls Apple's API
+      // Receipt validator — routes to Apple or Google endpoint depending on platform
+      const validatorUrl = isAndroid
+        ? `${getApiUrl()}/api/billing/google/verify-purchase`
+        : `${getApiUrl()}/api/billing/apple/verify-receipt`;
+
       store.validator = async (receipt, callback) => {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 20000);
         try {
-          const res = await fetch(`${getApiUrl()}/api/billing/apple/verify-receipt`, {
+          const res = await fetch(validatorUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -182,11 +195,14 @@ export function useAppleIAP() {
       });
 
       try {
-        await store.initialize([APPSTORE]);
+        await store.initialize([PLATFORM]);
         if (!cancelled) setInitialized(true);
       } catch (e) {
         if (!cancelled) setError('Failed to initialize the store: ' + e.message);
       }
+
+      // Store the platform string so purchase() can look up the right product
+      storeRef._platformStr = PLATFORM_STR;
     };
 
     init();
@@ -202,8 +218,9 @@ export function useAppleIAP() {
       setError('Purchase timed out. If you were charged, tap Restore Purchases.');
     }, 90000);
     try {
-      const product = storeRef.current.get(productId, 'ios-appstore');
-      if (!product) throw new Error('Product not found. Make sure it is registered in App Store Connect.');
+      const platformStr = isAndroid ? 'android-playstore' : 'ios-appstore';
+      const product = storeRef.current.get(productId, platformStr);
+      if (!product) throw new Error(`Product not found. Make sure it is registered in the store for ${platformStr}.`);
       const offer = product.getOffer();
       if (!offer) throw new Error('No purchase offer available for this product.');
       await offer.order();

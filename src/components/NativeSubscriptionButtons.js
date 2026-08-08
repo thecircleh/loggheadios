@@ -2,20 +2,29 @@ import React, { useState } from 'react';
 import { useAuth } from './AuthContext';
 import { useAppleIAP } from '../hooks/useAppleIAP';
 import { APPLE_SUBSCRIPTION_PLANS, APPLE_ONETIME_PRODUCTS, APPLE_PRODUCT_IDS } from '../iap/appleProducts';
+import { ANDROID_SUBSCRIPTION_PLANS, ANDROID_ONETIME_PRODUCTS, ANDROID_PRODUCT_IDS } from '../iap/androidProducts';
+
+// Detect platform — same logic as the hook
+const isAndroid = window.Capacitor?.getPlatform?.() === 'android';
+
+// Pick the right product lists/IDs for the current storefront
+const PLANS       = isAndroid ? ANDROID_SUBSCRIPTION_PLANS : APPLE_SUBSCRIPTION_PLANS;
+const ONE_TIME    = isAndroid ? ANDROID_ONETIME_PRODUCTS   : APPLE_ONETIME_PRODUCTS;
+const PRODUCT_IDS = isAndroid ? ANDROID_PRODUCT_IDS        : APPLE_PRODUCT_IDS;
 
 const NativeSubscriptionButtons = () => {
   const { hasPremium, user } = useAuth();
   const { storeProducts, purchase, restore, purchasing, restoring, error, initialized } = useAppleIAP();
   const [selected, setSelected] = useState('weekly');
 
-  const giftPrice = storeProducts[APPLE_PRODUCT_IDS.giftAnnual]?.price ?? '$59.99';
+  const giftPrice = storeProducts[PRODUCT_IDS.giftAnnual]?.price ?? '$59.99';
 
   const GiftSection = () => (
     <div style={s.giftSection}>
       <div style={s.giftTitle}>🎁 Give Loggerhead as a Gift</div>
       <div style={s.giftSub}>Buy a gift code and share it with a coach, parent, or player.</div>
       <button
-        onClick={() => purchase(APPLE_PRODUCT_IDS.giftAnnual)}
+        onClick={() => purchase(PRODUCT_IDS.giftAnnual)}
         disabled={purchasing || !initialized}
         style={s.giftBtn}
       >
@@ -29,7 +38,14 @@ const NativeSubscriptionButtons = () => {
     return sp?.price ?? plan.fallbackPrice;
   };
 
-  const selectedPlan = APPLE_SUBSCRIPTION_PLANS.find(p => p.key === selected);
+  const selectedPlan = PLANS.find(p => p.key === selected);
+
+  // Legal text differs by platform
+  const legalSubscribeText = isAndroid
+    ? 'Payment will be charged to your Google account at confirmation. Subscriptions renew automatically unless cancelled at least 24 hours before the renewal date. Manage subscriptions in Google Play → Subscriptions.'
+    : 'Payment will be charged to your Apple ID at confirmation. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period. Manage or cancel in iPhone Settings → Apple ID → Subscriptions.';
+
+  const restoreLabel = isAndroid ? 'Restore Purchases' : 'Restore Purchases';
 
   if (hasPremium) {
     return (
@@ -40,12 +56,14 @@ const NativeSubscriptionButtons = () => {
           <div style={s.activeSub}>All features are unlocked. Thank you for supporting Loggerhead!</div>
         </div>
         <button onClick={restore} disabled={restoring} style={s.restoreBtn}>
-          {restoring ? 'Checking…' : 'Restore Purchases'}
+          {restoring ? 'Checking…' : restoreLabel}
         </button>
         <GiftSection />
         {error && <div style={s.errorText}>{error}</div>}
         <div style={s.legalText}>
-          Subscriptions can be managed in your iPhone Settings → Apple ID → Subscriptions.
+          {isAndroid
+            ? 'Manage your subscription in Google Play → Subscriptions.'
+            : 'Subscriptions can be managed in your iPhone Settings → Apple ID → Subscriptions.'}
         </div>
       </div>
     );
@@ -62,7 +80,7 @@ const NativeSubscriptionButtons = () => {
 
       {/* Plan selector */}
       <div style={s.planList}>
-        {APPLE_SUBSCRIPTION_PLANS.map(plan => {
+        {PLANS.map(plan => {
           const isSel = selected === plan.key;
           return (
             <button
@@ -109,7 +127,7 @@ const NativeSubscriptionButtons = () => {
       {/* Per-match one-time keys */}
       <div style={s.section}>
         <div style={s.sectionTitle}>One-Time Match Access</div>
-        {APPLE_ONETIME_PRODUCTS.map(p => (
+        {ONE_TIME.filter(p => p.key !== 'giftAnnual').map(p => (
           <div key={p.key} style={s.oneTimeRow}>
             <div>
               <div style={s.oneTimeLabel}>{p.label}</div>
@@ -130,14 +148,10 @@ const NativeSubscriptionButtons = () => {
 
       {/* Restore + legal */}
       <button onClick={restore} disabled={restoring} style={s.restoreBtn}>
-        {restoring ? 'Checking…' : 'Restore Purchases'}
+        {restoring ? 'Checking…' : restoreLabel}
       </button>
 
-      <div style={s.legalText}>
-        Payment will be charged to your Apple ID at confirmation. Subscription automatically
-        renews unless cancelled at least 24 hours before the end of the current period.
-        Manage or cancel in iPhone Settings → Apple ID → Subscriptions.
-      </div>
+      <div style={s.legalText}>{legalSubscribeText}</div>
     </div>
   );
 };
