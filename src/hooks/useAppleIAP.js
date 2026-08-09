@@ -194,15 +194,28 @@ export function useAppleIAP() {
         }));
       });
 
+      // On Android, pass the Play licensing public key so the plugin can
+      // verify purchase signatures locally before sending to our server.
+      // This is a PUBLIC key (not a secret) — safe to include in source.
+      const GOOGLE_PLAY_PUBLIC_KEY =
+        'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA5d1EEo8L/eyDhYFOndfC' +
+        'NtOeUBrFK6KKI+RGin/CbwAKnWkNBQS6ca2AF6REEv8v1iMndK+ZumdCWh/KWp3v' +
+        'bO1grCIKsxSHC+4ZKmiHKJGf31f9UrRJrlyKsDvgjaZyEkJEtEkw6GTDVncgIvDx' +
+        'yKLYWMutGGx/gnZ17YiCvh68hrR2KZ09NODi8TOJydPiCHwD8xTOT4Z1ia0Hp5B8' +
+        'ZjLKFlh5/X0MW0luiLwU+QKOA9IPYF+mS32zJNCeoXtbW5uvPY8/bRESflXkaMxS' +
+        'miIy+Ebe8Ri8EwI9F576hSh6dOpoWBSREiamGoZtvGL10iazOLwx4sA8reBM35Nj+' +
+        'wIDAQAB';
+
+      const initArg = isAndroid
+        ? [{ platform: PLATFORM, options: { publicKey: GOOGLE_PLAY_PUBLIC_KEY } }]
+        : [PLATFORM];
+
       try {
-        await store.initialize([PLATFORM]);
+        await store.initialize(initArg);
         if (!cancelled) setInitialized(true);
       } catch (e) {
         if (!cancelled) setError('Failed to initialize the store: ' + e.message);
       }
-
-      // Store the platform string so purchase() can look up the right product
-      storeRef._platformStr = PLATFORM_STR;
     };
 
     init();
