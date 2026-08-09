@@ -235,10 +235,12 @@ workflows:
 
       - name: Set version in build.gradle
         script: |
+          # macOS (BSD) sed requires -i '' — use that form to be safe.
+          # versionCode is also passed as a Gradle flag below as a belt-and-suspenders fix.
           GRADLE=$CM_BUILD_DIR/android/app/build.gradle
-          sed -i "s/versionName \".*\"/versionName \"$APP_VERSION\"/" "$GRADLE"
-          sed -i "s/versionCode .*/versionCode $BUILD_NUMBER/" "$GRADLE"
-          echo "✅ Version: $APP_VERSION ($BUILD_NUMBER)"
+          sed -i '' "s/versionName \".*\"/versionName \"$APP_VERSION\"/" "$GRADLE"
+          sed -i '' "s/versionCode .*/versionCode $BUILD_NUMBER/" "$GRADLE"
+          echo "✅ Version: $APP_VERSION (versionCode $BUILD_NUMBER)"
 
       - name: Build release AAB
         script: |
@@ -248,7 +250,9 @@ workflows:
             -Pandroid.injected.signing.store.file=$CM_KEYSTORE_PATH \
             -Pandroid.injected.signing.store.password=$CM_KEYSTORE_PASSWORD \
             -Pandroid.injected.signing.key.alias=$CM_KEY_ALIAS \
-            -Pandroid.injected.signing.key.password=$CM_KEY_PASSWORD
+            -Pandroid.injected.signing.key.password=$CM_KEY_PASSWORD \
+            -Pandroid.injected.version.code=$BUILD_NUMBER \
+            -Pandroid.injected.version.name=$APP_VERSION
 
     artifacts:
       - android/app/build/outputs/bundle/release/*.aab
