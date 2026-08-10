@@ -257,6 +257,7 @@ workflows:
     artifacts:
       - android/app/build/outputs/bundle/release/*.aab
       - android/app/build/outputs/apk/release/*.apk
+      - android/app/build/outputs/mapping/release/mapping.txt
       - /tmp/android-build-logs/*.log
 
     # publishing:           # Uncomment after first manual upload to Play Console
