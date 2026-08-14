@@ -5,13 +5,26 @@
   
   <meta name="robots" content="noindex, nofollow" />
  <meta charset="utf-8" />
-<!-- Termly Consent Manager -->
-<script
-  type="text/javascript"
-  src="https://app.termly.io/resource-blocker/b0bdfedd-5154-4444-8088-40724aed1c6a"
-  data-name="termly"
-  data-domain-script="b0bdfedd-5154-4444-8088-40724aed1c6a"
-></script>
+<!-- Analytics & consent — skipped entirely on Capacitor native builds.
+     On web, Termly loads synchronously (blocking) so its request interception
+     is active before gtag loads — if the user rejects analytics cookies,
+     Termly suppresses the googletagmanager.com request automatically. -->
+<script>
+  (function() {
+    // iOS uses capacitor:// protocol; Android Capacitor uses https://localhost (no port)
+    var isNative = window.location.protocol === 'capacitor:' ||
+                   (window.location.hostname === 'localhost' && window.location.port === '');
+    if (isNative) return;
+    // Synchronous (blocking) load so Termly intercepts gtag before it fires
+    document.write(
+      '<script type="text/javascript"' +
+      ' src="https://app.termly.io/resource-blocker/b0bdfedd-5154-4444-8088-40724aed1c6a"' +
+      ' data-name="termly"' +
+      ' data-domain-script="b0bdfedd-5154-4444-8088-40724aed1c6a"' +
+      '><\/script>'
+    );
+  })();
+</script>
 	
     <title>Loggerhead: See-Say-Log Volleyball Stats</title>
 	
@@ -35,14 +48,21 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-KCDQGPZ42Q"></script>
+<!-- Google tag (gtag.js) — web only; Termly blocks this if analytics consent denied -->
 <script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'G-KCDQGPZ42Q');
+  (function() {
+    var isNative = window.location.protocol === 'capacitor:' ||
+                   (window.location.hostname === 'localhost' && window.location.port === '');
+    if (isNative) return;
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = 'https://www.googletagmanager.com/gtag/js?id=G-KCDQGPZ42Q';
+    document.head.appendChild(s);
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function gtag(){window.dataLayer.push(arguments);}
+    window.gtag('js', new Date());
+    window.gtag('config', 'G-KCDQGPZ42Q');
+  })();
 </script>
 
   </head>
