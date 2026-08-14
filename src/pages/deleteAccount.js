@@ -1,81 +1,143 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import axios from 'axios';
+import { useAuth } from '../components/AuthContext';
+
+const getApiUrl = () => {
+  const h = window.location.hostname;
+  if (!window.Capacitor?.isNativePlatform?.() && (h === 'localhost' || h === '127.0.0.1' || h.startsWith('10.'))) {
+    return `http://${h}:3000`;
+  }
+  return process.env.REACT_APP_API_URL || 'https://api.loggerhead.app';
+};
+
+const API_URL = getApiUrl();
 
 const DeleteAccount = () => {
-  const [submitted, setSubmitted] = useState(false);
-  const [email, setEmail] = useState('');
+  const { token, removeToken } = useAuth();
+  const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const subject = encodeURIComponent('Account Deletion Request');
-    const body = encodeURIComponent(
-      `Hello,\n\nI would like to request deletion of my Loggerhead account and all associated data.\n\nAccount email: ${email}\n\nPlease confirm once my data has been deleted.\n\nThank you.`
-    );
-    window.location.href = `mailto:admin@loggerhead.app?subject=${subject}&body=${body}`;
-    setSubmitted(true);
+  // Step 1: show warning  Step 2: confirm  Step 3: done
+  const [step, setStep] = useState(1);
+  const [confirmText, setConfirmText] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleDelete = async () => {
+    if (confirmText.trim().toUpperCase() !== 'DELETE') {
+      setError('Please type DELETE to confirm.');
+      return;
+    }
+    setError('');
+    setLoading(true);
+    try {
+      await axios.delete(`${API_URL}/api/users/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      // Clear auth state and go to confirmation screen
+      removeToken();
+      setStep(3);
+    } catch (err) {
+      console.error('Account deletion failed:', err);
+      setError(err?.response?.data?.message || 'Something went wrong. Please try again.');
+      setLoading(false);
+    }
   };
+
+  if (step === 3) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.card}>
+          <div style={styles.icon}>✅</div>
+          <h1 style={styles.title}>Account Deleted</h1>
+          <p style={styles.sub}>
+            Your account and all associated data have been permanently deleted.
+            We're sorry to see you go.
+          </p>
+          <button onClick={() => navigate('/login')} style={styles.primaryButton}>
+            Return to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.page}>
       <div style={styles.card}>
-        <h1 style={styles.title}>Delete Your Account</h1>
-        <p style={styles.sub}>
-          You can request deletion of your Loggerhead account and all associated data at any time.
-        </p>
+        {step === 1 && (
+          <>
+            <div style={styles.icon}>⚠️</div>
+            <h1 style={styles.title}>Delete Account</h1>
+            <p style={styles.sub}>
+              This action is permanent and cannot be undone.
+            </p>
 
-        <div style={styles.section}>
-          <h2 style={styles.sectionTitle}>What gets deleted</h2>
-          <ul style={styles.list}>
-            <li>Your profile and account credentials</li>
-            <li>All match and stat logs you have recorded</li>
-            <li>Roster and player data associated with your account</li>
-            <li>Subscription and billing records (where permitted by law)</li>
-            <li>Any drills, practice plans, or notes you have created</li>
-          </ul>
-        </div>
+            <div style={styles.section}>
+              <h2 style={styles.sectionTitle}>What gets deleted</h2>
+              <ul style={styles.list}>
+                <li>Your profile and login credentials</li>
+                <li>All match and stat logs you have recorded</li>
+                <li>Roster and player data associated with your account</li>
+                <li>Any active subscription will be cancelled immediately</li>
+                <li>Drills, practice plans, and notes you have created</li>
+              </ul>
+            </div>
 
-        <div style={styles.section}>
-          <h2 style={styles.sectionTitle}>How to request deletion</h2>
-          <p style={styles.body}>
-            Fill in your account email below and click the button to send us a deletion request.
-            We will process your request within <strong>30 days</strong> and send a confirmation
-            to your email address.
-          </p>
-        </div>
-
-        {submitted ? (
-          <div style={styles.success}>
-            ✅ Your email app should have opened with a pre-filled deletion request.
-            If it didn't, email us directly at{' '}
-            <a href="mailto:admin@loggerhead.app" style={styles.link}>
-              admin@loggerhead.app
-            </a>{' '}
-            with the subject "Account Deletion Request" and your account email.
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} style={styles.form}>
-            <label style={styles.label} htmlFor="del-email">
-              Account email address
-            </label>
-            <input
-              id="del-email"
-              type="email"
-              required
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={styles.input}
-            />
-            <button type="submit" style={styles.button}>
-              Send Deletion Request
-            </button>
-          </form>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 24 }}>
+              <button onClick={() => setStep(2)} style={styles.dangerButton}>
+                Continue to Delete Account
+              </button>
+              <Link to="/profile" style={styles.cancelLink}>
+                Cancel — Keep My Account
+              </Link>
+            </div>
+          </>
         )}
 
-        <p style={styles.footer}>
-          Questions? Visit our <Link to="/contact" style={styles.link}>Contact</Link> page
-          or review our <Link to="/privacy" style={styles.link}>Privacy Policy</Link>.
-        </p>
+        {step === 2 && (
+          <>
+            <div style={styles.icon}>🗑️</div>
+            <h1 style={styles.title}>Confirm Deletion</h1>
+            <p style={styles.sub}>
+              Type <strong>DELETE</strong> in the box below to permanently delete
+              your account and all data.
+            </p>
+
+            <div style={styles.form}>
+              <input
+                type="text"
+                placeholder="Type DELETE to confirm"
+                value={confirmText}
+                onChange={(e) => { setConfirmText(e.target.value); setError(''); }}
+                style={{
+                  ...styles.input,
+                  borderColor: error ? '#FF3B30' : '#D1D1D6',
+                }}
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              {error && <p style={styles.errorText}>{error}</p>}
+
+              <button
+                onClick={handleDelete}
+                disabled={loading}
+                style={{
+                  ...styles.dangerButton,
+                  opacity: loading ? 0.6 : 1,
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {loading ? 'Deleting…' : 'Permanently Delete My Account'}
+              </button>
+
+              <button onClick={() => { setStep(1); setConfirmText(''); setError(''); }} style={styles.ghostButton}>
+                Go Back
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -90,57 +152,57 @@ const styles = {
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   },
   card: {
-    maxWidth: 600,
+    maxWidth: 560,
     margin: '0 auto',
     background: '#fff',
     borderRadius: 16,
     padding: '28px 24px 32px',
     boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
   },
+  icon: {
+    fontSize: 40,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
   title: {
     margin: '0 0 8px',
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: 700,
     color: '#1C1C1E',
+    textAlign: 'center',
   },
   sub: {
-    margin: '0 0 24px',
+    margin: '0 0 20px',
     fontSize: 15,
     color: '#666',
     lineHeight: 1.5,
+    textAlign: 'center',
   },
   section: {
     marginBottom: 20,
+    background: '#FFF5F5',
+    border: '1px solid #FFD0CC',
+    borderRadius: 10,
+    padding: '14px 16px',
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 600,
-    color: '#1C1C1E',
+    color: '#C0392B',
     margin: '0 0 8px',
   },
   list: {
-    margin: '0',
-    paddingLeft: 20,
+    margin: 0,
+    paddingLeft: 18,
     color: '#444',
-    fontSize: 15,
+    fontSize: 14,
     lineHeight: 1.8,
   },
-  body: {
-    margin: 0,
-    fontSize: 15,
-    color: '#444',
-    lineHeight: 1.6,
-  },
   form: {
-    marginTop: 24,
     display: 'flex',
     flexDirection: 'column',
     gap: 12,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: 600,
-    color: '#1C1C1E',
+    marginTop: 8,
   },
   input: {
     padding: '12px 14px',
@@ -149,9 +211,14 @@ const styles = {
     border: '1.5px solid #D1D1D6',
     outline: 'none',
     background: '#FAFAFA',
+    letterSpacing: 1,
   },
-  button: {
-    marginTop: 4,
+  errorText: {
+    margin: 0,
+    fontSize: 13,
+    color: '#FF3B30',
+  },
+  dangerButton: {
     padding: '13px',
     borderRadius: 12,
     border: 'none',
@@ -160,26 +227,38 @@ const styles = {
     fontSize: 16,
     fontWeight: 600,
     cursor: 'pointer',
-  },
-  success: {
-    marginTop: 24,
-    padding: '16px',
-    background: '#F0FFF4',
-    border: '1px solid #34C759',
-    borderRadius: 10,
-    fontSize: 15,
-    color: '#1C1C1E',
-    lineHeight: 1.6,
-  },
-  footer: {
-    marginTop: 28,
-    fontSize: 13,
-    color: '#888',
     textAlign: 'center',
   },
-  link: {
+  primaryButton: {
+    display: 'block',
+    width: '100%',
+    padding: '13px',
+    borderRadius: 12,
+    border: 'none',
+    background: '#007AFF',
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 600,
+    cursor: 'pointer',
+    textAlign: 'center',
+    marginTop: 16,
+  },
+  ghostButton: {
+    padding: '11px',
+    borderRadius: 12,
+    border: '1.5px solid #D1D1D6',
+    background: 'transparent',
+    color: '#444',
+    fontSize: 15,
+    cursor: 'pointer',
+    textAlign: 'center',
+  },
+  cancelLink: {
+    textAlign: 'center',
+    fontSize: 15,
     color: '#007AFF',
     textDecoration: 'none',
+    padding: '8px 0',
   },
 };
 

@@ -837,6 +837,16 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
         Log Out
       </button>
 
+      {/* Account deletion — required by App Store guideline 5.1.1(v) */}
+      <div style={{ textAlign: 'center', marginTop: 12, marginBottom: 8 }}>
+        <a
+          href="/delete-account"
+          style={{ fontSize: 13, color: '#FF3B30', textDecoration: 'none' }}
+        >
+          Delete Account
+        </a>
+      </div>
+
       {/* ── Change Password Modal ── */}
       {showPasswordModal && (
         <div className="modal-overlay">
