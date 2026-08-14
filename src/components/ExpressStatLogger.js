@@ -159,6 +159,100 @@ const PlayerSlotCard = ({
   );
 };
 
+// ---------------------------------------------------------------------------
+// DnD sub-components — defined OUTSIDE ExpressStatLogger so React doesn't
+// treat them as new component types on every re-render (which would cause
+// unnecessary unmount/remount and break click interactions).
+// ---------------------------------------------------------------------------
+const DraggablePlayerCard = ({ player, index, children }) => {
+  const [{ isDragging }, drag, dragPreview] = useDrag(() => ({
+    type: "EXPRESS_PLAYER",
+    item: { playerIndex: index },
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+  }), [index]);
+
+  return (
+    <div
+      ref={dragPreview}
+      style={{ opacity: isDragging ? 0.4 : 1, position: 'relative' }}
+    >
+      {/* Drag handle — only this area initiates a drag */}
+      <div
+        ref={drag}
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: '22px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: isDragging ? 'grabbing' : 'grab',
+          color: '#bbb',
+          fontSize: '14px',
+          zIndex: 2,
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          touchAction: 'none',
+        }}
+        title="Drag to reorder"
+      >
+        ⠿
+      </div>
+      {children}
+    </div>
+  );
+};
+
+const DroppableSlot = ({ index, onDrop, children }) => {
+  const [{ isOver }, drop] = useDrop(() => ({
+    accept: "EXPRESS_PLAYER",
+    drop: (item) => {
+      if (onDrop) onDrop(item.playerIndex, index);
+    },
+    collect: (monitor) => ({
+      isOver: monitor.isOver(),
+    }),
+  }), [index, onDrop]);
+
+  return (
+    <div
+      ref={drop}
+      style={{
+        backgroundColor: isOver ? 'rgba(0, 122, 255, 0.1)' : 'transparent',
+        borderRadius: '8px',
+        transition: 'background-color 0.2s ease',
+        border: isOver ? '2px dashed #007AFF' : '2px solid transparent',
+        position: 'relative',
+      }}
+    >
+      {isOver && (
+        <div style={{
+          position: 'absolute',
+          top: '-25px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: '#007AFF',
+          color: 'white',
+          padding: '2px 0px',
+          borderRadius: '4px',
+          fontSize: '10px',
+          fontWeight: '600',
+          zIndex: 10,
+          whiteSpace: 'nowrap'
+        }}>
+          Will bring dragged player here
+        </div>
+      )}
+      {children}
+    </div>
+  );
+};
+// ---------------------------------------------------------------------------
+
 const ExpressStatLogger = ({
   courtPlayers = [],  
   deactivatedPlayers = [],
@@ -214,6 +308,7 @@ const ExpressStatLogger = ({
    const { user } = useAuth();
   const [allRosterPlayers, setAllRosterPlayers] = useState([]);
   const [playerOnOffStatus, setPlayerOnOffStatus] = useState({});
+  const [playerDisplayOrder, setPlayerDisplayOrder] = useState([]);
 
 
   // ========================================================================
@@ -633,25 +728,36 @@ useEffect(() => {
         gameState,
         fromUser: data.username
       });
-      
-      // Skip if this is our own change
-      if (data.userId === getCurrentUserId()) {
-        console.log('⏩ Skipping own game state change');
-        return;
-      }
-      
-      // This is a catch-all for any game state changes
-      // Individual handlers above are more specific
-    }
+      if (data.userId === getCurrentUserId()) return;
+    },
+
+    onStatUpdate: (data) => {
+      // Incoming stat from the OTHER device — update local UI immediately
+      const { playerId, statType, value, updatedBy } = data;
+      if (!playerId || !statType || !currentMatchId) return;
+
+      console.log(`📥 Collaborative stat from ${updatedBy?.username}: ${statType} +${value} for player ${playerId}`);
+
+      setPlayerStats(prev => {
+        const updated = { ...prev };
+        if (!updated[currentMatchId]) updated[currentMatchId] = {};
+        if (!updated[currentMatchId][playerId]) updated[currentMatchId][playerId] = {};
+        updated[currentMatchId][playerId][statType] =
+          (updated[currentMatchId][playerId][statType] || 0) + (Number(value) || 1);
+        return updated;
+      });
+    },
   });
   
   console.log('✅ ExpressStatLogger: Callbacks registered successfully');
   
 }, [
-  collaborativeMode, 
-  registerStateCallbacks, 
+  collaborativeMode,
+  registerStateCallbacks,
   localStateOverride,
-  getCurrentUserId
+  getCurrentUserId,
+  currentMatchId,
+  setPlayerStats,
 ]);
 
 useEffect(() => {
@@ -1260,6 +1366,17 @@ const logStat = useCallback(async (player, label, statKeys, actionText, options 
           setStatUndoStack(prev => [...prev, undoEntry]);
         }
 
+        // Update local playerStats so the logging user's own UI reflects the stat immediately
+        setPlayerStats(prev => {
+          const updated = { ...prev };
+          if (!updated[currentMatchId]) updated[currentMatchId] = {};
+          if (!updated[currentMatchId][player._id]) updated[currentMatchId][player._id] = { name: player.name };
+          statKeys.forEach(key => {
+            updated[currentMatchId][player._id][key] = (updated[currentMatchId][player._id][key] || 0) + 1;
+          });
+          return updated;
+        });
+
         console.log('✅ Collaborative logging succeeded');
         showActionToast(`${player.name}: ${label} recorded`, 'success');
         return true;
@@ -1499,6 +1616,17 @@ const moveByUiIndex = useCallback((dragUiIndex, targetUiIndex) => {
   
 }, [courtPlayers, setCourtPlayers, syncCourtPlayers]);
 
+// Reorder the player list display (drag-to-reorder in express mode)
+const moveRosterPlayer = useCallback((fromIndex, toIndex) => {
+  if (fromIndex === toIndex) return;
+  setPlayerDisplayOrder(prev => {
+    const order = [...prev];
+    const [moved] = order.splice(fromIndex, 1);
+    order.splice(toIndex, 0, moved);
+    return order;
+  });
+}, []);
+
   // Helper to check if a slot is currently the server position;
 
   // NEW: Games played credit function
@@ -1727,12 +1855,57 @@ const creditGamesPlayed = useCallback(async (rawPlayerId, context = 'express', {
 
 
  
- // ============================================================================
-// COLLABORATIVE MODE - Removed ability to toggle/start collaborative mode
-// Collaborative mode must be enabled via match configuration/settings
-// Existing collaborative matches still work with full functionality
-// ============================================================================
- 
+ const toggleCollaborativeMode = useCallback(async (enabled) => {
+  // Only match owners can toggle collaborative mode
+  if (!isMatchOwner()) {
+    console.warn('Only match owner can toggle collaborative mode');
+    alert('Only the match creator can enable/disable collaborative mode.');
+    return;
+  }
+
+  console.log(`ExpressStatLogger: Setting collaborative mode to ${enabled}`);
+
+  if (currentMatchId) {
+    try {
+      await axios.put(`${API_URL}/api/matches/${currentMatchId}`, {
+        collaborativeMode: {
+          enabled: enabled,
+          allowedUsers: [],
+          maxUsers: 15
+        }
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        withCredentials: true,
+      });
+
+      console.log(`Database: Collaborative mode ${enabled ? 'enabled' : 'disabled'}`);
+
+      if (setMatchSettings && typeof setMatchSettings === 'function') {
+        setMatchSettings(prev => ({
+          ...prev,
+          collaborativeMode: {
+            enabled: enabled,
+            allowedUsers: [],
+            maxUsers: 15
+          }
+        }));
+      }
+
+      if (enabled) {
+        console.log('Collaborative mode enabled, useEffect will handle joining');
+      } else {
+        leaveMatch();
+      }
+
+    } catch (error) {
+      console.error('Failed to update collaborative mode:', error);
+      alert('Failed to update collaborative mode. Please try again.');
+    }
+  } else {
+    alert('No active match found. Cannot toggle collaborative mode.');
+  }
+}, [currentMatchId, token, joinMatch, leaveMatch, isMatchOwner, setMatchSettings]);
+
 const handleDirectScoreAdjustment = useCallback((team, delta) => {
   // Update local state optimistically
   const newOurScore = team === 'our' ? Math.max(0, ourScore + delta) : ourScore;
@@ -2608,77 +2781,6 @@ const cancelBlockAssist = useCallback(() => {
 }
 , []);
 
-  // Kill/Assist selection helpers (same pattern as block)
-  const DraggablePlayerCard = ({ player, index, children }) => {
-    const [{ isDragging }, drag] = useDrag(() => ({
-      type: "EXPRESS_PLAYER",
-      item: { playerIndex: index },
-      collect: (monitor) => ({
-        isDragging: monitor.isDragging(),
-      }),
-    }), [index]);
-
-    return (
-      <div
-        ref={drag}
-        style={{
-          opacity: isDragging ? 0.5 : 1,
-          cursor: player ? (isDragging ? 'grabbing' : 'grab') : 'default',
-          userSelect: 'none',
-          WebkitUserSelect: 'none',
-        }}
-      >
-        {children}
-      </div>
-    );
-  };
-
-  // Droppable Slot Component  
-  const DroppableSlot = ({ index, children }) => {
-    const [{ isOver }, drop] = useDrop(() => ({
-      accept: "EXPRESS_PLAYER",
-      drop: (item) => {
-        moveByUiIndex(item.playerIndex, index)
-      },
-      collect: (monitor) => ({
-        isOver: monitor.isOver(),
-      }),
-    }), [index, handlePlayerDrop]);
-
-    return (
-      <div
-        ref={drop}
-        style={{
-          backgroundColor: isOver ? 'rgba(0, 122, 255, 0.1)' : 'transparent',
-          borderRadius: '8px',
-          transition: 'background-color 0.2s ease',
-          border: isOver ? '2px dashed #007AFF' : '2px solid transparent',
-          position: 'relative',
-        }}
-      >
-        {isOver && (
-          <div style={{
-            position: 'absolute',
-            top: '-25px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            backgroundColor: '#007AFF',
-            color: 'white',
-            padding: '2px 0px',
-            borderRadius: '4px',
-            fontSize: '10px',
-            fontWeight: '600',
-            zIndex: 10,
-            whiteSpace: 'nowrap'
-          }}>
-            Will bring dragged player here
-          </div>
-        )}
-        {children}
-      </div>
-    );
-  };
-
   // ========================================================================
   // NEW: Fetch all roster players and initialize on/off status
   // ========================================================================
@@ -2694,6 +2796,8 @@ const cancelBlockAssist = useCallback(() => {
 
       const roster = response.data || [];
       setAllRosterPlayers(roster);
+      // Seed display order when roster first loads (preserve if already set)
+      setPlayerDisplayOrder(prev => prev.length > 0 ? prev : roster.map(p => p._id));
 
       const savedStatus = match?.expressSettings?.playerOnOffStatus || null;
 
@@ -4631,7 +4735,44 @@ const renderCollaborativeControls = () => {
       marginTop: '8px'
     }}>
 
-      {/* Collaborative Mode UI Removed - Mode must be set via match configuration */}
+      {/* Collaborative Mode Toggle - match owners only */}
+      {isMatchOwner() && (
+        <label style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          cursor: 'pointer',
+          fontSize: '14px'
+        }}>
+          <input
+            type="checkbox"
+            checked={!!collaborativeMode}
+            onChange={(e) => toggleCollaborativeMode(e.target.checked)}
+            style={{
+              transform: 'scale(1.2)',
+              accentColor: '#007AFF'
+            }}
+          />
+          Enable Multi-User Logging
+        </label>
+      )}
+
+      {collaborativeMode && (
+        <div style={{
+          marginTop: '4px',
+          padding: '6px 10px',
+          borderRadius: '6px',
+          backgroundColor: isCollaborativeReady() ? 'rgba(40, 167, 69, 0.1)' : 'rgba(220, 53, 69, 0.1)',
+          border: `1px solid ${isCollaborativeReady() ? '#28a745' : '#dc3545'}`,
+          fontSize: '11px',
+          fontWeight: '600',
+          color: isCollaborativeReady() ? '#155724' : '#721c24',
+          textAlign: 'center'
+        }}>
+          {isCollaborativeReady() ? '🟢 Connected' : '🔴 Connecting…'}
+        </div>
+      )}
+
       {/* Connection and Assignment Controls - OWNERS ONLY, only when collaborative mode enabled AND user exists */}
       {collaborativeMode && user && (
         <>
@@ -5996,14 +6137,21 @@ const getBottomBarButtonStyleWithFeedback = useCallback((backgroundColor, textCo
       {/* Players */}
       <div style={playersGridStyle}>
         {allRosterPlayers.length > 0 ? (
-          // Sort so ON players appear first (first 3 rows = 6 slots)
-          [...allRosterPlayers].sort((a, b) => {
-            const aIsOn = playerOnOffStatus[a._id] || false;
-            const bIsOn = playerOnOffStatus[b._id] || false;
-            if (aIsOn && !bIsOn) return -1;
-            if (!aIsOn && bIsOn) return 1;
-            return 0; // Keep original order within ON or OFF groups
-          }).map(player => {
+          // Sort by user-defined drag order; fall back to ON-first when no order set
+          (playerDisplayOrder.length > 0
+            ? [...allRosterPlayers].sort((a, b) => {
+                const ai = playerDisplayOrder.indexOf(a._id);
+                const bi = playerDisplayOrder.indexOf(b._id);
+                return (ai === -1 ? 9999 : ai) - (bi === -1 ? 9999 : bi);
+              })
+            : [...allRosterPlayers].sort((a, b) => {
+                const aIsOn = playerOnOffStatus[a._id] || false;
+                const bIsOn = playerOnOffStatus[b._id] || false;
+                if (aIsOn && !bIsOn) return -1;
+                if (!aIsOn && bIsOn) return 1;
+                return 0;
+              })
+          ).map((player, uiIndex) => {
             const isOn = playerOnOffStatus[player._id] || false;
        
             
@@ -6020,12 +6168,14 @@ const getBottomBarButtonStyleWithFeedback = useCallback((backgroundColor, textCo
             if (isOn && playerIndex >= 0) {
               const rosterPlayer = courtPlayers[playerIndex];
               
-              // In collaborative mode, only show actions for:
-              // 1. Match owner (can log for anyone)
-              // 2. Players assigned to current user
-              const canShowActions = !collaborativeMode || 
-                                    isMatchOwner() || 
-                                    trackingStatus?.isMe;
+              // In collaborative mode, hide actions ONLY when the player is
+              // actively assigned to someone else. Unassigned players stay
+              // interactable (they auto-assign on first action); own-assigned
+              // players are always interactable; match owners see everything.
+              const isBlockedByOtherAssignment = collaborativeMode &&
+                                                  trackingStatus?.isAssigned === true &&
+                                                  trackingStatus?.isMe !== true;
+              const canShowActions = !isBlockedByOtherAssignment;
               
               if (canShowActions) {
                 // Show full actions (including special menus) for:
@@ -6067,7 +6217,9 @@ const getBottomBarButtonStyleWithFeedback = useCallback((backgroundColor, textCo
             }
 
             return (
-              <div key={player._id} style={{ marginBottom: '8px' }}>
+              <DroppableSlot key={player._id} index={uiIndex} onDrop={moveRosterPlayer}>
+              <DraggablePlayerCard player={player} index={uiIndex}>
+              <div style={{ marginBottom: '8px', userSelect: 'none', WebkitUserSelect: 'none', paddingLeft: '22px' }}>
                 {/* Player Row Header with Toggle */}
                 <div
                   style={{
@@ -6289,6 +6441,8 @@ const getBottomBarButtonStyleWithFeedback = useCallback((backgroundColor, textCo
                 )}
 
               </div>
+              </DraggablePlayerCard>
+              </DroppableSlot>
             );
           })
         ) : (
