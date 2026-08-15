@@ -126,12 +126,13 @@ const BottomTabBar = ({ isNative, offlinePending = 0, isOnline = true }) => {
     {
       key: "profile",
       label: "Profile",
-      paths: ["/profile", "/roi-calendar"],
+      paths: ["/profile", "/roi-calendar", "/recruiting"],
       hasMenu: true,
       onPress: () => toggleMenu("profile"),
       menuItems: [
         { label: "My Profile", path: "/profile" },
         { label: "Expenses", path: "/roi-calendar" },
+        { label: "Recruiting Card", path: "/recruiting" },
       ],
       icon: (active) => (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">

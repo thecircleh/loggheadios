@@ -67,6 +67,7 @@ import PracticePlannerPage from "./components/PracticePlannerPage";
 import PracticeLivePage from "./components/PracticeLivePage";
 import PracticeRecapPage from "./components/PracticeRecapPage";
 import BottomTabBar from "./components/BottomTabBar";
+import RecruitingProfilePage from "./components/RecruitingProfilePage";
 
 
 // Constants
@@ -5272,6 +5273,12 @@ if (location.pathname === "/match-tracking") {
             <Route
               path="/roi-calendar"
               element={<PrivateRoute><ROICalendar /></PrivateRoute>}
+            />
+
+            {/* Recruiting Profile */}
+            <Route
+              path="/recruiting"
+              element={<PrivateRoute><RecruitingProfilePage isNative={isNativeApp} /></PrivateRoute>}
             />
 
             {/* Profile Page */}
