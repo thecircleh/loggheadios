@@ -14,7 +14,6 @@ import axios from "axios";
 import { DndProvider } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { TouchBackend } from "react-dnd-touch-backend";
-import Clarity from '@microsoft/clarity';
 import { AuthProvider, useAuth } from "./components/AuthContext";
 // Component imports
 import VolleyballCourt from "./components/VolleyballCourt";
@@ -86,10 +85,6 @@ const PERIODIC_SAVE_INTERVAL = 300000;
 
 
 
- const isNativePlatform = !!(window.Capacitor?.isNativePlatform?.());
- if (process.env.NODE_ENV !== "development" && !isNativePlatform) {
-  Clarity.init("x4h28kex3q");
-};
 
  // 5 minutes
  
@@ -725,27 +720,6 @@ function AppContent({ matchSettings, setMatchSettings }) {
     useOfflineActionQueue({ token, enabled: !!hasPremium });
   const navigate = useNavigate();
   
-  const clarityIdentifiedRef = useRef(false);
-
-useEffect(() => {
-  if (
-    clarityIdentifiedRef.current ||
-    !user ||
-    process.env.NODE_ENV === "development" ||
-    isNativeApp
-  ) {
-    return;
-  }
-
-  Clarity.identify(
-    String(user.id || user._id),
-    undefined,
-    undefined,
-    user.email || ""
-  );
-
-  clarityIdentifiedRef.current = true;
-}, [user]);
   // State variables
   const [loadingMatch, setLoadingMatch] = useState(true);
   const [showHeader, setShowHeader] = useState(true);
@@ -2621,47 +2595,52 @@ const saveScoreImmediately = useCallback(async (newOurScore, newOpponentScore, r
 const onOurPoint = useCallback(async (skipCollaborative = false, reason = 'manual') => {
   console.trace('🎯 onOurPoint called'); // ✅ Clearer - shows it's a trace, not error
   console.log('onOurPoint params:', { oldScore: ourScore, skipCollaborative, reason });
-  
 
   const oldScore = ourScore;
   const newScore = oldScore + 1;
-  
+
   console.log('onOurPoint called:', { oldScore, newScore, skipCollaborative, reason });
-  
-  // Always update local state immediately
-  
-  
-  // Only do collaborative if not skipping and conditions are met
+
+  // In collaborative mode, emit to server and let the authoritative score_updated
+  // event set the score. This prevents stale-closure race conditions where a local
+  // +1 from an old closure value overwrites a newer authoritative DB value.
   if (!skipCollaborative && collaborativeMode && isConnected) {
     console.log('Sending collaborative update...');
     const success = updateScore('our', 1, reason);
     if (!success) {
-      console.warn('Collaborative update failed');
+      // Socket send failed — fall back to local update so the UI isn't stuck
+      console.warn('Collaborative update failed — falling back to local update');
+      setOurScore(newScore);
     }
-	await new Promise(resolve => setTimeout(resolve, 200));
+    // Score will be set by the score_updated socket event. The server now echoes
+    // score_updated back to the originating socket with the DB-authoritative value,
+    // so there is no need to set it here from a potentially stale closure.
+    return;
   }
-  
+
+  // Non-collaborative: update locally immediately
   setOurScore(newScore);
 }, [ourScore, collaborativeMode, isConnected, updateScore]);
 
 const onOpponentPoint = useCallback(async (skipCollaborative = false, reason = 'manual') => {
   const oldScore = opponentScore;
   const newScore = oldScore + 1;
-  
+
   console.log('onOpponentPoint called:', { oldScore, newScore, skipCollaborative, reason });
-  
-  // Always update local state immediately  
-  
-  
-  // Only do collaborative if not skipping and conditions are met
+
+  // In collaborative mode, emit to server and let the authoritative score_updated
+  // event set the score (see onOurPoint for explanation).
   if (!skipCollaborative && collaborativeMode && isConnected) {
     console.log('Sending collaborative update...');
     const success = updateScore('opponent', 1, reason);
     if (!success) {
-      console.warn('Collaborative update failed');
+      console.warn('Collaborative update failed — falling back to local update');
+      setOpponentScore(newScore);
     }
-	await new Promise(resolve => setTimeout(resolve, 200));
+    return;
   }
+
+  // Non-collaborative: update locally immediately
   setOpponentScore(newScore);
 }, [opponentScore, collaborativeMode, isConnected, updateScore]);
 
