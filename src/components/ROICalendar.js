@@ -377,7 +377,7 @@ export default function ROICalendar() {
 
   // ── Main UI ──────────────────────────────────────────────────────────────
   return (
-    <div style={{ maxWidth: 680, margin: '0 auto', paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 88 }}>
+    <div style={{ maxWidth: 680, margin: '0 auto', paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)', paddingBottom: 88 }}>
 
       {/* Header */}
       <div style={{ padding: '16px 16px 0' }}>
