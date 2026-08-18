@@ -1232,7 +1232,7 @@ const logStat = useCallback(async (playerId, statType, value, additionalData = {
   // ============================================
   if (!s || !currentMatchId || !s.connected) {
     console.warn('⚠️ Socket not connected, falling back to direct API');
-    return await fallbackToDirectAPI(playerId, statType, value, additionalData);
+    return await fallbackToDirectAPI(playerId, statType, value, additionalData, statId);
   }
   
   // ============================================
@@ -1263,6 +1263,13 @@ const logStat = useCallback(async (playerId, statType, value, additionalData = {
   // PRIMARY PATH: Collaborative socket emit (ALWAYS proceed)
   // ============================================
   try {
+    // Generate a unique idempotency key for this stat write.
+    // Retries (from the localStorage queue) will re-use the same key so the
+    // server can detect and discard duplicates.
+    const statId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
     const payload = {
       matchId: currentMatchId,
       playerId,
@@ -1271,6 +1278,7 @@ const logStat = useCallback(async (playerId, statType, value, additionalData = {
       timestamp: new Date().toISOString(),
       userId: currentUserId,
       sessionId,
+      statId,  // idempotency key — server rejects duplicate IDs
       statKeys: additionalData.statKeys,
       // Include assignment info if it exists (for audit trail)
       assignmentInfo: assignment ? {
@@ -1315,9 +1323,9 @@ const logStat = useCallback(async (playerId, statType, value, additionalData = {
   }
   
   // ============================================
-  // FALLBACK LAYER 2: Direct API call
+  // FALLBACK LAYER 2: Direct API call (pass statId so the endpoint can deduplicate)
   // ============================================
-  return await fallbackToDirectAPI(playerId, statType, value, additionalData);
+  return await fallbackToDirectAPI(playerId, statType, value, additionalData, statId);
   
 }, [
   collaborativeMode, 
@@ -1331,36 +1339,42 @@ const logStat = useCallback(async (playerId, statType, value, additionalData = {
 ]);
 
 // Helper function for direct API fallback
-const fallbackToDirectAPI = useCallback(async (playerId, statType, value, additionalData = {}) => {
+const fallbackToDirectAPI = useCallback(async (playerId, statType, value, additionalData = {}, statId = null) => {
   console.log('🔄 Attempting direct API fallback for stat logging');
-  
+
   // 🔥 FIXED: No permission checks - always allow stat logging
   try {
     const statKeys = additionalData.statKeys || [statType];
     const updates = {};
-    
+
     statKeys.forEach(key => {
       updates[key] = value;
     });
-    
+
     const response = await axios.post(
       `${API_BASE}/api/players/${playerId}/stats`,
       {
         ...updates,
         matchId: currentMatchId,
         timestamp: new Date().toISOString(),
-        source: 'collaborative_fallback'
+        source: 'collaborative_fallback',
+        // Pass statId so the server can reject duplicates (e.g. socket ack was
+        // lost but the server already processed the write via the socket path)
+        ...(statId ? { statId } : {}),
       },
       {
-        headers: { 
+        headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          // Send statId as the idempotency key so the REST endpoint rejects
+          // duplicates (e.g. socket processed it but ack was lost)
+          ...(statId ? { 'x-idempotency-key': statId } : {}),
         },
         withCredentials: true,
         timeout: 5000
       }
     );
-    
+
     console.log('✅ Stat logged via direct API successfully');
     addNotification('Stat recorded (direct save)', 'success');
     return true;
@@ -1379,6 +1393,7 @@ const fallbackToDirectAPI = useCallback(async (playerId, statType, value, additi
         statKeys: additionalData.statKeys,
         matchId: currentMatchId,
         timestamp: new Date().toISOString(),
+        statId,  // preserve original key so retries are idempotent
         retryCount: 0,
         maxRetries: 5
       };
@@ -1426,7 +1441,8 @@ const retryFailedStats = useCallback(async () => {
           stat.playerId,
           stat.statType,
           stat.value,
-          { statKeys: stat.statKeys }
+          { statKeys: stat.statKeys },
+          stat.statId  // re-use original idempotency key
         );
         
         if (success) {

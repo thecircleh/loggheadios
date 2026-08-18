@@ -780,6 +780,29 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
               </div>
             ))}
 
+            {claimedPlayers.length > 0 && (
+              <a
+                href="/recruiting"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginTop: 14,
+                  padding: '11px 14px',
+                  background: 'linear-gradient(135deg, rgba(52,199,89,0.12) 0%, rgba(52,199,89,0.06) 100%)',
+                  border: '1.5px solid rgba(52,199,89,0.35)',
+                  borderRadius: 10,
+                  textDecoration: 'none',
+                  color: '#1C7A38',
+                  fontSize: 14,
+                  fontWeight: 600,
+                }}
+              >
+                <span>🏐 Recruiting Card</span>
+                <span style={{ fontSize: 16, opacity: 0.7 }}>›</span>
+              </a>
+            )}
+
             {showClaimPanel && (
               <div style={{ marginTop: 12 }}>
                 <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10 }}>Players on your teams</p>

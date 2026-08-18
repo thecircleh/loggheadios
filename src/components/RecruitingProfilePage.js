@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useAuth } from './AuthContext';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 const getApiUrl = () => {
   const h = window.location.hostname;
@@ -353,6 +352,75 @@ const fmt = (n, digits = 2) =>
 const fmtPct = (n) =>
   n != null ? (n * 100).toFixed(1) + '%' : '—';
 
+// ─── Image compression helper ─────────────────────────────────────────────────
+const compressImage = (file, maxW, maxH, quality = 0.82) =>
+  new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.round(img.width  * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+      URL.revokeObjectURL(img.src);
+    };
+    img.src = URL.createObjectURL(file);
+  });
+
+// ─── PhotoUpload component ────────────────────────────────────────────────────
+const PhotoUpload = ({ value, onChange, label, w = 110, h = 130 }) => {
+  const ref = React.useRef();
+  const handle = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const compressed = await compressImage(file, w * 2, h * 2);
+    onChange(compressed);
+    e.target.value = '';
+  };
+  return (
+    <div style={{ display: 'inline-block' }}>
+      <input ref={ref} type="file" accept="image/*" style={{ display: 'none' }} onChange={handle} />
+      <div
+        onClick={() => ref.current.click()}
+        style={{
+          width: w, height: h,
+          borderRadius: 10,
+          border: value ? '2px solid #E5E5EA' : '2px dashed #C7C7CC',
+          background: '#F2F2F7',
+          cursor: 'pointer',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+          position: 'relative',
+          WebkitTapHighlightColor: 'transparent',
+          flexShrink: 0,
+        }}
+      >
+        {value ? (
+          <>
+            <img src={value} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            <div style={{
+              position: 'absolute', bottom: 0, left: 0, right: 0,
+              background: 'rgba(0,0,0,0.45)', color: '#fff',
+              fontSize: 11, textAlign: 'center', padding: '4px 0',
+            }}>
+              Change
+            </div>
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize: 26 }}>📷</span>
+            <span style={{ fontSize: 11, color: '#8E8E93', marginTop: 5, textAlign: 'center', padding: '0 6px' }}>{label}</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ─── Empty profile factory ─────────────────────────────────────────────────────
 const emptyProfile = (playerId, userId) => ({
   playerId, userId,
@@ -371,268 +439,401 @@ const emptyProfile = (playerId, userId) => ({
 });
 
 // ─── PDF Generator ────────────────────────────────────────────────────────────
-const generatePDF = (player, profile, stats) => {
-  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
-  const W = doc.internal.pageSize.getWidth();
-  const margin = 48;
-  const col = (W - margin * 2) / 2;
-  const green = [52, 199, 89];
-  const dark = [28, 28, 30];
-  const mid = [142, 142, 147];
-  const light = [242, 242, 247];
+const generatePDF = (player, profile, stats, knownTeams = []) => {
+  const doc  = new jsPDF({ unit: 'pt', format: 'letter' });
+  const W    = doc.internal.pageSize.getWidth();
+  const H    = doc.internal.pageSize.getHeight();
+  const ML   = 48;
+  const MR   = 48;
+  const CW   = W - ML - MR;   // full content width
+  const GAP  = 16;
+  const COL  = (CW - GAP) / 2;
 
-  let y = margin;
+  const GREEN = [52, 199, 89];
+  const DARK  = [22, 22, 24];
+  const MID   = [100, 100, 105];
+  const LGRAY = [210, 210, 215];
+  const BGSTAT= [246, 246, 249];
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  const playerName = player?.name || 'Player';
 
-  // ── Header bar ──────────────────────────────────────────────────────────────
-  doc.setFillColor(...green);
-  doc.roundedRect(margin, y, W - margin * 2, 72, 8, 8, 'F');
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(24);
-  doc.setTextColor(255, 255, 255);
-  const name = player?.name || 'Player';
-  doc.text(name, margin + 16, y + 28);
-
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'normal');
-  const subLine = [
-    profile.positions?.length ? profile.positions.join(' / ') : null,
-    profile.heightFt ? `${profile.heightFt}'${profile.heightIn || 0}"` : null,
-    profile.graduationYear ? `Class of ${profile.graduationYear}` : null,
-    profile.schoolName || null,
-  ].filter(Boolean).join('  ·  ');
-  doc.text(subLine || '', margin + 16, y + 50);
-
-  // GPA / SAT / ACT top right
-  const academicStr = [
-    profile.gpa ? `GPA ${profile.gpa}` : null,
-    profile.satScore ? `SAT ${profile.satScore}` : null,
-    profile.actScore ? `ACT ${profile.actScore}` : null,
-  ].filter(Boolean).join('   ');
-  if (academicStr) {
+  // Section label: thin green left bar + spaced green caps
+  // Returns the y where body content should start (label height + gap below it)
+  const secLabel = (x, label, yPos) => {
+    doc.setFillColor(...GREEN);
+    doc.rect(x, yPos, 3, 10, 'F');
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text(academicStr, W - margin - 16, y + 50, { align: 'right' });
-  }
-
-  y += 90;
-
-  // ── Stats row ───────────────────────────────────────────────────────────────
-  const statCols = [
-    { label: 'Games Played', val: stats.gamesPlayed != null ? String(stats.gamesPlayed) : '—' },
-    { label: 'Kills/GM',     val: fmt(stats.killsPerGame) },
-    { label: 'Hitting %',    val: fmtPct(stats.hittingPct) },
-    { label: 'Aces/GM',      val: fmt(stats.acesPerGame) },
-    { label: 'Digs/GM',      val: fmt(stats.digsPerGame) },
-    { label: 'Assists/GM',   val: fmt(stats.assistsPerGame) },
-  ];
-
-  const statW = (W - margin * 2) / statCols.length;
-  statCols.forEach((sc, i) => {
-    const x = margin + i * statW;
-    doc.setFillColor(...(i % 2 === 0 ? [245, 245, 250] : [255, 255, 255]));
-    doc.rect(x, y, statW, 40, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(16);
-    doc.setTextColor(...dark);
-    doc.text(sc.val, x + statW / 2, y + 16, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(...mid);
-    doc.text(sc.label, x + statW / 2, y + 30, { align: 'center' });
-  });
-
-  y += 52;
-
-  // ── Left column start ────────────────────────────────────────────────────────
-  const leftX  = margin;
-  const rightX = margin + col + 12;
-  let ly = y;
-  let ry = y;
-
-  const sectionHeader = (x, label, yPos) => {
-    doc.setFillColor(...green);
-    doc.roundedRect(x, yPos, col, 18, 3, 3, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(255, 255, 255);
-    doc.text(label.toUpperCase(), x + 8, yPos + 12);
-    return yPos + 24;
+    doc.setFontSize(8);
+    doc.setTextColor(...GREEN);
+    doc.text(label.toUpperCase(), x + 9, yPos + 8.5);
+    return yPos + 22;   // 10pt label + 12pt gap before content
   };
 
-  const bodyText = (x, text, yPos, maxWidth) => {
+  const para = (x, text, yPos, w = COL, size = 9.5, color = DARK) => {
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(...dark);
-    const lines = doc.splitTextToSize(text, maxWidth || col - 4);
-    doc.text(lines, x + 4, yPos);
-    return yPos + lines.length * 13;
+    doc.setFontSize(size);
+    doc.setTextColor(...color);
+    const lines = doc.splitTextToSize(text, w);
+    doc.text(lines, x, yPos);
+    return yPos + lines.length * (size * 1.35);
   };
 
-  const bulletList = (x, items, yPos) => {
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(...dark);
+  const bullets = (x, items, yPos, w = COL) => {
     let cy = yPos;
     (items || []).forEach(item => {
-      const lines = doc.splitTextToSize(`• ${item}`, col - 8);
-      doc.text(lines, x + 4, cy);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(...DARK);
+      const lines = doc.splitTextToSize(`• ${item}`, w - 4);
+      doc.text(lines, x, cy);
       cy += lines.length * 13;
     });
     return cy;
   };
 
-  // ── LEFT: Bio ────────────────────────────────────────────────────────────────
-  if (profile.bio) {
-    ly = sectionHeader(leftX, 'About', ly);
-    ly = bodyText(leftX, profile.bio, ly, col - 4);
-    ly += 8;
+  // ── Header ───────────────────────────────────────────────────────────────────
+  // Thin green rule at very top
+  doc.setFillColor(...GREEN);
+  doc.rect(0, 0, W, 4, 'F');
+
+  // Headshot — top-right of header if available
+  const PHOTO_SIZE = 72;
+  const PHOTO_X    = W - MR - PHOTO_SIZE;
+  const PHOTO_Y    = 10;
+  if (profile.headshotUrl) {
+    try {
+      doc.addImage(profile.headshotUrl, 'JPEG', PHOTO_X, PHOTO_Y, PHOTO_SIZE, PHOTO_SIZE);
+      // thin border
+      doc.setDrawColor(...LGRAY);
+      doc.setLineWidth(0.75);
+      doc.rect(PHOTO_X, PHOTO_Y, PHOTO_SIZE, PHOTO_SIZE);
+    } catch (_) { /* skip if image fails */ }
   }
 
-  // ── LEFT: Contact ────────────────────────────────────────────────────────────
-  ly = sectionHeader(leftX, 'Contact', ly);
-  const contactLines = [
-    profile.playerEmail  ? `Player: ${profile.playerEmail}` : null,
-    profile.playerPhone  ? `Phone: ${profile.playerPhone}` : null,
-    profile.parentName   ? `Parent: ${profile.parentName}` : null,
-    profile.parentEmail  ? `${profile.parentEmail}` : null,
-    profile.parentPhone  ? `${profile.parentPhone}` : null,
+  // Text content shifts left to avoid the photo
+  const textMaxX = profile.headshotUrl ? PHOTO_X - 12 : W - MR;
+  const textW    = textMaxX - ML;
+
+  let y = 52;   // start below top rule with breathing room
+
+  // Player name
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(26);
+  doc.setTextColor(...DARK);
+  doc.text(playerName, ML, y);
+  y += 30;   // 26pt font + line gap
+
+  // Row 2: Position · Class of YYYY · School Name
+  const position = profile.positions?.length
+    ? profile.positions.join(' / ')
+    : (player?.position && player.position !== '?' ? player.position : null);
+  const subParts = [
+    position,
+    profile.graduationYear ? `Class of ${profile.graduationYear}` : null,
+    profile.schoolName     ? String(profile.schoolName) : null,
   ].filter(Boolean);
-  ly = bulletList(leftX, contactLines, ly);
-  ly += 8;
-
-  // ── LEFT: Club ───────────────────────────────────────────────────────────────
-  if (profile.clubTeamName || profile.clubCoachName) {
-    ly = sectionHeader(leftX, 'Club Team', ly);
-    const clubLines = [
-      profile.clubTeamName ? `Team: ${profile.clubTeamName}` : null,
-      profile.clubCoachName ? `Coach: ${profile.clubCoachName}` : null,
-      profile.clubCoachContact ? profile.clubCoachContact : null,
-    ].filter(Boolean);
-    ly = bulletList(leftX, clubLines, ly);
-    ly += 8;
+  if (subParts.length) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    doc.setTextColor(...MID);
+    const subLines = doc.splitTextToSize(subParts.join('   ·   '), textW);
+    doc.text(subLines, ML, y);
+    y += subLines.length * 15;
   }
 
-  // ── LEFT: Video ──────────────────────────────────────────────────────────────
-  if (profile.hudlUrl || profile.highlightUrl) {
-    ly = sectionHeader(leftX, 'Video & Links', ly);
-    const linkLines = [
-      profile.hudlUrl ? `Hudl: ${profile.hudlUrl}` : null,
-      profile.highlightUrl ? `Highlights: ${profile.highlightUrl}` : null,
-    ].filter(Boolean);
-    ly = bulletList(leftX, linkLines, ly);
-    ly += 8;
-  }
-
-  // ── LEFT: Awards ─────────────────────────────────────────────────────────────
-  if (profile.awards?.length) {
-    ly = sectionHeader(leftX, 'Awards & Honors', ly);
-    ly = bulletList(leftX, profile.awards, ly);
-    ly += 8;
-  }
-
-  // ── SWOT ────────────────────────────────────────────────────────────────────
-  if (profile.swot?.strengths?.length) {
-    ly = sectionHeader(leftX, 'Strengths', ly);
-    ly = bulletList(leftX, profile.swot.strengths, ly);
-    ly += 8;
-    ly = sectionHeader(leftX, 'Areas for Growth', ly);
-    ly = bulletList(leftX, profile.swot.weaknesses, ly);
-    ly += 8;
-  }
-
-  // ── RIGHT: Target Schools ────────────────────────────────────────────────────
-  if (profile.targetSchools?.length) {
-    ry = sectionHeader(rightX, 'Target Schools', ry);
-    profile.targetSchools.forEach(school => {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.setTextColor(...dark);
-      const divStr = school.division ? ` (${school.division})` : '';
-      const status = STATUS_OPTIONS.find(o => o.value === school.status)?.label || school.status || '';
-      doc.text(`${school.name}${divStr}`, rightX + 4, ry);
-      ry += 13;
+  // Row 3: GPA · SAT · ACT · Height
+  const acadParts = [
+    profile.gpa      ? `GPA ${profile.gpa}` : null,
+    profile.satScore ? `SAT ${profile.satScore}` : null,
+    profile.actScore ? `ACT ${profile.actScore}` : null,
+    profile.heightFt ? `${profile.heightFt}'${profile.heightIn || 0}"` : null,
+    profile.verticalJump ? `Vert ${profile.verticalJump}` : null,
+  ].filter(Boolean);
+  if (acadParts.length) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...DARK);
+    const acadLines = doc.splitTextToSize(acadParts.join('   ·   '), textW);
+    doc.text(acadLines, ML, y);
+    if (profile.intendedMajor && !profile.headshotUrl) {
       doc.setFont('helvetica', 'italic');
       doc.setFontSize(9);
-      doc.setTextColor(...mid);
-      doc.text(status, rightX + 12, ry);
-      ry += 14;
-    });
-    ry += 4;
+      doc.setTextColor(...MID);
+      doc.text(profile.intendedMajor, W - MR, y, { align: 'right' });
+    }
+    y += acadLines.length * 14;
   }
 
-  // ── RIGHT: Opportunities & Threats from SWOT ─────────────────────────────────
-  if (profile.swot?.opportunities?.length) {
-    ry = sectionHeader(rightX, 'Opportunities', ry);
-    ry = bulletList(rightX, profile.swot.opportunities, ry);
-    ry += 8;
-    ry = sectionHeader(rightX, 'Watch For', ry);
-    ry = bulletList(rightX, profile.swot.threats, ry);
-    ry += 8;
+  y += 10;  // padding before divider
+
+  // Hairline divider
+  doc.setDrawColor(...LGRAY);
+  doc.setLineWidth(0.75);
+  doc.line(ML, y, W - MR, y);
+  y += 16;
+
+  // ── Stats strip ──────────────────────────────────────────────────────────────
+  const statItems = [
+    { label: 'Games',      val: stats.gamesPlayed != null ? String(stats.gamesPlayed) : '—' },
+    { label: 'Kills/GM',   val: fmt(stats.killsPerGame) },
+    { label: 'Hitting %',  val: fmtPct(stats.hittingPct) },
+    { label: 'Aces/GM',    val: fmt(stats.acesPerGame) },
+    { label: 'Digs/GM',    val: fmt(stats.digsPerGame) },
+    { label: 'Assists/GM', val: fmt(stats.assistsPerGame) },
+  ];
+  const SW = CW / statItems.length;
+  const SH = 42;
+
+  doc.setFillColor(...BGSTAT);
+  doc.roundedRect(ML, y, CW, SH, 5, 5, 'F');
+
+  statItems.forEach((st, i) => {
+    const sx = ML + i * SW;
+    // vertical divider between columns
+    if (i > 0) {
+      doc.setDrawColor(...LGRAY);
+      doc.setLineWidth(0.5);
+      doc.line(sx, y + 8, sx, y + SH - 8);
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(...DARK);
+    doc.text(st.val, sx + SW / 2, y + 17, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(...MID);
+    doc.text(st.label, sx + SW / 2, y + 30, { align: 'center' });
+  });
+  y += SH + 18;
+
+  // ── Two-column body ───────────────────────────────────────────────────────────
+  const LX = ML;
+  const RX = ML + COL + GAP;
+  let ly = y;
+  let ry = y;
+  const SP = 11; // inter-section spacing
+
+  // ── LEFT: Bio
+  if (profile.bio) {
+    ly = secLabel(LX, 'About', ly);
+    ly = para(LX, profile.bio, ly);
+    ly += SP;
   }
 
-  // ── RIGHT: Upcoming Events ───────────────────────────────────────────────────
-  if (profile.upcomingEvents?.length) {
-    ry = sectionHeader(rightX, 'Upcoming Events', ry);
-    profile.upcomingEvents.forEach(ev => {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.setTextColor(...dark);
-      doc.text(ev.name || 'Event', rightX + 4, ry);
-      ry += 13;
+  // ── LEFT: Contact
+  const contactLines = [
+    profile.playerEmail ? profile.playerEmail : null,
+    profile.playerPhone ? profile.playerPhone : null,
+    profile.parentName  ? `Parent: ${profile.parentName}` : null,
+    profile.parentEmail ? profile.parentEmail : null,
+    profile.parentPhone ? profile.parentPhone : null,
+  ].filter(Boolean);
+  if (contactLines.length) {
+    ly = secLabel(LX, 'Contact', ly);
+    ly = bullets(LX, contactLines, ly);
+    ly += SP;
+  }
+
+  // ── LEFT: Club team
+  if (profile.clubTeamName) {
+    ly = secLabel(LX, 'Club Team', ly);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(...DARK);
+    doc.text(profile.clubTeamName, LX, ly);
+    ly += 14;
+    const clubSubs = [
+      profile.clubCoachName    ? `Coach: ${profile.clubCoachName}` : null,
+      profile.clubCoachContact ? profile.clubCoachContact : null,
+    ].filter(Boolean);
+    clubSubs.forEach(s => {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
-      doc.setTextColor(...mid);
-      const detail = [ev.date, ev.location].filter(Boolean).join(' — ');
-      if (detail) {
-        doc.text(detail, rightX + 12, ry);
-        ry += 13;
+      doc.setTextColor(...MID);
+      doc.text(s, LX, ly);
+      ly += 12;
+    });
+    ly += SP - 4;
+  }
+
+  // ── LEFT: Teams on record
+  if (knownTeams.length) {
+    ly = secLabel(LX, 'Teams on Record', ly);
+    knownTeams.forEach((t, i) => {
+      doc.setFont('helvetica', i === 0 ? 'bold' : 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(...DARK);
+      const seasonStr = t.season ? `  (${t.season})` : '';
+      doc.text(`${t.team}${seasonStr}`, LX, ly);
+      ly += 13;
+    });
+    ly += SP;
+  }
+
+  // ── LEFT: Video
+  if (profile.hudlUrl || profile.highlightUrl) {
+    ly = secLabel(LX, 'Video', ly);
+    [
+      profile.hudlUrl       ? `Hudl: ${profile.hudlUrl}` : null,
+      profile.highlightUrl  ? `Highlights: ${profile.highlightUrl}` : null,
+    ].filter(Boolean).forEach(link => {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(...MID);
+      const lines = doc.splitTextToSize(link, COL);
+      doc.text(lines, LX, ly);
+      ly += lines.length * 12;
+    });
+    ly += SP;
+  }
+
+  // ── LEFT: Awards
+  if (profile.awards?.length) {
+    ly = secLabel(LX, 'Awards & Honors', ly);
+    ly = bullets(LX, profile.awards, ly);
+    ly += SP;
+  }
+
+  // ── LEFT: SWOT strengths + growth
+  if (profile.swot?.strengths?.length) {
+    ly = secLabel(LX, 'Strengths', ly);
+    ly = bullets(LX, profile.swot.strengths, ly);
+    ly += SP;
+    ly = secLabel(LX, 'Areas for Growth', ly);
+    ly = bullets(LX, profile.swot.weaknesses, ly);
+    ly += SP;
+  }
+
+  // ── RIGHT: Physical vitals
+  const physParts = [
+    profile.heightFt     ? `${profile.heightFt}'${profile.heightIn || 0}"` : null,
+    profile.weight       ? `${profile.weight} lbs` : null,
+    profile.verticalJump ? `Vert: ${profile.verticalJump}` : null,
+    profile.armSpan      ? `Arm span: ${profile.armSpan}` : null,
+  ].filter(Boolean);
+  if (physParts.length) {
+    ry = secLabel(RX, 'Physical Profile', ry);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(...DARK);
+    const physLine = doc.splitTextToSize(physParts.join('   ·   '), COL);
+    doc.text(physLine, RX, ry);
+    ry += physLine.length * 13 + SP;
+  }
+
+  // ── RIGHT: Target schools
+  const filledSchools = (profile.targetSchools || []).filter(s => s.name?.trim());
+  if (filledSchools.length) {
+    ry = secLabel(RX, 'Target Schools', ry);
+    filledSchools.forEach(school => {
+      const committed = school.status === 'committed';
+      doc.setFont('helvetica', committed ? 'bold' : 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(...(committed ? GREEN : DARK));
+      const divStr = school.division ? ` (${school.division})` : '';
+      const prefix = committed ? '✓ ' : '';
+      doc.text(`${prefix}${school.name}${divStr}`, RX, ry);
+      ry += 13;
+      if (school.status && school.status !== 'interested') {
+        const label = STATUS_OPTIONS.find(o => o.value === school.status)?.label || '';
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(8.5);
+        doc.setTextColor(...MID);
+        doc.text(label, RX + 6, ry);
+        ry += 12;
       }
     });
-    ry += 4;
+    ry += SP;
   }
 
-  // ── RIGHT: Academic Details ──────────────────────────────────────────────────
+  // ── RIGHT: SWOT opportunities + watch for
+  if (profile.swot?.opportunities?.length) {
+    ry = secLabel(RX, 'Opportunities', ry);
+    ry = bullets(RX, profile.swot.opportunities, ry);
+    ry += SP;
+    ry = secLabel(RX, 'Watch For', ry);
+    ry = bullets(RX, profile.swot.threats, ry);
+    ry += SP;
+  }
+
+  // ── RIGHT: Upcoming events
+  const filledEvents = (profile.upcomingEvents || []).filter(ev => ev.name?.trim());
+  if (filledEvents.length) {
+    ry = secLabel(RX, 'Upcoming Events', ry);
+    filledEvents.forEach(ev => {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.setTextColor(...DARK);
+      doc.text(ev.name.trim(), RX, ry);
+      ry += 13;
+      const detail = [ev.date, ev.location].filter(Boolean).join(' — ');
+      if (detail) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(...MID);
+        doc.text(detail, RX + 4, ry);
+        ry += 12;
+      }
+    });
+    ry += SP;
+  }
+
+  // ── RIGHT: Intended major
   if (profile.intendedMajor) {
-    ry = sectionHeader(rightX, 'Academic Interests', ry);
-    ry = bodyText(rightX, `Intended Major: ${profile.intendedMajor}`, ry, col - 4);
-    ry += 8;
-  }
-
-  // ── Physical Details (right column) ─────────────────────────────────────────
-  const physLines = [
-    profile.heightFt ? `Height: ${profile.heightFt}'${profile.heightIn || 0}"` : null,
-    profile.weight   ? `Weight: ${profile.weight}` : null,
-    profile.verticalJump ? `Vertical: ${profile.verticalJump}` : null,
-    profile.armSpan  ? `Arm Span: ${profile.armSpan}` : null,
-  ].filter(Boolean);
-  if (physLines.length > 0) {
-    ry = sectionHeader(rightX, 'Physical Profile', ry);
-    ry = bulletList(rightX, physLines, ry);
-    ry += 8;
+    ry = secLabel(RX, 'Intended Major', ry);
+    ry = para(RX, profile.intendedMajor, ry);
+    ry += SP;
   }
 
   // ── Footer ───────────────────────────────────────────────────────────────────
-  const pageH = doc.internal.pageSize.getHeight();
-  doc.setFillColor(...light);
-  doc.rect(0, pageH - 32, W, 32, 'F');
+  doc.setDrawColor(...GREEN);
+  doc.setLineWidth(1);
+  doc.line(ML, H - 28, W - MR, H - 28);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(...mid);
-  const footerLeft = `Loggerhead Volleyball — Recruiting Card for ${name}`;
+  doc.setFontSize(8);
+  doc.setTextColor(...MID);
+  const footerLeft  = `Loggerhead.app — Recruiting Card for ${playerName}`;
   const footerRight = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  doc.text(footerLeft, margin, pageH - 12);
-  doc.text(footerRight, W - margin, pageH - 12, { align: 'right' });
+  doc.text(footerLeft,  ML,      H - 14);
+  doc.text(footerRight, W - MR,  H - 14, { align: 'right' });
 
   // Save
-  const safeName = (player?.name || 'player').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+  const safeName = playerName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
   doc.save(`${safeName}-recruiting-card.pdf`);
 };
+
+// ─── Dev gate ─────────────────────────────────────────────────────────────────
+// The recruiting card feature is still in development.
+// Gate it so it only renders in local dev builds; show a placeholder everywhere else.
+const IS_DEV = process.env.NODE_ENV === 'development';
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const RecruitingProfilePage = ({ isNative }) => {
   const { token, user } = useAuth();
+
+  // Feature gate — remove once the server-side persistence is deployed and
+  // the UI has gone through QA.
+  if (!IS_DEV) {
+    return (
+      <div style={{
+        maxWidth: 480,
+        margin: '80px auto',
+        padding: '32px 24px',
+        textAlign: 'center',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>🏐</div>
+        <h2 style={{ fontSize: 22, fontWeight: 700, color: '#1C1C1E', marginBottom: 8 }}>
+          Recruiting Card
+        </h2>
+        <p style={{ fontSize: 15, color: '#8E8E93', lineHeight: 1.5 }}>
+          This feature is coming soon. We're putting the finishing touches on your
+          personalized recruiting card — check back shortly!
+        </p>
+      </div>
+    );
+  }
 
   const [claimedPlayers, setClaimedPlayers] = useState([]);
   const [selectedIdx, setSelectedIdx]       = useState(0);
@@ -645,6 +846,7 @@ const RecruitingProfilePage = ({ isNative }) => {
   const [dirty, setDirty]                   = useState(false);
   const [savedMsg, setSavedMsg]             = useState('');
   const [error, setError]                   = useState('');
+  const [knownTeams, setKnownTeams]         = useState([]);
 
   const headers = { Authorization: `Bearer ${token}` };
 
@@ -663,31 +865,30 @@ const RecruitingProfilePage = ({ isNative }) => {
     loadPlayers();
   }, [token]);
 
-  // ── Load profile when player changes ────────────────────────────────────────
+  // ── Load profile + known teams when player changes ──────────────────────────
   useEffect(() => {
     if (!claimedPlayers[selectedIdx]) return;
-    const loadProfile = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const p = claimedPlayers[selectedIdx];
-        const res = await axios.get(
-          `${API_URL}/api/roi/recruiting-profile/${p._id}`,
-          { headers }
-        );
-        const data = res.data.empty
-          ? emptyProfile(p._id, user?.id)
-          : res.data;
-        setProfile(data);
-        setDraft(JSON.parse(JSON.stringify(data)));
-        setDirty(false);
-      } catch (e) {
-        setError('Could not load recruiting profile.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadProfile();
+    const p = claimedPlayers[selectedIdx];
+    setLoading(true);
+    setError('');
+    setKnownTeams([]);
+
+    Promise.all([
+      axios.get(`${API_URL}/api/roi/recruiting-profile/${p._id}`, { headers }),
+      axios.get(`${API_URL}/api/roi/player-teams/${p._id}`, { headers }),
+    ]).then(([profileRes, teamsRes]) => {
+      const data = profileRes.data.empty
+        ? emptyProfile(p._id, user?.id)
+        : profileRes.data;
+      setProfile(data);
+      setDraft(JSON.parse(JSON.stringify(data)));
+      setDirty(false);
+      setKnownTeams(teamsRes.data.teams || []);
+    }).catch(() => {
+      setError('Could not load recruiting profile.');
+    }).finally(() => {
+      setLoading(false);
+    });
   }, [selectedIdx, claimedPlayers, token]);
 
   // ── Draft helpers ────────────────────────────────────────────────────────────
@@ -870,33 +1071,28 @@ const RecruitingProfilePage = ({ isNative }) => {
           {/* ── TAB: Profile Info ─────────────────────────────────────────────── */}
           {activeTab === 'profile' && (
             <>
-              {/* Photo URLs */}
+              {/* Photos */}
               <div style={s.card}>
                 <p style={s.sectionTitle}>Photos</p>
-                <div style={s.fieldWrap()}>
-                  <label style={s.label}>Headshot URL (paste a hosted image link)</label>
-                  <input
-                    style={s.input}
-                    value={draft.headshotUrl}
-                    onChange={e => set('headshotUrl', e.target.value)}
-                    placeholder="https://…"
-                  />
-                </div>
-                {draft.headshotUrl ? (
-                  <img
-                    src={draft.headshotUrl}
-                    alt="Headshot preview"
-                    style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 10, marginTop: 8 }}
-                  />
-                ) : null}
-                <div style={{ ...s.fieldWrap(), marginTop: 10 }}>
-                  <label style={s.label}>Action Photo URL</label>
-                  <input
-                    style={s.input}
-                    value={draft.actionPhotoUrl}
-                    onChange={e => set('actionPhotoUrl', e.target.value)}
-                    placeholder="https://…"
-                  />
+                <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ ...s.label, marginBottom: 6 }}>Headshot</div>
+                    <PhotoUpload
+                      value={draft.headshotUrl}
+                      onChange={v => set('headshotUrl', v)}
+                      label="Tap to add"
+                      w={110} h={130}
+                    />
+                  </div>
+                  <div>
+                    <div style={{ ...s.label, marginBottom: 6 }}>Action Photo</div>
+                    <PhotoUpload
+                      value={draft.actionPhotoUrl}
+                      onChange={v => set('actionPhotoUrl', v)}
+                      label="Tap to add"
+                      w={150} h={130}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -1050,6 +1246,58 @@ const RecruitingProfilePage = ({ isNative }) => {
                   />
                 </div>
               </div>
+
+              {/* Teams on record */}
+              {knownTeams.length > 0 && (
+                <div style={s.card}>
+                  <p style={s.sectionTitle}>Teams on Record</p>
+                  <p style={{ fontSize: 12, color: '#8E8E93', marginTop: -4, marginBottom: 10 }}>
+                    From {player?.name}'s logged match history
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {knownTeams.map((t, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 10px',
+                          background: '#F9F9FB',
+                          borderRadius: 8,
+                          border: '1px solid #E5E5EA',
+                        }}
+                      >
+                        <div>
+                          <span style={{ fontSize: 14, fontWeight: 600, color: '#1C1C1E' }}>{t.team}</span>
+                          {t.season ? (
+                            <span style={{ fontSize: 12, color: '#8E8E93', marginLeft: 8 }}>{t.season}</span>
+                          ) : null}
+                          {t.position && t.position !== '?' ? (
+                            <span style={{ fontSize: 12, color: '#8E8E93', marginLeft: 6 }}>· {t.position}</span>
+                          ) : null}
+                        </div>
+                        <button
+                          style={{
+                            background: 'none',
+                            border: '1px solid #34C759',
+                            borderRadius: 6,
+                            color: '#34C759',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            padding: '3px 10px',
+                            cursor: 'pointer',
+                            WebkitTapHighlightColor: 'transparent',
+                          }}
+                          onClick={() => set('clubTeamName', t.team)}
+                        >
+                          Use
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Club */}
               <div style={s.card}>
@@ -1475,7 +1723,7 @@ const RecruitingProfilePage = ({ isNative }) => {
               )}
               <button
                 style={s.downloadBtn}
-                onClick={() => generatePDF(player, draft, stats)}
+                onClick={() => generatePDF(player, draft, stats, knownTeams)}
               >
                 ⬇ Download Recruiting Card PDF
               </button>

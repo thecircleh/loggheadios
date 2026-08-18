@@ -209,12 +209,15 @@ export const AuthProvider = ({ children }) => {
     clearAllUserData();
   }, [clearAllUserData]);
 
-  // Kick any unauthenticated session to login immediately, on any API call
+  // Kick any unauthenticated session to login immediately, on any API call.
+  // Skip auth/login itself — a wrong-password 401 should NOT clear user data
+  // or redirect; the Login component handles that error directly.
   useEffect(() => {
     const interceptor = axios.interceptors.response.use(
       (res) => res,
       (error) => {
-        if (error.response?.status === 401) {
+        const isLoginAttempt = error.config?.url?.includes('/auth/login');
+        if (error.response?.status === 401 && !isLoginAttempt) {
           clearAllUserData();
         }
         return Promise.reject(error);
