@@ -780,7 +780,7 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
               </div>
             ))}
 
-            {claimedPlayers.length > 0 && (
+            {process.env.NODE_ENV === 'development' && claimedPlayers.length > 0 && (
               <a
                 href="/recruiting"
                 style={{
