@@ -111,6 +111,15 @@ export function useAppleIAP() {
         : `${getApiUrl()}/api/billing/apple/verify-receipt`;
 
       store.validator = async (receipt, callback) => {
+        // Never process IAP events without an authenticated user.
+        // CdvPurchase can re-fire pending transactions after a user switch;
+        // rejecting here prevents the server from assigning the wrong account.
+        // CdvPurchase will retry once a valid token is present.
+        if (!tokenRef.current || !userIdRef.current) {
+          callback({ ok: false, code: CdvPurchase.ErrorCode.UNKNOWN, message: 'No authenticated user — will retry after login.' });
+          return;
+        }
+
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 20000);
         try {
