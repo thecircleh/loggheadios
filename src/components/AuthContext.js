@@ -152,13 +152,10 @@ export const AuthProvider = ({ children }) => {
     Cookies.remove("token");
     localStorage.removeItem("token");
 
-    localStorage.clear();
-    sessionStorage.clear();
-
-    setToken(null);
-    setUser(null);
-    setPendingNotifications([]);
-
+    // Wipe ALL localStorage so no user-A data leaks to a subsequent user B
+    // who logs in on the same device (Capacitor WKWebView persists storage
+    // across sessions). Dispatch the logout event BEFORE the clear so any
+    // listener that needs to read remaining state can do so, then clear.
     window.dispatchEvent(
       new CustomEvent("userLogout", {
         detail: {
@@ -168,9 +165,33 @@ export const AuthProvider = ({ children }) => {
       })
     );
 
+    // Belt-and-suspenders: explicitly remove known cross-user keys that
+    // component effects could re-write after a general clear (race window).
+    const CROSS_USER_KEYS = [
+      "selectedTeam",
+      "loggerhead_failed_stats",
+      "loggerhead_scoreboard_collapsed",
+      "coachCorner_llmProvider",
+    ];
+    CROSS_USER_KEYS.forEach((k) => localStorage.removeItem(k));
+
+    localStorage.clear();
+    sessionStorage.clear();
+
+    setToken(null);
+    setUser(null);
+    setPendingNotifications([]);
+
     console.log("All user data cleared and logout event dispatched");
 
-    window.location.href = "/";
+    // Use reload() in Capacitor so the WKWebView actually re-initialises
+    // the React runtime (href = "/" stays within the same loaded document
+    // on some Capacitor configs and leaves useState initialisers stale).
+    if (window.Capacitor?.isNativePlatform?.()) {
+      window.location.reload();
+    } else {
+      window.location.href = "/";
+    }
   }, [token]);
 
   const setAuthToken = useCallback(
