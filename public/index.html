@@ -65,10 +65,30 @@
   })();
 </script>
 
+  <!-- TensorFlow.js + COCO-SSD loaded from CDN (keeps webpack fast).
+       Must load sequentially: coco-ssd captures the tf global at init time,
+       so tf.js must fully execute before coco-ssd.min.js is even fetched.
+       Skipped on Capacitor native builds. -->
+  <script>
+    (function() {
+      var isNative = window.location.protocol === 'capacitor:' ||
+                     (window.location.hostname === 'localhost' && window.location.port === '');
+      if (isNative) return;
+      var tfScript = document.createElement('script');
+      tfScript.src = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js';
+      tfScript.onload = function() {
+        var sdScript = document.createElement('script');
+        sdScript.src = 'https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js';
+        document.head.appendChild(sdScript);
+      };
+      document.head.appendChild(tfScript);
+    })();
+  </script>
+
   </head>
 
-  
-  
+
+
   <body>
 
     <!-- React will render into this element -->

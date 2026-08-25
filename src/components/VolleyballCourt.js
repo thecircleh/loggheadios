@@ -27,7 +27,7 @@ import { useAuth } from './AuthContext';
 import { restoreStateAfterUndo } from "./undoHelpers";
 import { undoKillSequence } from "./undoKillSequence";
 import useSimpleVoiceCommands from "../hooks/useSimpleVoiceCommands";
-import VideoPlayerTracking from './VideoPlayerTracking';
+const VideoPlayerTracking = React.lazy(() => import('./VideoPlayerTracking'));
 
 
 
@@ -2946,7 +2946,13 @@ if (newSide === "our" && player && role) {
 
 
 const handlePlayerDrop = async (benchPlayer, slotIndex) => {
-  if (ballState !== "serve") {
+  // A court with empty slots isn't a substitution — it's initial lineup setup.
+  // Allow the drop regardless of ballState so a recalled mid-rally match can
+  // still have its roster filled before stat tracking is re-enabled.
+  const fillingEmptySlot = courtPlayers.some(
+    p => !p || p.name === '?' || p.number === '?' || p.number == null
+  );
+  if (!fillingEmptySlot && ballState !== "serve") {
     alert("Substitutions are only allowed before the rally begins.");
     return;
   }
@@ -2956,8 +2962,16 @@ const handlePlayerDrop = async (benchPlayer, slotIndex) => {
     return;
   }
 
+  // When called from AI tracking, slotIndex is null — auto-find the first empty slot.
+  let resolvedSlot = slotIndex;
+  if (resolvedSlot == null) {
+    resolvedSlot = courtPlayers.findIndex(
+      p => !p || p.name === '?' || p.number === '?' || p.number == null
+    );
+    if (resolvedSlot === -1) return; // No empty slot — nothing to do
+  }
 
-  const targetPlayer = courtPlayers[slotIndex];
+  const targetPlayer = courtPlayers[resolvedSlot];
   const newCourtPlayers = [...courtPlayers];
 
 const cleanedBenchPlayer = {
@@ -2981,7 +2995,7 @@ const cleanedBenchPlayer = {
   // 🔥 Libero Substitution Logic (unchanged)
   // =============================
   if (isLiberoSub) {
-    if (slotIndex < 3) return; // ⛔ Never allow libero in front row
+    if (resolvedSlot < 3) return; // ⛔ Never allow libero in front row
 
     if (!targetPlayer || targetPlayer.name === "?") return; // ⛔ Must replace someone
 
@@ -2994,7 +3008,7 @@ const cleanedBenchPlayer = {
     if (isTargetLibero && benchPlayer.isLibero) {
       const outgoingLibero = targetPlayer;
 
-      newCourtPlayers[slotIndex] = {
+      newCourtPlayers[resolvedSlot] = {
         ...cleanedBenchPlayer,
         isLibero: true,
         replacedPlayer: outgoingLibero.replacedPlayer || null,
@@ -3035,7 +3049,7 @@ const cleanedBenchPlayer = {
     
     // ✅ Allow first-time libero substitution (no libero yet + no partner set)
     if (!currentLibero && !allowedLiberoSubTarget) {
-      newCourtPlayers[slotIndex] = {
+      newCourtPlayers[resolvedSlot] = {
         ...cleanedBenchPlayer,
         replacedPlayer: targetPlayer,
         isOnCourt: true,
@@ -3092,7 +3106,7 @@ const cleanedBenchPlayer = {
       await axios.put(`${API_URL}/api/players/${currentLibero._id}`, { isOnCourt: false });
     }
 
-    newCourtPlayers[slotIndex] = {
+    newCourtPlayers[resolvedSlot] = {
       ...cleanedBenchPlayer,
       replacedPlayer: targetPlayer,
       isOnCourt: true,
@@ -3159,7 +3173,7 @@ return;
       }
     }
 
-    newCourtPlayers[slotIndex] = {
+    newCourtPlayers[resolvedSlot] = {
       ...cleanedBenchPlayer,
       replacedPlayer: replacingLibero ? null : targetPlayer,
       isOnCourt: true,
@@ -5395,7 +5409,7 @@ function renderBench() {
                 key={`bench-${player._id || i}`}
                 player={player}
                 benchCardStyle={benchCardStyle}
-                canSub={ballState === "serve" && !playersOnCourtIds.has(player._id)}
+                canSub={(ballState === "serve" || hasEmptyCourtSlots) && !playersOnCourtIds.has(player._id)}
                 slot5TargetId={slot5TargetId}
                 allowedLiberoSubTarget={allowedLiberoSubTarget}
                 currentServeSide={currentServeSide}
@@ -5503,25 +5517,27 @@ function renderCourtArea() {
                 crossOrigin="anonymous"
               />
               
-              {/* AI Tracking Overlay */}
+              {/* AI Tracking Overlay — lazy-loaded so TF/COCO-SSD stay out of the main bundle */}
               {enableAITracking && (
-                <VideoPlayerTracking
-                  videoRef={videoElementRef}
-                  onPlayerClick={(slotIndex) => registerTouch(slotIndex)}
-                  courtPlayers={courtPlayers}
-                  isActive={enableAITracking}
-                  match={match}
-                  onAddPoint={onAddPoint}
-                  ballState={ballState}
-                  currentServeSide={currentServeSide}
-                  touches={touches}
-                  setActionLog={setActionLog}
-                  setPlayerStats={setPlayerStats}
-                  playerStats={playerStats}
-                  currentMatchId={currentMatchId}
-                  benchPlayers={benchPlayers}
-                  handlePlayerDrop={handlePlayerDrop}
-                />
+                <React.Suspense fallback={null}>
+                  <VideoPlayerTracking
+                    videoRef={videoElementRef}
+                    onPlayerClick={(slotIndex) => registerTouch(slotIndex)}
+                    courtPlayers={courtPlayers}
+                    isActive={enableAITracking}
+                    match={match}
+                    onAddPoint={onAddPoint}
+                    ballState={ballState}
+                    currentServeSide={currentServeSide}
+                    touches={touches}
+                    setActionLog={setActionLog}
+                    setPlayerStats={setPlayerStats}
+                    playerStats={playerStats}
+                    currentMatchId={currentMatchId}
+                    benchPlayers={benchPlayers}
+                    handlePlayerDrop={handlePlayerDrop}
+                  />
+                </React.Suspense>
               )}
             </>
           ) : youtubeUrl ? (
@@ -5656,7 +5672,7 @@ function renderCourtArea() {
                 <AdCourtBottom />
               </div>
             )}
-            <VoiceInterface />
+            {!enableAITracking && <VoiceInterface />}
           </div>
         </>
       )}
@@ -5819,45 +5835,9 @@ return (
         maxWidth: "350px"
       }}>
         <div>
-          <label style={{ 
-            fontSize: "12px", 
-            color: "#666", 
-            fontWeight: "600",
-            display: "block",
-            marginBottom: "6px"
-          }}>
-            YouTube URL
-          </label>
-          <input
-            type="text"
-            value={youtubeUrl}
-            onChange={(e) => setYoutubeUrl(e.target.value)}
-            placeholder="https://youtu.be/gXDvkPfL9PQ"
-            style={{
-              width: "100%",
-              padding: "10px",
-              borderRadius: "6px",
-              border: "1px solid #ddd",
-              fontSize: "13px",
-              boxSizing: "border-box",
-              fontFamily: "monospace"
-            }}
-          />
-        </div>
-        
-        <div style={{
-          textAlign: "center",
-          fontSize: "12px",
-          color: "#999",
-          fontWeight: "600"
-        }}>
-          — OR —
-        </div>
-        
-        <div>
-          <label style={{ 
-            fontSize: "12px", 
-            color: "#666", 
+          <label style={{
+            fontSize: "12px",
+            color: "#666",
             fontWeight: "600",
             display: "block",
             marginBottom: "6px"
@@ -5956,10 +5936,33 @@ return (
           borderTop: "1px solid #eee",
           lineHeight: "1.4"
         }}>
-          💡 {localVideoUrl 
-            ? "AI tracking automatically detects and follows players as they move!" 
+          💡 {localVideoUrl
+            ? "AI tracking automatically detects and follows players as they move!"
             : "Tip: Upload a .mp4 video file to enable AI player tracking."}
         </div>
+
+        {/* YouTube — secondary option, no AI support */}
+        {!localVideoUrl && (
+          <details style={{ marginTop: "8px" }}>
+            <summary style={{
+              fontSize: "11px", color: "#aaa", cursor: "pointer",
+              userSelect: "none", listStyle: "none", textAlign: "center"
+            }}>
+              ▸ Use YouTube URL instead (no AI tracking)
+            </summary>
+            <input
+              type="url"
+              value={youtubeUrl}
+              onChange={(e) => setYoutubeUrl(e.target.value)}
+              placeholder="https://youtu.be/…"
+              style={{
+                marginTop: "8px", width: "100%", padding: "8px 10px",
+                borderRadius: "6px", border: "1px solid #ddd",
+                fontSize: "12px", boxSizing: "border-box", color: "#333"
+              }}
+            />
+          </details>
+        )}
       </div>
     )}
     
@@ -6001,7 +6004,7 @@ return (
       {/* Portrait-only: voice + advanced logging toggle (order 3) */}
       {(isMobile && isPortrait) && (
         <div style={{ order: 3, width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", padding: "4px 0" }}>
-          <VoiceInterface />
+          {!enableAITracking && <VoiceInterface />}
           <AdvancedLoggingToggle />
         </div>
       )}
