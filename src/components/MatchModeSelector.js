@@ -21,8 +21,8 @@ const MODE_MAPPINGS = {
     pageTitle: "Classic Mode",
   },
   statbook: {
-    compatibleModes: ["Statbook", "Collab", "Express"],
-    newMatchMode: "Statbook",
+    compatibleModes: ["statbook", "Statbook", "Stat Book", "Collab", "Express"],
+    newMatchMode: "statbook",
     displayName: "Stat Book",
     pageTitle: "Stat Book",
   },
@@ -35,9 +35,11 @@ const MODE_MAPPINGS = {
 };
 
 const MODE_ROUTES = {
+  statbook: "/stat-book",
   Classic: "/classic",
   Gameflow: "/classic",
   Statbook: "/stat-book",
+  "Stat Book": "/stat-book",
   Express: "/stat-book",
   Collab: "/stat-book?collab=true",
   Match: "/match-tracking",
@@ -45,9 +47,11 @@ const MODE_ROUTES = {
 };
 
 const MODE_NAMES = {
+  statbook: "Stat Book",
   Classic: "Classic",
   Gameflow: "Classic",
   Statbook: "Stat Book",
+  "Stat Book": "Stat Book",
   Express: "Stat Book",
   Collab: "Collaborative Stat Book",
   Match: "Match Tracking",

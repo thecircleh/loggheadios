@@ -41,7 +41,7 @@ export const isMatchModeCompatible = (matchMode, currentPage) => {
   // Includes both current and legacy mode names for backward compatibility
   const MODE_MAPPINGS = {
     classic: ["Classic", "Gameflow"],  // Gameflow is legacy
-    statbook: ["Statbook", "Collab", "Express"],  // Collab is legacy
+    statbook: ["statbook", "Statbook", "Stat Book", "Collab", "Express"],  // Collab/Statbook/Stat Book are legacy
     match: ["Match", "Coach"],         // Coach is legacy
   };
 
@@ -168,12 +168,14 @@ export const getModeName = (mode) => {
   // IMPORTANT: Keys match the exact capitalization from MongoDB
   // Includes both current and legacy mode names
   const MODE_NAMES = {
+    statbook: "Stat Book",
     Classic: "Classic",
-    Gameflow: "Gameflow (Classic)",  // Legacy
-    Statbook: "Stat Book",
-    Collab: "Collaborative (Stat Book)",  // Legacy
+    Gameflow: "Gameflow (Classic)",      // Legacy
+    Statbook: "Stat Book",               // Legacy capitalization
+    "Stat Book": "Stat Book",            // Legacy with space
+    Collab: "Collaborative (Stat Book)", // Legacy
     Match: "Match Tracking",
-    Coach: "Coach (Match Tracking)",  // Legacy
+    Coach: "Coach (Match Tracking)",     // Legacy
   };
 
   return MODE_NAMES[mode] || mode;
