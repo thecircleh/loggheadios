@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { createWorker } from 'tesseract.js';
 // tf and cocoSsd are loaded from CDN in public/index.html as UMD globals.
 // Keeping them out of the webpack bundle prevents the multi-minute compile hang.
 /* global tf, cocoSsd */
@@ -40,6 +41,8 @@ const VideoPlayerTracking = ({
   const animationFrameRef = useRef(null);
   const nextTrackIdRef = useRef(0); // Counter for assigning unique track IDs
   const previousDetectionsRef = useRef([]); // Store previous frame detections for tracking
+  const ocrWorkerRef = useRef(null);       // Tesseract worker (initialized once)
+  const lastOcrAttemptRef = useRef({});    // trackId → timestamp, throttles OCR per track
   // trackId → { bbox, velX, velY }
   // velX/velY = centroid displacement from the frame before last to last frame.
   // Used both for velocity-predicted matching (ID-swap prevention) and as a
@@ -175,6 +178,38 @@ const VideoPlayerTracking = ({
   };
 
 
+  // Extract the upper-chest strip from a bbox, scale it up, boost contrast,
+  // then run Tesseract digit-only OCR. Returns "1" – "99" or null.
+  const attemptJerseyOCR = useCallback(async (bbox, video) => {
+    if (!ocrWorkerRef.current || !video) return null;
+    try {
+      const [x, y, w, h] = bbox;
+      // Upper 45% of the box is where the number sits (chest/upper-back)
+      const rx = x + w * 0.10;
+      const ry = y + h * 0.10;
+      const rw = w * 0.80;
+      const rh = h * 0.45;
+
+      // Scale up so digits are at least 60px tall for Tesseract
+      const scale = Math.max(1, Math.ceil(60 / rh));
+      const tmp = document.createElement('canvas');
+      tmp.width  = Math.round(rw * scale);
+      tmp.height = Math.round(rh * scale);
+      const ctx = tmp.getContext('2d');
+
+      // Draw the video region with contrast boost
+      ctx.filter = 'grayscale(1) contrast(3) brightness(1.4)';
+      ctx.drawImage(video, rx, ry, rw, rh, 0, 0, tmp.width, tmp.height);
+
+      const { data: { text, confidence } } = await ocrWorkerRef.current.recognize(tmp);
+      const digits = text.trim().replace(/\D/g, '');
+      if (confidence < 40 || digits.length === 0 || digits.length > 2) return null;
+      return digits;
+    } catch {
+      return null;
+    }
+  }, []);
+
   // Load COCO-SSD — best choice for broadcast volleyball where players are small
   // in a wide frame (2000px+). MoveNet downsamples to 192px and loses small players;
   // COCO-SSD runs SSD at 300px and reliably finds people at broadcast scale.
@@ -214,6 +249,19 @@ const VideoPlayerTracking = ({
         setModel(detector);
         setModelReady(true);
         console.log('✅ COCO-SSD loaded');
+
+        // Tesseract: digit-only worker for jersey number OCR
+        try {
+          const worker = await createWorker('eng', 1, { logger: () => {} });
+          await worker.setParameters({
+            tessedit_char_whitelist: '0123456789',
+            tessedit_pageseg_mode: '7', // single text line
+          });
+          ocrWorkerRef.current = worker;
+          console.log('✅ Tesseract OCR ready (jersey numbers)');
+        } catch (err) {
+          console.warn('⚠️ Tesseract failed to load — jersey OCR disabled:', err.message);
+        }
 
       } catch (error) {
         console.error('❌ Error loading COCO-SSD:', error);
@@ -341,6 +389,40 @@ const VideoPlayerTracking = ({
         };
       });
       previousDetectionsRef.current = trackedDetections;
+
+      // Fire-and-forget OCR for each unidentified detection (throttled to once per 3s per track).
+      // Runs async so it never blocks the detection loop.
+      if (ocrWorkerRef.current) {
+        const allRosterPlayers = [...(courtPlayers || []), ...(benchPlayers || [])];
+        const now = Date.now();
+        trackedDetections.forEach(d => {
+          if (trackedPlayers[d.trackId]?.playerNumber) return; // already named
+          const last = lastOcrAttemptRef.current[d.trackId] || 0;
+          if (now - last < 3000) return; // throttle
+          lastOcrAttemptRef.current[d.trackId] = now;
+          attemptJerseyOCR(d.bbox, video).then(number => {
+            if (!number) return;
+            const match = allRosterPlayers.find(p => String(p.number) === number);
+            if (!match) return;
+            console.log(`🔢 OCR auto-identified trackId ${d.trackId} as #${match.number} ${match.name}`);
+            setTrackedPlayers(prev => {
+              if (prev[d.trackId]?.playerNumber) return prev; // user already assigned it
+              const next = { ...prev };
+              // Clear any other trackId that already claims this number
+              for (const [tid, info] of Object.entries(next)) {
+                if (info.playerNumber === match.number && Number(tid) !== d.trackId) delete next[tid];
+              }
+              next[d.trackId] = {
+                playerNumber: match.number,
+                playerName: match.name,
+                lastSeen: Date.now(),
+                confidence: 'ocr',
+              };
+              return next;
+            });
+          });
+        });
+      }
 
       if (shouldLog) {
         console.log(`   → after filters: ${trackedDetections.length} on court | IDs: [${trackedDetections.map(p => p.trackId).join(', ')}]`);
@@ -646,6 +728,10 @@ const VideoPlayerTracking = ({
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
         console.log('🛑 Detection loop stopped');
+      }
+      if (ocrWorkerRef.current) {
+        ocrWorkerRef.current.terminate();
+        ocrWorkerRef.current = null;
       }
     };
   }, [model, isActive, detectPlayers]);
