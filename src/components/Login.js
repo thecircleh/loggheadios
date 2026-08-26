@@ -23,7 +23,7 @@ const Login = () => {
   const { setToken } = useAuth();
 
   useEffect(() => {
-    const onKey = (e) => setCapsLock(e.getModifierState('CapsLock'));
+    const onKey = (e) => { if (typeof e.getModifierState === 'function') setCapsLock(e.getModifierState('CapsLock')); };
     document.addEventListener('keydown', onKey);
     document.addEventListener('keyup', onKey);
     return () => {
