@@ -18,6 +18,8 @@ const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
   const { setToken } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -93,13 +95,36 @@ const Login = () => {
             />
 
             <label htmlFor="password">Password</label>
-            <input
-              type="password"
-              id="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                id="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => setCapsLock(e.getModifierState('CapsLock'))}
+                onKeyUp={(e) => setCapsLock(e.getModifierState('CapsLock'))}
+                required
+                style={{ paddingRight: '2.5rem' }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                style={{
+                  position: 'absolute', right: '0.6rem', top: '50%',
+                  transform: 'translateY(-50%)', background: 'none',
+                  border: 'none', cursor: 'pointer', padding: '0',
+                  color: '#888', fontSize: '1.1rem', lineHeight: 1,
+                }}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
+            {capsLock && (
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#e6a817' }}>
+                ⚠️ Caps Lock is on
+              </p>
+            )}
 
             <button type="submit" className="primary-button">Login</button>
           </form>
