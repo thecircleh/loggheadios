@@ -676,10 +676,11 @@ const VideoPlayerTracking = ({
                 .map(([, t]) => t.playerNumber)
             );
 
-            // On-court players not yet claimed by another box
+            // On-court players — during reassignment show ALL (tagged or not),
+            // since picking one clears its old box assignment automatically.
             const courtOptions = (courtPlayers || [])
               .filter(p => p && p.name && p.name !== '?' && p.number && p.number !== '?'
-                           && !taggedNums.has(p.number));
+                           && (isReassignment || !taggedNums.has(p.number)));
 
             // Empty slots gate bench selection — same logic as VolleyballCourt's hasEmptyCourtSlots
             const hasOpenSlots = (courtPlayers || []).some(
