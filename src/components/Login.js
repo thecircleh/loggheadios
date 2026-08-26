@@ -21,6 +21,16 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
   const { setToken } = useAuth();
+
+  useEffect(() => {
+    const onKey = (e) => setCapsLock(e.getModifierState('CapsLock'));
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('keyup', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keyup', onKey);
+    };
+  }, []);
   const navigate = useNavigate();
   const location = useLocation();
   
@@ -95,22 +105,20 @@ const Login = () => {
             />
 
             <label htmlFor="password">Password</label>
-            <div style={{ position: 'relative' }}>
+            <div style={{ position: 'relative', width: '100%' }}>
               <input
                 type={showPassword ? 'text' : 'password'}
                 id="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => setCapsLock(e.getModifierState('CapsLock'))}
-                onKeyUp={(e) => setCapsLock(e.getModifierState('CapsLock'))}
                 required
-                style={{ paddingRight: '2.5rem' }}
+                style={{ width: '100%', boxSizing: 'border-box', paddingRight: '2.5rem' }}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(v => !v)}
                 style={{
-                  position: 'absolute', right: '0.6rem', top: '50%',
+                  position: 'absolute', right: '0.75rem', top: '50%',
                   transform: 'translateY(-50%)', background: 'none',
                   border: 'none', cursor: 'pointer', padding: '0',
                   color: '#888', fontSize: '1.1rem', lineHeight: 1,
