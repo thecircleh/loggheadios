@@ -75,42 +75,48 @@ const VideoPlayerTracking = ({
     };
   };
 
-  // Greedy centroid tracker — called once per frame with ALL new detections so
-  // each previous slot is matched at most once (prevents duplicate IDs).
+  // IoU helper — returns overlap ratio between two [x,y,w,h] bboxes
+  const iouScore = (a, b) => {
+    const ix = Math.max(0, Math.min(a[0]+a[2], b[0]+b[2]) - Math.max(a[0], b[0]));
+    const iy = Math.max(0, Math.min(a[1]+a[3], b[1]+b[3]) - Math.max(a[1], b[1]));
+    const inter = ix * iy;
+    const union = a[2]*a[3] + b[2]*b[3] - inter;
+    return union > 0 ? inter / union : 0;
+  };
+
+  // IoU-based tracker with velocity prediction.
   //
-  // Two-pool strategy:
-  //   Primary (300px): velocity-predicted position from last frame.
-  //     Projecting forward by each player's current velocity keeps them
-  //     distinguishable when they cross paths — without prediction the
-  //     centroids converge and the wrong one wins.
-  //   Fallback (500px): last-known position with no velocity, used when a
-  //     player reappears after a pause/resume gap where prediction is stale.
-  // Two-pass tracker:
-  //   Pass 1 — manually-identified players get first pick of the nearest detection.
-  //            Prevents an unidentified bbox from stealing the slot when paths cross.
-  //   Pass 2 — remaining bboxes matched to unidentified prev tracks via velocity
-  //            prediction, then fall back to last-known position (wide threshold)
-  //            for pause/resume re-entry.
-  const assignTrackIds = (newBboxes, prevDetections, lastKnown = {}, knownPlayers = {}, threshold = 300) => {
+  // Why IoU instead of centroid distance:
+  //   Two different players physically cannot BOTH have high IoU with the same
+  //   predicted bbox — their bodies don't overlap. Centroid distance fails when
+  //   players are close because two centroids can both be "near" the same point.
+  //   With IoU the correct player (whose predicted box overlaps the new detection)
+  //   always wins over a bystander whose box doesn't overlap.
+  //
+  // Two-pass: identified players claim their slot first so unidentified bboxes
+  // can't steal a named player's detection when paths cross.
+  //
+  // Fallback: if IoU < MIN_IOU the detection gets a new trackId → OCR fires
+  // → auto-re-identifies from jersey number.
+  const MIN_IOU = 0.08; // minimum overlap to consider a match
+  const assignTrackIds = (newBboxes, prevDetections, lastKnown = {}, knownPlayers = {}) => {
     const usedPrev = new Set();
-    const usedLast = new Set();
     const result   = new Array(newBboxes.length).fill(null);
 
-    // Pass 1: identified tracks claim their slot first
-    const identifiedPrev = prevDetections.filter(p => knownPlayers[p.trackId]);
-    for (const p of identifiedPrev) {
-      const entry = lastKnown[p.trackId];
-      const velX = entry?.velX ?? 0;
-      const velY = entry?.velY ?? 0;
-      const px = p.bbox[0] + p.bbox[2] / 2 + velX;
-      const py = p.bbox[1] + p.bbox[3] / 2 + velY;
-      let bestIdx = -1, bestDist = Infinity;
+    // Predict where a track's bbox will be this frame (last position + velocity)
+    const predict = (p) => {
+      const e = lastKnown[p.trackId];
+      return [p.bbox[0] + (e?.velX ?? 0), p.bbox[1] + (e?.velY ?? 0), p.bbox[2], p.bbox[3]];
+    };
+
+    // Pass 1: identified tracks — highest IoU wins
+    for (const p of prevDetections.filter(p => knownPlayers[p.trackId])) {
+      const pred = predict(p);
+      let bestIdx = -1, bestIou = MIN_IOU;
       newBboxes.forEach((bbox, i) => {
         if (result[i] !== null) return;
-        const cx = bbox[0] + bbox[2] / 2;
-        const cy = bbox[1] + bbox[3] / 2;
-        const dist = Math.sqrt((cx - px) ** 2 + (cy - py) ** 2);
-        if (dist < threshold && dist < bestDist) { bestDist = dist; bestIdx = i; }
+        const s = iouScore(pred, bbox);
+        if (s > bestIou) { bestIou = s; bestIdx = i; }
       });
       if (bestIdx !== -1) {
         result[bestIdx] = { bbox: newBboxes[bestIdx], trackId: p.trackId };
@@ -118,38 +124,17 @@ const VideoPlayerTracking = ({
       }
     }
 
-    // Pass 2: unidentified bboxes matched to remaining prev tracks
+    // Pass 2: remaining bboxes vs unidentified tracks
     newBboxes.forEach((bbox, i) => {
       if (result[i] !== null) return;
-      const cx = bbox[0] + bbox[2] / 2;
-      const cy = bbox[1] + bbox[3] / 2;
-      let best = null, bestDist = Infinity;
-
+      let best = null, bestIou = MIN_IOU;
       for (const p of prevDetections) {
         if (usedPrev.has(p.trackId)) continue;
-        const entry = lastKnown[p.trackId];
-        const velX = entry?.velX ?? 0;
-        const velY = entry?.velY ?? 0;
-        const px = p.bbox[0] + p.bbox[2] / 2 + velX;
-        const py = p.bbox[1] + p.bbox[3] / 2 + velY;
-        const dist = Math.sqrt((cx - px) ** 2 + (cy - py) ** 2);
-        if (dist < threshold && dist < bestDist) { bestDist = dist; best = { trackId: p.trackId, pool: 'prev' }; }
+        const s = iouScore(predict(p), bbox);
+        if (s > bestIou) { bestIou = s; best = p; }
       }
-
-      if (!best) {
-        for (const [tid, entry] of Object.entries(lastKnown)) {
-          const trackId = Number(tid);
-          if (usedPrev.has(trackId) || usedLast.has(trackId)) continue;
-          const px = entry.bbox[0] + entry.bbox[2] / 2;
-          const py = entry.bbox[1] + entry.bbox[3] / 2;
-          const dist = Math.sqrt((cx - px) ** 2 + (cy - py) ** 2);
-          if (dist < 500 && dist < bestDist) { bestDist = dist; best = { trackId, pool: 'last' }; }
-        }
-      }
-
       if (best) {
-        if (best.pool === 'prev') usedPrev.add(best.trackId);
-        else usedLast.add(best.trackId);
+        usedPrev.add(best.trackId);
         result[i] = { bbox, trackId: best.trackId };
       } else {
         result[i] = { bbox, trackId: nextTrackIdRef.current++ };
@@ -203,7 +188,7 @@ const VideoPlayerTracking = ({
 
       const { data: { text, confidence } } = await ocrWorkerRef.current.recognize(tmp);
       const digits = text.trim().replace(/\D/g, '');
-      if (confidence < 40 || digits.length === 0 || digits.length > 2) return null;
+      if (confidence < 30 || digits.length === 0 || digits.length > 2) return null;
       return digits;
     } catch {
       return null;
@@ -367,7 +352,9 @@ const VideoPlayerTracking = ({
 
       // Assign persistent IDs via greedy centroid matching.
       // Pass lastKnownBboxRef so identities survive pause/resume gaps.
-      const assigned = assignTrackIds(validPeople.map(p => p.bbox), prev, lastKnownBboxRef.current, trackedPlayers);
+      const assigned = assignTrackIds(
+        validPeople.map(p => p.bbox), prev, lastKnownBboxRef.current, trackedPlayers
+      );
       const trackedDetections = validPeople.map((p, i) => ({
         ...p,
         trackId: assigned[i].trackId,
@@ -398,7 +385,7 @@ const VideoPlayerTracking = ({
         trackedDetections.forEach(d => {
           if (trackedPlayers[d.trackId]?.playerNumber) return; // already named
           const last = lastOcrAttemptRef.current[d.trackId] || 0;
-          if (now - last < 3000) return; // throttle
+          if (now - last < 1500) return; // throttle: once per 1.5s per track
           lastOcrAttemptRef.current[d.trackId] = now;
           attemptJerseyOCR(d.bbox, video).then(number => {
             if (!number) return;
