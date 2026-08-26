@@ -82,30 +82,57 @@ const VideoPlayerTracking = ({
   //     centroids converge and the wrong one wins.
   //   Fallback (500px): last-known position with no velocity, used when a
   //     player reappears after a pause/resume gap where prediction is stale.
-  const assignTrackIds = (newBboxes, prevDetections, lastKnown = {}, threshold = 300) => {
+  // Two-pass tracker:
+  //   Pass 1 — manually-identified players get first pick of the nearest detection.
+  //            Prevents an unidentified bbox from stealing the slot when paths cross.
+  //   Pass 2 — remaining bboxes matched to unidentified prev tracks via velocity
+  //            prediction, then fall back to last-known position (wide threshold)
+  //            for pause/resume re-entry.
+  const assignTrackIds = (newBboxes, prevDetections, lastKnown = {}, knownPlayers = {}, threshold = 300) => {
     const usedPrev = new Set();
     const usedLast = new Set();
-    return newBboxes.map(bbox => {
+    const result   = new Array(newBboxes.length).fill(null);
+
+    // Pass 1: identified tracks claim their slot first
+    const identifiedPrev = prevDetections.filter(p => knownPlayers[p.trackId]);
+    for (const p of identifiedPrev) {
+      const entry = lastKnown[p.trackId];
+      const velX = entry?.velX ?? 0;
+      const velY = entry?.velY ?? 0;
+      const px = p.bbox[0] + p.bbox[2] / 2 + velX;
+      const py = p.bbox[1] + p.bbox[3] / 2 + velY;
+      let bestIdx = -1, bestDist = Infinity;
+      newBboxes.forEach((bbox, i) => {
+        if (result[i] !== null) return;
+        const cx = bbox[0] + bbox[2] / 2;
+        const cy = bbox[1] + bbox[3] / 2;
+        const dist = Math.sqrt((cx - px) ** 2 + (cy - py) ** 2);
+        if (dist < threshold && dist < bestDist) { bestDist = dist; bestIdx = i; }
+      });
+      if (bestIdx !== -1) {
+        result[bestIdx] = { bbox: newBboxes[bestIdx], trackId: p.trackId };
+        usedPrev.add(p.trackId);
+      }
+    }
+
+    // Pass 2: unidentified bboxes matched to remaining prev tracks
+    newBboxes.forEach((bbox, i) => {
+      if (result[i] !== null) return;
       const cx = bbox[0] + bbox[2] / 2;
       const cy = bbox[1] + bbox[3] / 2;
       let best = null, bestDist = Infinity;
 
-      // Primary: match against PREDICTED position = last position + velocity
       for (const p of prevDetections) {
         if (usedPrev.has(p.trackId)) continue;
         const entry = lastKnown[p.trackId];
         const velX = entry?.velX ?? 0;
         const velY = entry?.velY ?? 0;
-        // Predict where this player will be in the current frame
         const px = p.bbox[0] + p.bbox[2] / 2 + velX;
         const py = p.bbox[1] + p.bbox[3] / 2 + velY;
         const dist = Math.sqrt((cx - px) ** 2 + (cy - py) ** 2);
-        if (dist < threshold && dist < bestDist) {
-          bestDist = dist; best = { trackId: p.trackId, pool: 'prev' };
-        }
+        if (dist < threshold && dist < bestDist) { bestDist = dist; best = { trackId: p.trackId, pool: 'prev' }; }
       }
 
-      // Fallback: last-known bbox (no prediction) for pause/resume re-entry
       if (!best) {
         for (const [tid, entry] of Object.entries(lastKnown)) {
           const trackId = Number(tid);
@@ -113,19 +140,20 @@ const VideoPlayerTracking = ({
           const px = entry.bbox[0] + entry.bbox[2] / 2;
           const py = entry.bbox[1] + entry.bbox[3] / 2;
           const dist = Math.sqrt((cx - px) ** 2 + (cy - py) ** 2);
-          if (dist < 500 && dist < bestDist) {
-            bestDist = dist; best = { trackId, pool: 'last' };
-          }
+          if (dist < 500 && dist < bestDist) { bestDist = dist; best = { trackId, pool: 'last' }; }
         }
       }
 
       if (best) {
         if (best.pool === 'prev') usedPrev.add(best.trackId);
         else usedLast.add(best.trackId);
-        return { bbox, trackId: best.trackId };
+        result[i] = { bbox, trackId: best.trackId };
+      } else {
+        result[i] = { bbox, trackId: nextTrackIdRef.current++ };
       }
-      return { bbox, trackId: nextTrackIdRef.current++ };
     });
+
+    return result;
   };
 
   // Check if player is on court (inside trapezoid)
@@ -291,7 +319,7 @@ const VideoPlayerTracking = ({
 
       // Assign persistent IDs via greedy centroid matching.
       // Pass lastKnownBboxRef so identities survive pause/resume gaps.
-      const assigned = assignTrackIds(validPeople.map(p => p.bbox), prev, lastKnownBboxRef.current);
+      const assigned = assignTrackIds(validPeople.map(p => p.bbox), prev, lastKnownBboxRef.current, trackedPlayers);
       const trackedDetections = validPeople.map((p, i) => ({
         ...p,
         trackId: assigned[i].trackId,
@@ -325,9 +353,9 @@ const VideoPlayerTracking = ({
       // so the user has time to click the boxes.
       // Auto-resume when the selector is closed (handled in handlePlayerSelect).
       const unidentifiedCount = trackedDetections.filter(
-        d => !(trackedPlayers[d.trackId]?.playerNumber)
+        d => !trackedPlayers[d.trackId]?.playerNumber
       ).length;
-      if (trackedDetections.length > 0 && unidentifiedCount > 0 && !video.paused && !identificationComplete) {
+      if (trackedDetections.length > 0 && unidentifiedCount > 0 && !video.paused) {
         video.pause();
         setIsPaused(true);
       }
@@ -570,15 +598,22 @@ const VideoPlayerTracking = ({
 
     console.log(`✅ User identified trackId ${selectedTrackId} as #${player.number} ${player.name}`);
 
-    setTrackedPlayers(prev => ({
-      ...prev,
-      [selectedTrackId]: {
+    setTrackedPlayers(prev => {
+      const next = { ...prev };
+      // Remove any other trackId already claiming this player number (prevents duplicates)
+      for (const [tid, info] of Object.entries(next)) {
+        if (info.playerNumber === player.number && Number(tid) !== selectedTrackId) {
+          delete next[tid];
+        }
+      }
+      next[selectedTrackId] = {
         playerNumber: player.number,
         playerName: player.name,
         lastSeen: Date.now(),
         confidence: 'manual',
-      }
-    }));
+      };
+      return next;
+    });
 
     // If not already on court, add them
     const alreadyOnCourt = courtPlayers?.some(p => p && p.number === player.number);
@@ -632,10 +667,16 @@ const VideoPlayerTracking = ({
           zIndex: 1000
         }}>
           {(() => {
-            // Players already AI-tagged (exclude from lists)
-            const taggedNums = new Set(Object.values(trackedPlayers).map(t => t.playerNumber));
+            // Exclude players already tagged on OTHER boxes — the current box's own
+            // assignment is kept available so the user can reassign it to someone new.
+            const isReassignment = !!(trackedPlayers[selectedTrackId]);
+            const taggedNums = new Set(
+              Object.entries(trackedPlayers)
+                .filter(([tid]) => Number(tid) !== selectedTrackId)
+                .map(([, t]) => t.playerNumber)
+            );
 
-            // On-court players not yet AI-tagged — always shown so pre-placed players can be IDed
+            // On-court players not yet claimed by another box
             const courtOptions = (courtPlayers || [])
               .filter(p => p && p.name && p.name !== '?' && p.number && p.number !== '?'
                            && !taggedNums.has(p.number));
@@ -674,7 +715,11 @@ const VideoPlayerTracking = ({
 
             return (
               <div style={{ backgroundColor: '#1C1C1E', borderRadius: 16, padding: 28, maxWidth: 600, maxHeight: '80vh', overflowY: 'auto' }}>
-                <h2 style={{ color: '#FFF', marginBottom: 20 }}>👆 Who is this player?</h2>
+                <h2 style={{ color: '#FFF', marginBottom: 20 }}>
+                  {isReassignment
+                    ? `🔄 Reassign #${trackedPlayers[selectedTrackId].playerNumber} (${trackedPlayers[selectedTrackId].playerName?.split(' ')[0]})?`
+                    : '👆 Who is this player?'}
+                </h2>
 
                 {courtOptions.length > 0 && (
                   <div style={{ marginBottom: 20 }}>
