@@ -23,7 +23,7 @@ workflows:
         XCODE_SCHEME: "App"
         BUNDLE_ID: "com.loggerheadstat.app"
         REACT_APP_API_URL: "https://api.loggerhead.app"
-        APP_VERSION: "1.1.1"
+        APP_VERSION: "1.1.2"
       node: v22.0.0
 
     scripts:
