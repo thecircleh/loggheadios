@@ -5901,8 +5901,8 @@ return (
           <span>{showVideoBackground ? "Hide Video" : "Show Video"}</span>
         </button>
         
-        {/* AI Tracking Toggle - only show for local videos */}
-        {showVideoBackground && localVideoUrl && (
+        {/* AI Tracking Toggle - web only (TF.js CDN not loaded on native) */}
+        {showVideoBackground && localVideoUrl && !window.Capacitor?.isNativePlatform?.() && (
           <button
             onClick={toggleAITracking}
             style={{
