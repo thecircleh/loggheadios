@@ -1028,6 +1028,28 @@ const canJoin = isOwner || hasPremium || canJoinAsNonPremium;
     }, 100); 
   };
 
+  const handleStartBeachMatch = async () => {
+    if (!validateRosteredTeam()) return;
+    const updatedSettings = {
+      ...matchSettings,
+      opponentName,
+      totalSets: 3,
+      playAllSets: false,
+      eventName,
+      location,
+      pointsNonDeciding: 21, // beach rules
+      pointsDeciding: 15,
+      teamName: selectedTeam,
+      mode: 'beach',
+    };
+    setMatchSettings(updatedSettings);
+    setTimeout(async () => {
+      await handleNewMatch(updatedSettings);
+      setToastVisible(true);
+      setTimeout(() => { setToastVisible(false); navigate("/beach"); }, 1000);
+    }, 100);
+  };
+
   const handleCollabMatch = async () => {
     if (!validateRosteredTeam()) return;
     
@@ -2869,7 +2891,7 @@ const nextScheduled = scheduledMatches
 
       <div style={{
         display: 'grid',
-        gridTemplateColumns: isMobile && isPortrait ? '1fr' : 'repeat(3, 1fr)',
+        gridTemplateColumns: isMobile && isPortrait ? '1fr 1fr' : 'repeat(4, 1fr)',
         gap: 12,
         width: '100%',
       }}>
@@ -2927,6 +2949,24 @@ const nextScheduled = scheduledMatches
           <span style={{ fontSize: 22 }}>&#127952;</span>
           <span>Classic</span>
           <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.6 }}>Gameflow mode</span>
+        </button>
+
+        {/* Beach - sand theme */}
+        <button
+          onClick={handleStartBeachMatch}
+          disabled={!selectedTeam || !benchPlayers || benchPlayers.length === 0}
+          style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 6, padding: '18px 16px', border: '1.5px solid #e8b84b', borderRadius: 14, cursor: 'pointer',
+            background: 'linear-gradient(135deg, #f5c842, #e8a020)',
+            color: '#7a4800', fontWeight: 700, fontSize: 15, lineHeight: 1.25,
+            opacity: (!selectedTeam || !benchPlayers || benchPlayers.length === 0) ? 0.45 : 1,
+            transition: 'opacity 0.15s',
+          }}
+        >
+          <span style={{ fontSize: 22 }}>🏖️</span>
+          <span>Beach 2v2</span>
+          <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.75 }}>Sand volleyball</span>
         </button>
       </div>
     </div>

@@ -43,6 +43,7 @@ export const isMatchModeCompatible = (matchMode, currentPage) => {
     classic: ["Classic", "Gameflow"],  // Gameflow is legacy
     statbook: ["statbook", "Statbook", "Stat Book", "Collab", "Express"],  // Collab/Statbook/Stat Book are legacy
     match: ["Match", "Coach"],         // Coach is legacy
+    beach: ["Beach"],
   };
 
   const compatibleModes = MODE_MAPPINGS[currentPage] || [];
@@ -176,6 +177,7 @@ export const getModeName = (mode) => {
     Collab: "Collaborative (Stat Book)", // Legacy
     Match: "Match Tracking",
     Coach: "Coach (Match Tracking)",     // Legacy
+    Beach: "Beach Volleyball",
   };
 
   return MODE_NAMES[mode] || mode;

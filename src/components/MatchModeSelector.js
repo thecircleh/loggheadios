@@ -32,6 +32,12 @@ const MODE_MAPPINGS = {
     displayName: "Match Tracking",
     pageTitle: "Match Tracking",
   },
+  beach: {
+    compatibleModes: ["Beach"],
+    newMatchMode: "Beach",
+    displayName: "Beach Volleyball",
+    pageTitle: "Beach Volleyball",
+  },
 };
 
 const MODE_ROUTES = {
@@ -44,6 +50,7 @@ const MODE_ROUTES = {
   Collab: "/stat-book?collab=true",
   Match: "/match-tracking",
   Coach: "/match-tracking",
+  Beach: "/beach",
 };
 
 const MODE_NAMES = {
@@ -56,6 +63,7 @@ const MODE_NAMES = {
   Collab: "Collaborative Stat Book",
   Match: "Match Tracking",
   Coach: "Match Tracking",
+  Beach: "Beach Volleyball",
 };
 
 const MATCH_AGE_THRESHOLD_MINUTES = 60;

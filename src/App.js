@@ -35,6 +35,7 @@ import DeleteAccount from './pages/deleteAccount';
 import StatBookContainer from "./components/StatBookContainer";
 import MatchTrackingContainer from "./components/MatchTrackingContainer";
 import ClassicContainer from "./components/ClassicContainer";
+import BeachPage from "./components/BeachPage";
 import FAQPage from './components/FAQPage';
 import HowToPage from './components/HowToPage'; 
 import BlogList from './components/BlogList';
@@ -678,6 +679,7 @@ function LoggingModeDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
           <a href="/stat-book" onClick={onClose} className="ios-dropdown-item">Stat Book Mode</a>
           <a href="/match-tracking" onClick={onClose} className="ios-dropdown-item">Match Mode</a>
           <a href="/classic" onClick={onClose} className="ios-dropdown-item">Classic Mode</a>
+          <a href="/beach" onClick={onClose} className="ios-dropdown-item">Beach 2v2</a>
         </div>
       )}
     </div>
@@ -944,6 +946,7 @@ const resetMatchStateOnly = useCallback(() => {
 const getLoggerheadModeFromPath = useCallback((pathname) => {
   if (pathname === "/stat-book" || pathname === "/express") return "statbook";
   if (pathname === "/match-tracking") return "match";
+  if (pathname === "/beach") return "beach";
   return null;
 }, []);
 
@@ -1368,7 +1371,9 @@ const updateCourtPositions = useCallback(async (newCourtPlayers, newPositionMapp
   const isCourtMode = location.pathname === '/' || location.pathname === '/match';
   
   // ===== 2. VALIDATE INPUT =====
-  if (!Array.isArray(newCourtPlayers) || newCourtPlayers.length !== 6) {
+  const isBeachMode = location.pathname === '/beach';
+  const expectedLength = isBeachMode ? 2 : 6;
+  if (!Array.isArray(newCourtPlayers) || newCourtPlayers.length !== expectedLength) {
     console.error('❌ Invalid courtPlayers array:', newCourtPlayers);
     return;
   }
@@ -2760,7 +2765,7 @@ payload = {
   mode: modeForAccess,
   accessKey: shouldAttachAccessKey ? getAccessKeyForMode(modeForAccess) : undefined,
   collaborativeMode: newSettings?.collaborativeMode,
-  courtPlayers: Array.from({ length: 6 }, (_, i) => ({
+  courtPlayers: Array.from({ length: modeForAccess === 'beach' ? 2 : 6 }, (_, i) => ({
     id: `empty-filler-${i}`,
     name: "?",
     number: "?",
@@ -5377,6 +5382,42 @@ if (location.pathname === "/match-tracking") {
   }
 />
        
+
+<Route
+  path="/beach"
+  element={
+    <PrivateRoute>
+      <BeachPage
+        currentMatchId={currentMatchId}
+        setCurrentMatchId={setCurrentMatchId}
+        matchSettings={matchSettings}
+        setMatchSettings={setMatchSettings}
+        isMobile={isMobile}
+        isPortrait={isPortrait}
+        isTouch={isTouch}
+        courtPlayers={courtPlayers}
+        setCourtPlayers={setCourtPlayers}
+        benchPlayers={benchPlayers}
+        setBenchPlayers={setBenchPlayers}
+        updateCourtPositions={updateCourtPositions}
+        ourScore={ourScore}
+        opponentScore={opponentScore}
+        ourSetsWon={ourSetsWon}
+        opponentSetsWon={opponentSetsWon}
+        opponentName={opponentName}
+        actionLog={actionLog}
+        setActionLog={setActionLog}
+        onAddPoint={onAddPoint}
+        onRemovePoint={onRemovePoint}
+        saveMatchData={saveMatchData}
+        handleNewMatch={handleNewMatch}
+        teamStats={teamStats}
+        setTeamStats={setTeamStats}
+        token={token}
+      />
+    </PrivateRoute>
+  }
+/>
 
             <Route
               path="/match-summary/:matchId"
