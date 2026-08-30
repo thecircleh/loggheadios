@@ -2027,6 +2027,14 @@ const buttonStyle2 = {
   return blockInfo !== null;
 };
 
+// Beach volleyball: on side-out, swap who is at slot 0 (server) vs slot 1
+const swapBeachServers = async () => {
+  const [p0, p1] = courtPlayers;
+  // Only swap if both slots have real players
+  if (!p0 || !p1 || p0.name === '?' || p1.name === '?') return;
+  await updatePlayersOnCourt([p1, p0]);
+};
+
 const rotatePlayers = async () => {
   // Save current state before rotation
   const rotationRecord = {
@@ -2588,7 +2596,11 @@ const resetBall = (newServeSide, position, shouldRotate = false) => {
   setBlockInfo(null);
   
   if (shouldRotate && newServeSide === "our") {
-    rotatePlayers();
+    if (isBeachMode) {
+      swapBeachServers();
+    } else {
+      rotatePlayers();
+    }
   }
 };
 
