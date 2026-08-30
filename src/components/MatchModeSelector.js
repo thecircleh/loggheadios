@@ -15,28 +15,22 @@ const API_URL = getApiUrl();
 
 const MODE_MAPPINGS = {
   classic: {
-    compatibleModes: ["Classic", "Gameflow"],
+    compatibleModes: ["Classic", "Gameflow", "beach"],
     newMatchMode: "Classic",
     displayName: "Classic",
     pageTitle: "Classic Mode",
   },
   statbook: {
-    compatibleModes: ["statbook", "Statbook", "Stat Book", "Collab", "Express"],
+    compatibleModes: ["statbook", "Statbook", "Stat Book", "Collab", "Express", "beach"],
     newMatchMode: "statbook",
     displayName: "Stat Book",
     pageTitle: "Stat Book",
   },
   match: {
-    compatibleModes: ["Match", "Coach"],
+    compatibleModes: ["Match", "Coach", "beach"],
     newMatchMode: "Match",
     displayName: "Match Tracking",
     pageTitle: "Match Tracking",
-  },
-  beach: {
-    compatibleModes: ["Beach"],
-    newMatchMode: "Beach",
-    displayName: "Beach Volleyball",
-    pageTitle: "Beach Volleyball",
   },
 };
 
@@ -50,7 +44,7 @@ const MODE_ROUTES = {
   Collab: "/stat-book?collab=true",
   Match: "/match-tracking",
   Coach: "/match-tracking",
-  Beach: "/beach",
+  beach: "/stat-book",  // beach matches live in existing logging modes
 };
 
 const MODE_NAMES = {
@@ -63,7 +57,7 @@ const MODE_NAMES = {
   Collab: "Collaborative Stat Book",
   Match: "Match Tracking",
   Coach: "Match Tracking",
-  Beach: "Beach Volleyball",
+  beach: "Beach 2v2",
 };
 
 const MATCH_AGE_THRESHOLD_MINUTES = 60;
