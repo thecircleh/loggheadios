@@ -81,10 +81,12 @@ export default function MatchModeSelector({
   const { user, token } = useAuth();
 
   const [teams, setTeams] = useState([]);
-  const [teamRosters, setTeamRosters] = useState({});
+  const [teamRosters, setTeamRosters] = useState([]);
   const [existingMatches, setExistingMatches] = useState([]);
   const [activeTab, setActiveTab] = useState("new");
-  const [loading, setLoading] = useState(true);
+  const [loadingTeams, setLoadingTeams] = useState(true);
+  const [loadingMatches, setLoadingMatches] = useState(false);
+  const [matchesFetched, setMatchesFetched] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
@@ -118,15 +120,16 @@ export default function MatchModeSelector({
 
   const correctRoute = MODE_ROUTES[currentMatchMode] || "/";
 
+  // Fetch teams + rosters immediately so the "Start New Match" form is ready right away
   useEffect(() => {
     if (!token || !user?.id || !shouldShow) {
-      setLoading(false);
+      setLoadingTeams(false);
       return;
     }
 
-    const fetchData = async () => {
+    const fetchTeams = async () => {
       try {
-        setLoading(true);
+        setLoadingTeams(true);
 
         const userRes = await axios.get(`${API_URL}/api/users/${user.id}`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -156,21 +159,35 @@ export default function MatchModeSelector({
         }
 
         setTeamRosters(rosters);
+      } catch (err) {
+        console.error("Failed to load teams:", err);
+        setError("Could not load your teams.");
+      } finally {
+        setLoadingTeams(false);
+      }
+    };
+
+    fetchTeams();
+  }, [token, user?.id, shouldShow]);
+
+  // Fetch existing matches only when the user opens the "Call Up Older Match" tab
+  useEffect(() => {
+    if (activeTab !== "resume" || matchesFetched || !token || !user?.id || teams.length === 0) return;
+
+    const fetchMatches = async () => {
+      try {
+        setLoadingMatches(true);
 
         const allMatches = [];
-
-        for (const teamName of fetchedTeams) {
+        for (const teamName of teams) {
           try {
             const matchRes = await axios.get(`${API_URL}/api/matches/team`, {
               params: { teamName },
               headers: { Authorization: `Bearer ${token}` },
             });
-
-            if (Array.isArray(matchRes.data)) {
-              allMatches.push(...matchRes.data);
-            }
+            if (Array.isArray(matchRes.data)) allMatches.push(...matchRes.data);
           } catch {
-            // Ignore one bad team fetch
+            // ignore one bad team
           }
         }
 
@@ -182,7 +199,6 @@ export default function MatchModeSelector({
               match.status !== "Final" &&
               match.status !== "completed" &&
               !match.finalized;
-
             return compatible && notCurrent && notFinal;
           })
           .sort((a, b) => {
@@ -192,29 +208,17 @@ export default function MatchModeSelector({
           });
 
         setExistingMatches(compatibleMatches);
-
-        if (compatibleMatches.length > 0 && hasWrongModeActiveMatch) {
-          setActiveTab("resume");
-        }
+        setMatchesFetched(true);
       } catch (err) {
-        console.error("Failed to load match selector data:", err);
-        setError("Could not load your teams or matches.");
+        console.error("Failed to load existing matches:", err);
+        setError("Could not load your previous matches.");
       } finally {
-        setLoading(false);
+        setLoadingMatches(false);
       }
     };
 
-    fetchData();
-  }, [
-    token,
-    user?.id,
-    currentMatchId,
-    currentMatchMode,
-    currentPage,
-    shouldShow,
-    hasWrongModeActiveMatch,
-    config.compatibleModes,
-  ]);
+    fetchMatches();
+  }, [activeTab, matchesFetched, token, user?.id, teams, config.compatibleModes, currentMatchId]);
 
   const filteredMatches = useMemo(() => {
     if (!formData.teamName) return existingMatches;
@@ -336,11 +340,11 @@ export default function MatchModeSelector({
 
   if (!shouldShow) return null;
 
-  if (loading) {
+  if (loadingTeams) {
     return (
       <div style={styles.overlay}>
         <div style={styles.card}>
-          <h2 style={styles.title}>Loading matches...</h2>
+          <h2 style={styles.title}>Loading...</h2>
         </div>
       </div>
     );
@@ -493,42 +497,48 @@ export default function MatchModeSelector({
 
         {activeTab === "resume" && (
           <div style={styles.section}>
-            <label style={styles.label}>Filter by team</label>
-            <select
-              value={formData.teamName}
-              onChange={(e) => updateField("teamName", e.target.value)}
-              style={styles.input}
-            >
-              <option value="">All teams</option>
-              {teams.map((team) => (
-                <option key={team} value={team}>
-                  {team}
-                </option>
-              ))}
-            </select>
-
-            {filteredMatches.length === 0 ? (
-              <div style={styles.emptyState}>
-                No older {config.displayName} matches found.
-              </div>
+            {loadingMatches ? (
+              <div style={styles.emptyState}>Loading previous matches…</div>
             ) : (
-              <div style={styles.matchList}>
-                {filteredMatches.map((match) => (
-                  <button
-                    key={match._id}
-                    onClick={() => handleResumeMatch(match)}
-                    style={styles.matchCard}
-                  >
-                    <div style={styles.matchTitle}>
-                      {match.teamName || "Team"} vs{" "}
-                      {match.opponentName || match.matchData?.opponentName || "Opponent"}
-                    </div>
-                    <div style={styles.matchMeta}>
-                      {MODE_NAMES[match.mode] || match.mode} • {formatTime(match)}
-                    </div>
-                  </button>
-                ))}
-              </div>
+              <>
+                <label style={styles.label}>Filter by team</label>
+                <select
+                  value={formData.teamName}
+                  onChange={(e) => updateField("teamName", e.target.value)}
+                  style={styles.input}
+                >
+                  <option value="">All teams</option>
+                  {teams.map((team) => (
+                    <option key={team} value={team}>
+                      {team}
+                    </option>
+                  ))}
+                </select>
+
+                {filteredMatches.length === 0 ? (
+                  <div style={styles.emptyState}>
+                    No older {config.displayName} matches found.
+                  </div>
+                ) : (
+                  <div style={styles.matchList}>
+                    {filteredMatches.map((match) => (
+                      <button
+                        key={match._id}
+                        onClick={() => handleResumeMatch(match)}
+                        style={styles.matchCard}
+                      >
+                        <div style={styles.matchTitle}>
+                          {match.teamName || "Team"} vs{" "}
+                          {match.opponentName || match.matchData?.opponentName || "Opponent"}
+                        </div>
+                        <div style={styles.matchMeta}>
+                          {MODE_NAMES[match.mode] || match.mode} • {formatTime(match)}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
