@@ -35,7 +35,6 @@ import DeleteAccount from './pages/deleteAccount';
 import StatBookContainer from "./components/StatBookContainer";
 import MatchTrackingContainer from "./components/MatchTrackingContainer";
 import ClassicContainer from "./components/ClassicContainer";
-import BeachPage from "./components/BeachPage";
 import FAQPage from './components/FAQPage';
 import HowToPage from './components/HowToPage'; 
 import BlogList from './components/BlogList';
@@ -679,7 +678,6 @@ function LoggingModeDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
           <a href="/stat-book" onClick={onClose} className="ios-dropdown-item">Stat Book Mode</a>
           <a href="/match-tracking" onClick={onClose} className="ios-dropdown-item">Match Mode</a>
           <a href="/classic" onClick={onClose} className="ios-dropdown-item">Classic Mode</a>
-          <a href="/beach" onClick={onClose} className="ios-dropdown-item">Beach 2v2</a>
         </div>
       )}
     </div>
@@ -1371,7 +1369,8 @@ const updateCourtPositions = useCallback(async (newCourtPlayers, newPositionMapp
   const isCourtMode = location.pathname === '/' || location.pathname === '/match';
   
   // ===== 2. VALIDATE INPUT =====
-  const isBeachMode = location.pathname === '/beach';
+  // Beach matches have 2 court slots; all other modes have 6.
+  const isBeachMode = matchSettings?.mode === 'beach';
   const expectedLength = isBeachMode ? 2 : 6;
   if (!Array.isArray(newCourtPlayers) || newCourtPlayers.length !== expectedLength) {
     console.error('❌ Invalid courtPlayers array:', newCourtPlayers);
@@ -1544,6 +1543,7 @@ const updateCourtPositions = useCallback(async (newCourtPlayers, newPositionMapp
   
 }, [
   location.pathname,
+  matchSettings?.mode,
   positionMapping,
   collaborativeMode,
   isConnected,
@@ -2819,7 +2819,7 @@ payload = {
     });
 
     setCourtPlayers(
-      Array.from({ length: 6 }, (_, i) => ({
+      Array.from({ length: modeForAccess === 'beach' ? 2 : 6 }, (_, i) => ({
         id: `empty-filler-${i}`,
         name: "?",
         number: "?",
@@ -4106,21 +4106,33 @@ useEffect(() => {
           }
         });
 
-        // The match always saves courtPlayers in position order ["4","3","2","5","6","1"].
-        // Convert back to slot order using the saved positionMapping so that after any
-        // number of rotations the libero ends up in the correct physical slot.
-        const SAVE_POS_ORDER = ["4", "3", "2", "5", "6", "1"];
-        const savedMapping = match.positionMapping || { 0:'4', 1:'3', 2:'2', 3:'5', 4:'6', 5:'1' };
+        // Beach mode: 2-slot array, no position mapping needed
+        const isBeachMatch = match.mode === 'beach';
+        let filledCourtPlayers;
 
-        const filledCourtPlayers = Array(6).fill(null).map((_, slotIndex) => {
-          const posForSlot = String(savedMapping[slotIndex] ?? SAVE_POS_ORDER[slotIndex]);
-          const saveIdx = SAVE_POS_ORDER.indexOf(posForSlot);
-          const player = saveIdx >= 0 ? hydratedCourtPlayers[saveIdx] : null;
-          if (player && player.name !== "?") {
-            return { ...player, expressPosition: posForSlot };
-          }
-          return { id: `empty-${slotIndex}`, name: "?", number: "?", isLibero: false, expressPosition: posForSlot };
-        });
+        if (isBeachMatch) {
+          filledCourtPlayers = [0, 1].map((slotIndex) => {
+            const player = hydratedCourtPlayers[slotIndex];
+            if (player && player.name !== "?") return player;
+            return { id: `empty-${slotIndex}`, name: "?", number: "?", isLibero: false };
+          });
+        } else {
+          // The match always saves courtPlayers in position order ["4","3","2","5","6","1"].
+          // Convert back to slot order using the saved positionMapping so that after any
+          // number of rotations the libero ends up in the correct physical slot.
+          const SAVE_POS_ORDER = ["4", "3", "2", "5", "6", "1"];
+          const savedMapping = match.positionMapping || { 0:'4', 1:'3', 2:'2', 3:'5', 4:'6', 5:'1' };
+
+          filledCourtPlayers = Array(6).fill(null).map((_, slotIndex) => {
+            const posForSlot = String(savedMapping[slotIndex] ?? SAVE_POS_ORDER[slotIndex]);
+            const saveIdx = SAVE_POS_ORDER.indexOf(posForSlot);
+            const player = saveIdx >= 0 ? hydratedCourtPlayers[saveIdx] : null;
+            if (player && player.name !== "?") {
+              return { ...player, expressPosition: posForSlot };
+            }
+            return { id: `empty-${slotIndex}`, name: "?", number: "?", isLibero: false, expressPosition: posForSlot };
+          });
+        }
 
         // Sync credited players BEFORE setCourtPlayers so the ref is already
         // populated when VolleyballCourt's useEffect fires — prevents a second
@@ -5383,41 +5395,7 @@ if (location.pathname === "/match-tracking") {
 />
        
 
-<Route
-  path="/beach"
-  element={
-    <PrivateRoute>
-      <BeachPage
-        currentMatchId={currentMatchId}
-        setCurrentMatchId={setCurrentMatchId}
-        matchSettings={matchSettings}
-        setMatchSettings={setMatchSettings}
-        isMobile={isMobile}
-        isPortrait={isPortrait}
-        isTouch={isTouch}
-        courtPlayers={courtPlayers}
-        setCourtPlayers={setCourtPlayers}
-        benchPlayers={benchPlayers}
-        setBenchPlayers={setBenchPlayers}
-        updateCourtPositions={updateCourtPositions}
-        ourScore={ourScore}
-        opponentScore={opponentScore}
-        ourSetsWon={ourSetsWon}
-        opponentSetsWon={opponentSetsWon}
-        opponentName={opponentName}
-        actionLog={actionLog}
-        setActionLog={setActionLog}
-        onAddPoint={onAddPoint}
-        onRemovePoint={onRemovePoint}
-        saveMatchData={saveMatchData}
-        handleNewMatch={handleNewMatch}
-        teamStats={teamStats}
-        setTeamStats={setTeamStats}
-        token={token}
-      />
-    </PrivateRoute>
-  }
-/>
+<Route path="/beach" element={<Navigate to="/stat-book" replace />} />
 
             <Route
               path="/match-summary/:matchId"

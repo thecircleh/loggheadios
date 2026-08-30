@@ -1772,6 +1772,8 @@ const getNetLabelStyle = () => ({
     zIndex: 1
   };
 
+  const isBeachMode = match?.mode === 'beach' || (courtPlayers && courtPlayers.length === 2);
+
 const slotStyle = (index, player, flash) => {
   const size = (isMobile && isPortrait) ? 85 : (isMobile && deviceInfo.isLandscape ? 80 : (isMobile ? 90 : 100));
 
@@ -5574,30 +5576,46 @@ function renderCourtArea() {
       {/* Player Cards - Hidden when AI tracking is on */}
       {!enableAITracking && (
         <>
-          {/* FIRST ROW - Players 0, 1, 2 */}
-          <div style={rowStyle}>
-            {courtPlayers.slice(0, 3).map((player, idx) => (
-              <CourtSlot
-               key={idx}
-               player={player}
-               index={idx}
-               flash={flashSlots[idx]}
-               ref={idx === 2 ? slot2Ref : null}
-               />
-            ))}
-          </div>
-          
-          {/* SECOND ROW - Players 3, 4, 5 */}
-          <div style={rowStyle}>
-            {courtPlayers.slice(3, 6).map((player, idx) => (
-              <CourtSlot
-                key={idx + 3}
-                player={player}
-                index={idx + 3}
-                flash={flashSlots[idx + 3]}
-              />
-            ))}
-          </div>
+          {isBeachMode ? (
+            /* BEACH MODE: single centered row with 2 player slots */
+            <div style={{ ...rowStyle, gap: (isMobile && isPortrait) ? 20 : 32 }}>
+              {courtPlayers.slice(0, 2).map((player, idx) => (
+                <CourtSlot
+                  key={idx}
+                  player={player}
+                  index={idx}
+                  flash={flashSlots[idx]}
+                />
+              ))}
+            </div>
+          ) : (
+            <>
+              {/* FIRST ROW - Players 0, 1, 2 */}
+              <div style={rowStyle}>
+                {courtPlayers.slice(0, 3).map((player, idx) => (
+                  <CourtSlot
+                    key={idx}
+                    player={player}
+                    index={idx}
+                    flash={flashSlots[idx]}
+                    ref={idx === 2 ? slot2Ref : null}
+                  />
+                ))}
+              </div>
+
+              {/* SECOND ROW - Players 3, 4, 5 */}
+              <div style={rowStyle}>
+                {courtPlayers.slice(3, 6).map((player, idx) => (
+                  <CourtSlot
+                    key={idx + 3}
+                    player={player}
+                    index={idx + 3}
+                    flash={flashSlots[idx + 3]}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </>
       )}
 

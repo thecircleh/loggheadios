@@ -1046,7 +1046,7 @@ const canJoin = isOwner || hasPremium || canJoinAsNonPremium;
     setTimeout(async () => {
       await handleNewMatch(updatedSettings);
       setToastVisible(true);
-      setTimeout(() => { setToastVisible(false); navigate("/beach"); }, 1000);
+      setTimeout(() => { setToastVisible(false); navigate("/stat-book"); }, 1000);
     }, 100);
   };
 
