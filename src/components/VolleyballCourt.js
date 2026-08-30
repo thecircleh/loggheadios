@@ -1772,7 +1772,7 @@ const getNetLabelStyle = () => ({
     zIndex: 1
   };
 
-  const isBeachMode = match?.mode === 'beach' || (courtPlayers && courtPlayers.length === 2);
+  const isBeachMode = match?.beachMode === true || (courtPlayers && courtPlayers.length === 2);
 
 const slotStyle = (index, player, flash) => {
   const size = (isMobile && isPortrait) ? 85 : (isMobile && deviceInfo.isLandscape ? 80 : (isMobile ? 90 : 100));

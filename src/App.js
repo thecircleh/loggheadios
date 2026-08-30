@@ -944,7 +944,6 @@ const resetMatchStateOnly = useCallback(() => {
 const getLoggerheadModeFromPath = useCallback((pathname) => {
   if (pathname === "/stat-book" || pathname === "/express") return "statbook";
   if (pathname === "/match-tracking") return "match";
-  if (pathname === "/beach") return "beach";
   return null;
 }, []);
 
@@ -1370,7 +1369,7 @@ const updateCourtPositions = useCallback(async (newCourtPlayers, newPositionMapp
   
   // ===== 2. VALIDATE INPUT =====
   // Beach matches have 2 court slots; all other modes have 6.
-  const isBeachMode = matchSettings?.mode === 'beach';
+  const isBeachMode = matchSettings?.beachMode === true;
   const expectedLength = isBeachMode ? 2 : 6;
   if (!Array.isArray(newCourtPlayers) || newCourtPlayers.length !== expectedLength) {
     console.error('❌ Invalid courtPlayers array:', newCourtPlayers);
@@ -2765,7 +2764,7 @@ payload = {
   mode: modeForAccess,
   accessKey: shouldAttachAccessKey ? getAccessKeyForMode(modeForAccess) : undefined,
   collaborativeMode: newSettings?.collaborativeMode,
-  courtPlayers: Array.from({ length: modeForAccess === 'beach' ? 2 : 6 }, (_, i) => ({
+  courtPlayers: Array.from({ length: newSettings?.beachMode ? 2 : 6 }, (_, i) => ({
     id: `empty-filler-${i}`,
     name: "?",
     number: "?",
@@ -2819,7 +2818,7 @@ payload = {
     });
 
     setCourtPlayers(
-      Array.from({ length: modeForAccess === 'beach' ? 2 : 6 }, (_, i) => ({
+      Array.from({ length: newSettings?.beachMode ? 2 : 6 }, (_, i) => ({
         id: `empty-filler-${i}`,
         name: "?",
         number: "?",
@@ -4107,7 +4106,7 @@ useEffect(() => {
         });
 
         // Beach mode: 2-slot array, no position mapping needed
-        const isBeachMatch = match.mode === 'beach';
+        const isBeachMatch = match.beachMode === true || (match.courtPlayers && match.courtPlayers.length === 2);
         let filledCourtPlayers;
 
         if (isBeachMatch) {

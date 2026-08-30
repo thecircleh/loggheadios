@@ -15,19 +15,19 @@ const API_URL = getApiUrl();
 
 const MODE_MAPPINGS = {
   classic: {
-    compatibleModes: ["Classic", "Gameflow", "beach"],
+    compatibleModes: ["Classic", "Gameflow"],
     newMatchMode: "Classic",
     displayName: "Classic",
     pageTitle: "Classic Mode",
   },
   statbook: {
-    compatibleModes: ["statbook", "Statbook", "Stat Book", "Collab", "Express", "beach"],
+    compatibleModes: ["statbook", "Statbook", "Stat Book", "Collab", "Express"],
     newMatchMode: "statbook",
     displayName: "Stat Book",
     pageTitle: "Stat Book",
   },
   match: {
-    compatibleModes: ["Match", "Coach", "beach"],
+    compatibleModes: ["Match", "Coach"],
     newMatchMode: "Match",
     displayName: "Match Tracking",
     pageTitle: "Match Tracking",
@@ -44,7 +44,6 @@ const MODE_ROUTES = {
   Collab: "/stat-book?collab=true",
   Match: "/match-tracking",
   Coach: "/match-tracking",
-  beach: "/stat-book",  // beach matches live in existing logging modes
 };
 
 const MODE_NAMES = {
@@ -57,7 +56,6 @@ const MODE_NAMES = {
   Collab: "Collaborative Stat Book",
   Match: "Match Tracking",
   Coach: "Match Tracking",
-  beach: "Beach 2v2",
 };
 
 const MATCH_AGE_THRESHOLD_MINUTES = 60;

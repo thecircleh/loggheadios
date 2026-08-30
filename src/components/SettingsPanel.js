@@ -945,7 +945,8 @@ const canJoin = isOwner || hasPremium || canJoinAsNonPremium;
     pointsNonDeciding:  isBeachMode ? 21 : pointsNonDeciding,
     pointsDeciding:     isBeachMode ? 15 : pointsDeciding,
     teamName: selectedTeam,
-    mode: isBeachMode ? 'beach' : modeOverride,
+    mode: modeOverride,        // keep the real logging mode
+    beachMode: isBeachMode,    // new: beach is a setting not a mode
   });
 
   const handleSaveAndStartMatchTracking = async () => {

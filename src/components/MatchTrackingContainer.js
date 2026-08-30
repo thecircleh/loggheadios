@@ -74,7 +74,7 @@ export default function MatchTrackingContainer({
   const { user, token } = useAuth();
   const [currentMatchAge, setCurrentMatchAge] = useState(0);
   
-    const compatibleModes = ["Match", "Coach", "beach"];
+    const compatibleModes = ["Match", "Coach"];
 const isCompatibleMatch =
   !currentMatchId ||
   !matchSettings?.mode ||
