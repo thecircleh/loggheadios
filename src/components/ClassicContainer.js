@@ -148,6 +148,7 @@ const isCompatibleMatch =
       setMatchSettings({
         ...matchData,
         mode: config.mode, // Explicitly set mode from config
+        // new matches via MatchModeSelector won't be beach — that comes from SettingsPanel
       });
 
       // Set opponent name
@@ -200,9 +201,11 @@ const isCompatibleMatch =
 
       // Update match state with explicit mode from config
       setCurrentMatchId(config.matchId);
+      const isBeachMatch = matchData.beachMode === true || (matchData.courtPlayers && matchData.courtPlayers.length === 2);
       setMatchSettings({
         ...matchData,
         mode: config.mode, // Explicitly set mode from config
+        beachMode: isBeachMatch,
       });
 
       // Restore opponent name

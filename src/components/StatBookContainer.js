@@ -168,6 +168,7 @@ const isCompatibleMatch =
 
       // Restore match settings
       if (setMatchSettings) {
+        const isBeachMatch = matchData.beachMode === true || (matchData.courtPlayers && matchData.courtPlayers.length === 2);
         setMatchSettings({
           mode: config.mode, // Force correct mode!
           teamName: matchData.teamName,
@@ -176,6 +177,7 @@ const isCompatibleMatch =
           points: matchData.pointsNonDeciding || matchData.matchData?.points,
           decidingSetPoints: matchData.pointsDeciding || matchData.matchData?.decidingSetPoints,
           playAllSets: matchData.playAllSets || matchData.matchData?.playAllSets,
+          beachMode: isBeachMatch,
         });
       }
 

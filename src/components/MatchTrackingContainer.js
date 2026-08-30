@@ -177,10 +177,12 @@ const isCompatibleMatch =
         setCurrentMatchId(config.matchId);
       }, 100);
       
+      const isBeachMatch = matchData.beachMode === true || (matchData.courtPlayers && matchData.courtPlayers.length === 2);
       setMatchSettings((prev) => ({
         ...prev,
         ...matchData,
         mode: config.mode,
+        beachMode: isBeachMatch,
       }));
 
       // Restore scores

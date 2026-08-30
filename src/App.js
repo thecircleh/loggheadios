@@ -4185,6 +4185,8 @@ useEffect(() => {
         setMatchSettings((prev) => ({
           ...prev,
           currentSet: typeof restoredCurrentSet === "number" ? restoredCurrentSet : (match.currentSet || 1),
+          // Derive beachMode from court size — reliable even if server stripped the field
+          beachMode: isBeachMatch,
         }));
 
         setTimeout(() => {
