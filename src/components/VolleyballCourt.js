@@ -485,11 +485,16 @@ const CourtSlot = useMemo(() => React.forwardRef(({ player, index, flash }, ref)
           )}
         </>
       )}
-      <div style={ctx.slotPosStyle}>Pos {ctx.positionLabels[index]}</div>
-      {!isEmptySlot && ctx.positionLabels[index] === "1" && !player.isLibero && (
+      {ctx.isBeachMode ? (
+        // Beach: index 0 = "Server", index 1 = no label
+        index === 0 ? <div style={ctx.slotPosStyle}>Server</div> : null
+      ) : (
+        <div style={ctx.slotPosStyle}>Pos {ctx.positionLabels[index]}</div>
+      )}
+      {!ctx.isBeachMode && !isEmptySlot && ctx.positionLabels[index] === "1" && !player.isLibero && (
         <div style={ctx.serverBadgeStyle}>Server</div>
       )}
-      {!isEmptySlot && player.isLibero && <div style={ctx.liberoBadgeStyle}>Libero</div>}
+      {!ctx.isBeachMode && !isEmptySlot && player.isLibero && <div style={ctx.liberoBadgeStyle}>Libero</div>}
     </div>
   );
 }), []); // empty deps = stable component reference; state accessed through courtSlotCtxRef
@@ -2954,6 +2959,10 @@ const handlePlayerDrop = async (benchPlayer, slotIndex) => {
   const fillingEmptySlot = courtPlayers.some(
     p => !p || p.name === '?' || p.number === '?' || p.number == null
   );
+  if (!fillingEmptySlot && isBeachMode) {
+    // Beach volleyball has no substitutions — only the initial 2-player lineup is set via drag
+    return;
+  }
   if (!fillingEmptySlot && ballState !== "serve") {
     alert("Substitutions are only allowed before the rally begins.");
     return;
@@ -5411,7 +5420,7 @@ function renderBench() {
                 key={`bench-${player._id || i}`}
                 player={player}
                 benchCardStyle={benchCardStyle}
-                canSub={(ballState === "serve" || hasEmptyCourtSlots) && !playersOnCourtIds.has(player._id)}
+                canSub={(ballState === "serve" || hasEmptyCourtSlots) && !playersOnCourtIds.has(player._id) && (!isBeachMode || hasEmptyCourtSlots)}
                 slot5TargetId={slot5TargetId}
                 allowedLiberoSubTarget={allowedLiberoSubTarget}
                 currentServeSide={currentServeSide}
@@ -5805,6 +5814,7 @@ courtSlotCtxRef.current = {
   serverBadgeStyle,
   liberoBadgeStyle,
   positionLabels,
+  isBeachMode,
   slot5TargetId,
   allowedLiberoSubTarget,
   showVideoBackground,
