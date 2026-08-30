@@ -355,28 +355,6 @@ export default function MatchModeSelector({
       <div style={styles.card}>
         <h1 style={styles.title}>{config.pageTitle}</h1>
 
-        {hasWrongModeActiveMatch && (
-          <div style={styles.warningBox}>
-            <div style={styles.warningTitle}>Active match is in another mode</div>
-            <div style={styles.warningText}>
-              Your current match was started in{" "}
-              <strong>{MODE_NAMES[currentMatchMode] || currentMatchMode}</strong>.
-              It cannot be opened in <strong>{config.displayName}</strong>.
-            </div>
-
-            <button onClick={handleGoCorrectMode} style={styles.correctModeButton}>
-              Resume {MODE_NAMES[currentMatchMode] || currentMatchMode}
-            </button>
-          </div>
-        )}
-
-        {hasStaleMatch && (
-          <div style={styles.infoBox}>
-            Your current {config.displayName} match is over an hour old. Resume an
-            older match or start fresh.
-          </div>
-        )}
-
         {error && <div style={styles.errorBox}>{error}</div>}
 
         <div style={styles.buttonGrid}>
@@ -497,6 +475,26 @@ export default function MatchModeSelector({
 
         {activeTab === "resume" && (
           <div style={styles.section}>
+            {hasWrongModeActiveMatch && (
+              <div style={styles.warningBox}>
+                <div style={styles.warningTitle}>Active match is in another mode</div>
+                <div style={styles.warningText}>
+                  Your current match was started in{" "}
+                  <strong>{MODE_NAMES[currentMatchMode] || currentMatchMode}</strong>.
+                  Switch back to resume it.
+                </div>
+                <button onClick={handleGoCorrectMode} style={styles.correctModeButton}>
+                  Resume {MODE_NAMES[currentMatchMode] || currentMatchMode}
+                </button>
+              </div>
+            )}
+
+            {hasStaleMatch && (
+              <div style={styles.infoBox}>
+                Your current {config.displayName} match is over an hour old.
+              </div>
+            )}
+
             {loadingMatches ? (
               <div style={styles.emptyState}>Loading previous matches…</div>
             ) : (
