@@ -40,10 +40,9 @@ export const isMatchModeCompatible = (matchMode, currentPage) => {
   // IMPORTANT: These match the exact capitalization stored in your MongoDB database
   // Includes both current and legacy mode names for backward compatibility
   const MODE_MAPPINGS = {
-    classic: ["Classic", "Gameflow"],  // Gameflow is legacy
-    statbook: ["statbook", "Statbook", "Stat Book", "Collab", "Express"],  // Collab/Statbook/Stat Book are legacy
-    match: ["Match", "Coach"],         // Coach is legacy
-    beach: ["Beach"],
+    classic: ["Classic", "Gameflow", "beach"],  // beach matches can be resumed in any mode
+    statbook: ["statbook", "Statbook", "Stat Book", "Collab", "Express", "beach"],
+    match: ["Match", "Coach", "beach"],
   };
 
   const compatibleModes = MODE_MAPPINGS[currentPage] || [];

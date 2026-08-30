@@ -168,6 +168,7 @@ const SettingsPanel = ({
   const [playAllSets, setPlayAllSets] = useState(() => matchSettings?.playAllSets ?? false);
   const [pointsNonDeciding, setPointsNonDeciding] = useState(() => matchSettings?.pointsNonDeciding ??  25);
   const [pointsDeciding, setPointsDeciding] = useState(() => matchSettings?.pointsDeciding ?? 15);
+  const [isBeachMode, setIsBeachMode] = useState(() => matchSettings?.mode === 'beach');
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerNumber, setNewPlayerNumber] = useState('');
   const [savedMatches, setSavedMatches] = useState([]);
@@ -933,114 +934,47 @@ const canJoin = isOwner || hasPremium || canJoinAsNonPremium;
     return true;
   };
 
+  // Shared helper: build base settings, overriding with beach rules when the beach toggle is on
+  const buildMatchSettings = (modeOverride) => ({
+    ...matchSettings,
+    opponentName,
+    totalSets:          isBeachMode ? 3 : maxSets,
+    playAllSets:        isBeachMode ? false : playAllSets,
+    eventName,
+    location,
+    pointsNonDeciding:  isBeachMode ? 21 : pointsNonDeciding,
+    pointsDeciding:     isBeachMode ? 15 : pointsDeciding,
+    teamName: selectedTeam,
+    mode: isBeachMode ? 'beach' : modeOverride,
+  });
+
   const handleSaveAndStartMatchTracking = async () => {
     if (!validateRosteredTeam()) return;
-    
-    const updatedSettings = {
-      ...matchSettings,
-      opponentName,
-      totalSets: maxSets, 
-      playAllSets,
-      eventName,
-      location,
-      pointsNonDeciding,
-      pointsDeciding,
-      teamName: selectedTeam,
-	  mode: 'match',
-    };
-
+    const updatedSettings = buildMatchSettings('match');
     setMatchSettings(updatedSettings);
-
     setTimeout(async () => {
       await handleNewMatch(updatedSettings);
-      
       setToastVisible(true);
-
-      setTimeout(() => {
-        setToastVisible(false);
-        navigate("/match-tracking");
-      }, 1000);
-    }, 100); 
+      setTimeout(() => { setToastVisible(false); navigate("/match-tracking"); }, 1000);
+    }, 100);
   };
 
   const handleSaveAndStartMatch = async () => {
     if (!validateRosteredTeam()) return;
-    
-    const updatedSettings = {
-      ...matchSettings,
-      opponentName,
-      totalSets: maxSets, 
-      playAllSets,
-      eventName,
-      location,
-      pointsNonDeciding,
-      pointsDeciding,
-      teamName: selectedTeam,
-	  mode: 'classic',
-    };
-
+    const updatedSettings = buildMatchSettings('classic');
     setMatchSettings(updatedSettings);
-
     setTimeout(async () => {
       await handleNewMatch(updatedSettings);
-      
       setToastVisible(true);
-
-      setTimeout(() => {
-        setToastVisible(false);
-        navigate("/classic");
-      }, 1000);
-    }, 100); 
+      setTimeout(() => { setToastVisible(false); navigate("/classic"); }, 1000);
+    }, 100);
   };
 
   const handleExpressMatch = async () => {
     if (!validateRosteredTeam()) return;
-    
     const updatedSettings = {
-      ...matchSettings,
-      opponentName,
-      totalSets: maxSets, 
-      playAllSets,
-      eventName,
-      location,
-      pointsNonDeciding,
-      pointsDeciding,
-      teamName: selectedTeam,
-	  mode: 'statbook',
-      collaborativeMode: { 
-        enabled: false,
-        allowedUsers: [], 
-        maxUsers: 1
-      }
-    };
-
-    setMatchSettings(updatedSettings);
-
-    setTimeout(async () => {
-      await handleNewMatch(updatedSettings);
-      
-      setToastVisible(true);
-
-      setTimeout(() => {
-        setToastVisible(false);
-        navigate("/stat-book");
-      }, 1000);
-    }, 100); 
-  };
-
-  const handleStartBeachMatch = async () => {
-    if (!validateRosteredTeam()) return;
-    const updatedSettings = {
-      ...matchSettings,
-      opponentName,
-      totalSets: 3,
-      playAllSets: false,
-      eventName,
-      location,
-      pointsNonDeciding: 21, // beach rules
-      pointsDeciding: 15,
-      teamName: selectedTeam,
-      mode: 'beach',
+      ...buildMatchSettings('statbook'),
+      collaborativeMode: { enabled: false, allowedUsers: [], maxUsers: 1 },
     };
     setMatchSettings(updatedSettings);
     setTimeout(async () => {
@@ -2889,9 +2823,28 @@ const nextScheduled = scheduledMatches
         </div>
       )}
 
+      {/* Beach 2v2 format toggle */}
+      <div style={{ marginBottom: 14 }}>
+        <button
+          onClick={() => setIsBeachMode(v => !v)}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '8px 16px', borderRadius: 20, cursor: 'pointer',
+            border: isBeachMode ? '2px solid #c8940a' : '2px solid #d1d5db',
+            background: isBeachMode ? 'linear-gradient(135deg, #f5c842, #e8a020)' : '#f9fafb',
+            color: isBeachMode ? '#7a4800' : '#6b7280',
+            fontWeight: 600, fontSize: 14, transition: 'all 0.15s',
+          }}
+        >
+          <span style={{ fontSize: 18 }}>🏖️</span>
+          <span>Beach 2v2</span>
+          {isBeachMode && <span style={{ fontSize: 11, opacity: 0.8 }}>21 pts · 2 players</span>}
+        </button>
+      </div>
+
       <div style={{
         display: 'grid',
-        gridTemplateColumns: isMobile && isPortrait ? '1fr 1fr' : 'repeat(4, 1fr)',
+        gridTemplateColumns: isMobile && isPortrait ? '1fr 1fr' : 'repeat(3, 1fr)',
         gap: 12,
         width: '100%',
       }}>
@@ -2951,23 +2904,6 @@ const nextScheduled = scheduledMatches
           <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.6 }}>Gameflow mode</span>
         </button>
 
-        {/* Beach - sand theme */}
-        <button
-          onClick={handleStartBeachMatch}
-          disabled={!selectedTeam || !benchPlayers || benchPlayers.length === 0}
-          style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 6, padding: '18px 16px', border: '1.5px solid #e8b84b', borderRadius: 14, cursor: 'pointer',
-            background: 'linear-gradient(135deg, #f5c842, #e8a020)',
-            color: '#7a4800', fontWeight: 700, fontSize: 15, lineHeight: 1.25,
-            opacity: (!selectedTeam || !benchPlayers || benchPlayers.length === 0) ? 0.45 : 1,
-            transition: 'opacity 0.15s',
-          }}
-        >
-          <span style={{ fontSize: 22 }}>🏖️</span>
-          <span>Beach 2v2</span>
-          <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.75 }}>Sand volleyball</span>
-        </button>
       </div>
     </div>
   </div>}
