@@ -2843,6 +2843,7 @@ payload = {
     setOpponentScore(0);
     setOurSetsWon(0);
     setOpponentSetsWon(0);
+    setTeamStats({ ourEarned: 0, ourError: 0, oppEarned: 0, oppError: 0 });
     setSetScores(newMatch.setScores || []);
     setServeSide("opponent");
   } catch (err) {
@@ -2878,9 +2879,10 @@ payload = {
   syncCurrentMatchIdToProfile,
   syncCreditedPlayersFromState,
   canUseFreeMode,
-hasUnusedMatchKey,
-getAccessKeyForMode,
-user?.matchKeys,
+  hasUnusedMatchKey,
+  getAccessKeyForMode,
+  user?.matchKeys,
+  setTeamStats,
 ]);
 
 
