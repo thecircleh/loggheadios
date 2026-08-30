@@ -77,7 +77,7 @@ export default function StatBookContainer({
   const { user, token } = useAuth();
   const [currentMatchAge, setCurrentMatchAge] = useState(0);
   
-  const compatibleModes = ["Statbook", "Collab"];
+  const compatibleModes = ["Statbook", "Collab", "statbook", "Stat Book", "Express", "beach"];
 const isCompatibleMatch =
   !currentMatchId ||
   !match?.mode ||

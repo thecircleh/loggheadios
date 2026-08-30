@@ -105,7 +105,7 @@ export default function ClassicContainer({
   const { user, token } = useAuth();
   const [currentMatchAge, setCurrentMatchAge] = useState(0);
   
-  const compatibleModes = ["Classic", "Gameflow"];
+  const compatibleModes = ["Classic", "Gameflow", "beach"];
 const isCompatibleMatch =
   !currentMatchId ||
   !matchSettings?.mode ||
