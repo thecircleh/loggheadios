@@ -2580,9 +2580,9 @@ const nextScheduled = scheduledMatches
         <div>
           <div style={styles.accordionTitle}>2. Match Settings</div>
           <div style={styles.accordionSummary}>
-            {opponentName
-              ? `vs ${opponentName}${eventName ? ` · ${eventName}` : ''}`
-              : eventName || 'No opponent set'}
+            {isBeachMode ? '🏖️ Beach 2v2' : '🏐 Indoor 6v6'}
+            {opponentName ? ` · vs ${opponentName}` : ''}
+            {eventName ? ` · ${eventName}` : ''}
           </div>
         </div>
         <span style={styles.accordionChevron}>{openSections.matchSettings ? '▲' : '▼'}</span>
@@ -2590,161 +2590,151 @@ const nextScheduled = scheduledMatches
 
       {openSections.matchSettings && <>
       <div style={styles.card}>
-        <div style={formContainerStyle}>
-<div
-  style={{
-    display: 'flex',
-    flexDirection: isMobile && isPortrait ? 'column' : 'row',
-    gap: isMobile ? '10px' : '12px',
-  }}
->
-        <div style={{ ...fieldStyle, flex: 1 }}>      
-          <label>Opponent</label>
-          <input
-  type="text"
-  placeholder="Enter opponent name"
-  value={opponentName}
-  onFocus={() => {
-    if (opponentName === 'Enter an Opponent') {
-      setOpponentName('');
-    }
-  }}
-  onChange={(e) => setOpponentName(e.target.value)}
-  style={inputStyle}
-          />
-        </div>
 
-        <div style={{ ...fieldStyle, flex: 1 }}>
-          <label>Event</label>
-          <input
-            type="text"
-            placeholder="Tournament Name or Other Descriptor"
-            value={eventName}
-            onChange={(e) => setEventName(e.target.value)}
-            list="event-options"
-            style={inputStyle}
-          />
-          <datalist id="event-options">
-            {eventSuggestions.map((ev, i) => (
-              <option key={i} value={ev} />
-            ))}
-          </datalist>
-        </div>
-
-        <div style={{ ...fieldStyle, flex: 1 }}>
-          <label>Location</label>
-          <input
-            type="text"
-            placeholder="City or Gym Name"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            list="location-options"
-            style={inputStyle}
-          />
-          <datalist id="location-options">
-            {locationSuggestions.map((loc, i) => (
-              <option key={i} value={loc} />
-            ))}
-          </datalist>
-        </div>
-		</div>
-<div
-  style={{
-    display: 'flex',
-    flexDirection: isMobile && isPortrait ? 'column' : 'row',
-    gap: isMobile ? '10px' : '12px',
-  }}
->
-        <div style={{ ...fieldStyle, flex: 1 }}>
-          <label>Max Sets</label>
-<input
-  type="number"
-  value={maxSets}
-  onChange={(e) => {
-    const value = e.target.value;
-    setMaxSets(value === "" ? "" : Number(value));
-  }}
-  style={inputStyle}
-/>
-          <div style={fieldStyle}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input
-                type="checkbox"
-                checked={playAllSets}
-                onChange={(e) => setPlayAllSets(e.target.checked)}
-              />
-			  
-              Play all sets regardless of outcome
-            </label>
+        {/* ── Format ── */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Format</label>
+          <div style={{ display: 'inline-flex', borderRadius: 10, overflow: 'hidden', border: '1px solid #e5e7eb', background: '#f3f4f6' }}>
+            <button
+              onClick={() => setIsBeachMode(false)}
+              style={{
+                padding: '8px 18px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14,
+                background: !isBeachMode ? '#fff' : 'transparent',
+                color: !isBeachMode ? '#1d4ed8' : '#6b7280',
+                boxShadow: !isBeachMode ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
+                borderRadius: !isBeachMode ? 9 : 0,
+                transition: 'all 0.15s',
+              }}
+            >🏐 Indoor 6v6</button>
+            <button
+              onClick={() => setIsBeachMode(true)}
+              style={{
+                padding: '8px 18px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14,
+                background: isBeachMode ? 'linear-gradient(135deg,#f5c842,#e8a020)' : 'transparent',
+                color: isBeachMode ? '#7a4800' : '#6b7280',
+                boxShadow: isBeachMode ? '0 1px 4px rgba(200,148,10,0.20)' : 'none',
+                borderRadius: isBeachMode ? 9 : 0,
+                transition: 'all 0.15s',
+              }}
+            >🏖️ Beach 2v2</button>
           </div>
         </div>
 
+        {/* ── Opponent / Event / Location ── */}
+        <div style={{ display: 'flex', flexDirection: isMobile && isPortrait ? 'column' : 'row', gap: 12, marginBottom: 16 }}>
+          <div style={{ ...fieldStyle, flex: 1 }}>
+            <label>Opponent</label>
+            <input
+              type="text"
+              placeholder="Opponent name"
+              value={opponentName}
+              onFocus={() => { if (opponentName === 'Enter an Opponent') setOpponentName(''); }}
+              onChange={(e) => setOpponentName(e.target.value)}
+              style={inputStyle}
+            />
+          </div>
+          <div style={{ ...fieldStyle, flex: 1 }}>
+            <label>Event</label>
+            <input
+              type="text"
+              placeholder="Tournament or event name"
+              value={eventName}
+              onChange={(e) => setEventName(e.target.value)}
+              list="event-options"
+              style={inputStyle}
+            />
+            <datalist id="event-options">
+              {eventSuggestions.map((ev, i) => <option key={i} value={ev} />)}
+            </datalist>
+          </div>
+          <div style={{ ...fieldStyle, flex: 1 }}>
+            <label>Location</label>
+            <input
+              type="text"
+              placeholder="City or gym"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              list="location-options"
+              style={inputStyle}
+            />
+            <datalist id="location-options">
+              {locationSuggestions.map((loc, i) => <option key={i} value={loc} />)}
+            </datalist>
+          </div>
+        </div>
 
-  <div style={{ ...fieldStyle, flex: 1 }}>
-    <label>Points Per Set (Non-Deciding)</label>
-    <input
-      type="number"
-      value={pointsNonDeciding}
-      onChange={(e) => {
-        const value = e.target.value;
-        setPointsNonDeciding(value === "" ? "" : Number(value));
-      }}
-      style={inputStyle}
-    />
-  </div>
+        {/* ── Scoring rules — locked for beach, editable for indoor ── */}
+        {isBeachMode ? (
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: '10px 14px', background: '#fffbeb', border: '1px solid #f5c842', borderRadius: 10 }}>
+            <span style={{ fontSize: 13, color: '#92400e', fontWeight: 500 }}>🏖️ Beach rules applied:</span>
+            <span style={{ fontSize: 13, color: '#78350f' }}>Best of 3 sets</span>
+            <span style={{ fontSize: 13, color: '#78350f' }}>·</span>
+            <span style={{ fontSize: 13, color: '#78350f' }}>21 pts (15 deciding)</span>
+            <span style={{ fontSize: 13, color: '#78350f' }}>·</span>
+            <span style={{ fontSize: 13, color: '#78350f' }}>2 players per side</span>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: isMobile && isPortrait ? 'column' : 'row', gap: 12 }}>
+            <div style={{ ...fieldStyle, flex: 1 }}>
+              <label>Sets</label>
+              <input
+                type="number"
+                value={maxSets}
+                onChange={(e) => { const v = e.target.value; setMaxSets(v === "" ? "" : Number(v)); }}
+                style={inputStyle}
+              />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 14, color: '#374151', cursor: 'pointer' }}>
+                <input type="checkbox" checked={playAllSets} onChange={(e) => setPlayAllSets(e.target.checked)} />
+                Play all sets
+              </label>
+            </div>
+            <div style={{ ...fieldStyle, flex: 1 }}>
+              <label>Points per set</label>
+              <input
+                type="number"
+                value={pointsNonDeciding}
+                onChange={(e) => { const v = e.target.value; setPointsNonDeciding(v === "" ? "" : Number(v)); }}
+                style={inputStyle}
+              />
+            </div>
+            <div style={{ ...fieldStyle, flex: 1 }}>
+              <label>Deciding set points</label>
+              <input
+                type="number"
+                value={pointsDeciding}
+                onChange={(e) => { const v = e.target.value; setPointsDeciding(v === "" ? "" : Number(v)); }}
+                style={inputStyle}
+              />
+            </div>
+          </div>
+        )}
 
-  <div style={{ ...fieldStyle, flex: 1 }}>
-    <label>Deciding Set (Set {maxSets}) Points</label>
-    <input
-      type="number"
-      value={pointsDeciding}
-      onChange={(e) => {
-        const value = e.target.value;
-        setPointsDeciding(value === "" ? "" : Number(value));
-      }}
-      style={inputStyle}
-    />
-  </div>
-</div>
+        {/* ── Schedule ── */}
+        <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #f3f4f6' }}>
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Schedule (optional)</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="date"
+              value={scheduleDate}
+              onChange={(e) => setScheduleDate(e.target.value)}
+              style={{ ...inputStyle, flex: 1 }}
+            />
+            <input
+              type="time"
+              value={scheduleTime}
+              onChange={(e) => setScheduleTime(e.target.value)}
+              style={{ ...inputStyle, flex: 1 }}
+            />
+            <button
+              onClick={handleScheduleMatch}
+              style={{ ...styles.secondaryButton, whiteSpace: 'nowrap' }}
+            >
+              Save
+            </button>
+          </div>
+        </div>
 
-		
-		  <div
-      style={{
-        flex: '1 1 240px',
-        minWidth: 0,
-        backgroundColor: '#FFFFFF',
-        borderRadius: 16,
-        padding: 16,
-        boxShadow: '0 4px 10px rgba(0,0,0,0.06)',
-      }}
-    >
-      <h4 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
-        Schedule this match
-      </h4>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-        <input
-          type="date"
-          value={scheduleDate}
-          onChange={(e) => setScheduleDate(e.target.value)}
-          style={{ ...styles.input, flex: 1 }}
-        />
-        <input
-          type="time"
-          value={scheduleTime}
-          onChange={(e) => setScheduleTime(e.target.value)}
-          style={{ ...styles.input, flex: 1 }}
-        />
       </div>
-      <button
-        onClick={handleScheduleMatch}
-        style={{ ...styles.secondaryButton, width: '100%' }}
-      >
-        Schedule Match
-      </button>
-    </div>
-      </div>
-      </div>
-
       </>}
 
       {/* ============================================ */}
@@ -2822,25 +2812,6 @@ const nextScheduled = scheduledMatches
             : 'Please add players to your roster before starting a match'}
         </div>
       )}
-
-      {/* Beach 2v2 format toggle */}
-      <div style={{ marginBottom: 14 }}>
-        <button
-          onClick={() => setIsBeachMode(v => !v)}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-            padding: '8px 16px', borderRadius: 20, cursor: 'pointer',
-            border: isBeachMode ? '2px solid #c8940a' : '2px solid #d1d5db',
-            background: isBeachMode ? 'linear-gradient(135deg, #f5c842, #e8a020)' : '#f9fafb',
-            color: isBeachMode ? '#7a4800' : '#6b7280',
-            fontWeight: 600, fontSize: 14, transition: 'all 0.15s',
-          }}
-        >
-          <span style={{ fontSize: 18 }}>🏖️</span>
-          <span>Beach 2v2</span>
-          {isBeachMode && <span style={{ fontSize: 11, opacity: 0.8 }}>21 pts · 2 players</span>}
-        </button>
-      </div>
 
       <div style={{
         display: 'grid',
