@@ -925,8 +925,9 @@ const resetMatchStateOnly = useCallback(() => {
   setOurSetsWon(0);
   setOpponentSetsWon(0);
 
-  // court + logs
-  setCourtPlayers(Array.from({ length: 6 }, () => ({ name: "?", number: "?" })));
+  // court + logs — preserve beach court size
+  const courtSize = matchSettings?.beachMode ? 2 : 6;
+  setCourtPlayers(Array.from({ length: courtSize }, () => ({ name: "?", number: "?" })));
   setSubstitutionLog([]);
   setActionLog([]);
 
@@ -939,7 +940,7 @@ const resetMatchStateOnly = useCallback(() => {
     ...p,
     currentSet: 1,
   }));
-}, []);
+}, [matchSettings?.beachMode]);
 
 const getLoggerheadModeFromPath = useCallback((pathname) => {
   if (pathname === "/stat-book" || pathname === "/express") return "statbook";
@@ -2814,6 +2815,7 @@ payload = {
       pointsNonDeciding: newMatch.pointsNonDeciding || 25,
       pointsDeciding: newMatch.pointsDeciding || 15,
       mode: newMatch.mode || newSettings?.mode || "Match",
+      beachMode: newSettings?.beachMode || false,   // preserve — server may strip before schema update
       _id: newMatch._id,
     });
 
