@@ -1778,6 +1778,9 @@ const getNetLabelStyle = () => ({
   };
 
   const isBeachMode = match?.beachMode === true || (courtPlayers && courtPlayers.length === 2);
+  // In indoor volleyball the server is always at rotation slot 5 (position 1).
+  // In beach volleyball there are only 2 slots and the server is at slot 0.
+  const serverSlotIndex = isBeachMode ? 0 : 5;
 
 const slotStyle = (index, player, flash) => {
   const size = (isMobile && isPortrait) ? 85 : (isMobile && deviceInfo.isLandscape ? 80 : (isMobile ? 90 : 100));
@@ -2843,10 +2846,10 @@ const player = courtPlayers[slotIndex];
     flashSlot(slotIndex);
     return;
       } else {
-        const dummyTouch = { slotIndex: 5, role: "Serve", side: "our" };
+        const dummyTouch = { slotIndex: serverSlotIndex, role: "Serve", side: "our" };
         setTouches([dummyTouch]);
         setBallSide("our");
-        const player = courtPlayers[5];
+        const player = courtPlayers[serverSlotIndex];
         setActionLog((prev) => [
           ...prev,
           {
@@ -4577,7 +4580,7 @@ const handleActionDrop = (zoneAction, isOurServeOverride = null, voiceBlockInfo 
   const isOurServe = ballState === "serve" && serveSide === "our";
   const isTheirServe = ballState === "serve" && serveSide === "opponent";
 
-  const server = serveSide === "our" ? courtPlayers[5] : null;
+  const server = serveSide === "our" ? courtPlayers[serverSlotIndex] : null;
   
 
   // Serve State
@@ -4588,7 +4591,7 @@ if (zoneAction === "Error") {
     // Show error type modal (existing behavior)
     setPendingErrorCallback(() => (reason) => {
       const reasonFormatted = reason ? ` (${reason})` : "";
-      const server = courtPlayers[5];
+      const server = courtPlayers[serverSlotIndex];
 
       logAndSyncStat({
         playerId: server._id,
@@ -4628,7 +4631,7 @@ if (zoneAction === "Error") {
     setShowErrorTypeModal(true);
   } else {
     // Fast mode - just log generic service error
-    const server = courtPlayers[5];
+    const server = courtPlayers[serverSlotIndex];
 
     logAndSyncStat({
       playerId: server._id,
@@ -6131,7 +6134,7 @@ return (
   }}
       >
         <h3 style={{ marginBottom: "16px" }}>
-          Where did {courtPlayers[5]?.name || "this player"} #{courtPlayers[5]?.number || "?"} serve to?
+          Where did {courtPlayers[serverSlotIndex]?.name || "this player"} #{courtPlayers[serverSlotIndex]?.number || "?"} serve to?
         </h3>
         
         <div
@@ -6146,7 +6149,7 @@ return (
             } else {
               setPendingErrorCallback(() => (reason) => {
                 const reasonFormatted = reason ? ` (${reason})` : "";
-                const server = courtPlayers[5];
+                const server = courtPlayers[serverSlotIndex];
                 
                 let actionText = formatPlayerAction(server, `Serve is an Error${reasonFormatted}`);
                 if (selectedServeZone !== null) {
