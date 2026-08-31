@@ -6236,7 +6236,7 @@ const getBottomBarButtonStyleWithFeedback = useCallback((backgroundColor, textCo
                     borderBottom: isOn && actionGroups.length > 0 ? 'none' : undefined,
                     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                     transition: 'all 0.2s ease',
-                    opacity: isOn ? 1 : 0.7,
+                    opacity: isOn ? (isBeachMode && lastTouchedPlayerId && lastTouchedPlayerId === player._id ? 0.45 : 1) : 0.7,
                     position: 'relative'
                   }}
                 >
@@ -6369,8 +6369,25 @@ const getBottomBarButtonStyleWithFeedback = useCallback((backgroundColor, textCo
                   )}
                 </div>
 
-                {/* Action Buttons - Show if player is ON */}
-                {isOn && actionGroups.length > 0 && (
+                {/* Beach mode: show "other player's turn" hint when this player just touched */}
+                {isBeachMode && lastTouchedPlayerId === player._id && (
+                  <div style={{
+                    padding: '6px 12px',
+                    backgroundColor: '#f0f4ff',
+                    borderRadius: '0 0 6px 6px',
+                    border: '2px solid #007AFF',
+                    borderTop: 'none',
+                    fontSize: '12px',
+                    color: '#007AFF',
+                    fontWeight: '600',
+                    textAlign: 'center',
+                  }}>
+                    ↩ Just touched — other player's turn
+                  </div>
+                )}
+
+                {/* Action Buttons - Show if player is ON (and not the just-touched player in beach mode) */}
+                {isOn && actionGroups.length > 0 && !(isBeachMode && lastTouchedPlayerId === player._id) && (
                   <div
                     style={{
                       display: 'flex',
