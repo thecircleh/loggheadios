@@ -301,6 +301,7 @@ const ExpressStatLogger = ({
   opponentScore,
   setOurScore,
   setOpponentScore,
+  isBeachMode = false,
 }) => {
   // ========================================================================
   // NEW STATE: Roster-based player selection with ON/OFF toggles
@@ -1583,7 +1584,8 @@ useEffect(() => {
   
   // Helper function to get current volleyball position for any UI slot
   const getVolleyballPosition = useCallback((slotIndex) => {
-    if (typeof slotIndex !== 'number' || slotIndex < 0 || slotIndex > 5) {
+    const maxSlot = isBeachMode ? 1 : 5;
+    if (typeof slotIndex !== 'number' || slotIndex < 0 || slotIndex > maxSlot) {
       return '?';
     }
     // Get position from the player object itself first
@@ -1593,9 +1595,9 @@ useEffect(() => {
     }
     // Fallback to positionMapping if available
     return positionMapping[slotIndex] || '?';
-  }, [courtPlayers, positionMapping]);
-  
-  
+  }, [courtPlayers, positionMapping, isBeachMode]);
+
+
 const moveByUiIndex = useCallback((dragUiIndex, targetUiIndex) => {
   if (dragUiIndex === targetUiIndex) return;
 
@@ -2857,8 +2859,9 @@ const handlePlayerToggle = useCallback(async (playerId) => {
   const wasOn = !!playerOnOffStatus[playerId];
   const currentOnCount = Object.values(playerOnOffStatus).filter(Boolean).length;
 
-  if (!wasOn && currentOnCount >= 6) {
-    showActionToast('Maximum 6 players on court. Turn OFF a player first.', 'warning');
+  const maxPlayers = isBeachMode ? 2 : 6;
+  if (!wasOn && currentOnCount >= maxPlayers) {
+    showActionToast(`Maximum ${maxPlayers} players on court. Turn OFF a player first.`, 'warning');
     return;
   }
 
@@ -6279,7 +6282,7 @@ const getBottomBarButtonStyleWithFeedback = useCallback((backgroundColor, textCo
                       flex: 1
                     }}>
                       {player.name}
-                      {player.isLibero && (
+                      {player.isLibero && !isBeachMode && (
                         <span style={{
                           fontSize: '11px',
                           color: '#999',

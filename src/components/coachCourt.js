@@ -338,12 +338,16 @@ const [theirPointsByOurErrors, setTheirPointsByOurErrors] = useState(0);
   const [playerPM, setPlayerPM] = useState({}); 
   const lastSavedSetRef = useRef(setNumber);// { [id]: number }
 
-  // Ensure court has 6 slots
+  const isBeachMode = matchSettings?.beachMode === true || (courtPlayers && courtPlayers.length === 2);
+  const serverSlotIndex = isBeachMode ? 0 : 5;
+
+  // Ensure court has correct number of slots (2 for beach, 6 for indoor)
   const safeCourt = useMemo(() => {
     const c = Array.isArray(courtPlayers) ? [...courtPlayers] : [];
-    while (c.length < 6) c.push({ ...emptyPlayer });
-    return c.slice(0, 6);
-  }, [courtPlayers]);
+    const targetSize = isBeachMode ? 2 : 6;
+    while (c.length < targetSize) c.push({ ...emptyPlayer });
+    return c.slice(0, targetSize);
+  }, [courtPlayers, isBeachMode]);
 
 const subCount = useMemo(() => {
   // Only count entries where neither the player coming IN nor OUT is a libero
@@ -353,8 +357,6 @@ const subCount = useMemo(() => {
     !entry.outLibero
   ).length;
 }, [subLog]);
-
-  const serverSlotIndex = 5; // position "1" is index 5 in your labels array
 
   // Helpers
   const applyDeltaToOnCourtPlayers = (delta) => {
@@ -415,6 +417,14 @@ const applyDeltaToRotation = (delta) => {
 };
 
   const doRotateIfSideout = async (winner) => {
+    if (isBeachMode) {
+      // Beach: swap slot 0 and slot 1 (server alternates on side-out)
+      const [p0, p1] = courtPlayers;
+      if (p0 && p1 && p0.name !== '?' && p1.name !== '?') {
+        updatePlayersOnCourt([p1, p0]);
+      }
+      return;
+    }
     // Only rotate when WE win a point while THEY were serving (we gain serve)
     const weGainedServe = winner === "our" && servingSide === "their";
 
@@ -1182,9 +1192,9 @@ const awardPoint = async (winner, reason) => {
 };
  
 
-const hasEmptyCourtSlots = safeCourt.some(
-  (p) => !p || p.name === "?" || !p._id
-);
+// In beach mode only the 2 real slots matter — ignore extra padded slots
+const relevantCourt = isBeachMode ? safeCourt.slice(0, 2) : safeCourt;
+const hasEmptyCourtSlots = relevantCourt.some(p => !p || p.name === "?" || !p._id);
 
 const getContrastColor = (hex) => {
   if (!hex) return "#FFFFFF";
@@ -1638,11 +1648,15 @@ setSubLog((prev) => [
   fontWeight: isMobile ? 300 : 500,
   ...(isEmpty && { fontFamily: "Georgia", fontSize: isMobile ? 30: 50 })
 }}>
-  {isEmpty ? `${romanByIndex[index]}` : <strong> {player.name} </strong>}
+  {isEmpty
+    ? (isBeachMode ? (index === 0 ? "" : "") : `${romanByIndex[index]}`)
+    : <strong> {player.name} </strong>}
 </div>
 
 <div style={{ fontSize: 18, color: "#666" }}>
-  {isEmpty ? "Position": `#${player.number}`}
+  {isEmpty
+    ? (isBeachMode ? (index === 0 ? "Server" : "") : "Position")
+    : `#${player.number}`}
 </div>
         {showServer && (
           <div
@@ -1659,7 +1673,7 @@ setSubLog((prev) => [
             title="Serving"
           />
         )}
-        {player?.isLibero && (
+        {!isBeachMode && player?.isLibero && (
           <div
             style={{
               position: "absolute",
@@ -1677,7 +1691,7 @@ setSubLog((prev) => [
             L
           </div>
         )}
-        {!player?.isLibero && player?._id && liberoPartners[player._id] && (
+        {!isBeachMode && !player?.isLibero && player?._id && liberoPartners[player._id] && (
           <div
             style={{
               position: "absolute",
@@ -2526,13 +2540,15 @@ const SubTrackerCompact = ({ subCount, maxSubs, setMaxSubs }) => {
               </DroppableBenchArea>
             </div>
 
-            <div style={{ marginTop: 8, fontSize: 10, color: "#666", lineHeight: 1.4, fontStyle : "italic" }}>
-              <div>Libero partners:</div>
-              <div style={{ marginTop: 4,}}>LP1 = First partner • LP2 = Secondary partner</div>
-            </div>			
+            {!isBeachMode && (
+              <div style={{ marginTop: 8, fontSize: 10, color: "#666", lineHeight: 1.4, fontStyle : "italic" }}>
+                <div>Libero partners:</div>
+                <div style={{ marginTop: 4,}}>LP1 = First partner • LP2 = Secondary partner</div>
+              </div>
+            )}
 
             {/* Libero Section */}
-            <div style={{ marginBottom: 12 }}>
+            {!isBeachMode && <div style={{ marginBottom: 12 }}>
               <div
                 style={{
                   fontSize: 13,
@@ -2580,7 +2596,7 @@ const SubTrackerCompact = ({ subCount, maxSubs, setMaxSubs }) => {
                   ))
                 )}
               </DroppableLiberoArea>
-            </div>
+            </div>}
           </div>
 
           {/* Sub Tracker + Log */}
@@ -2593,11 +2609,13 @@ const SubTrackerCompact = ({ subCount, maxSubs, setMaxSubs }) => {
               order: isMobile ? 1 : 0,
             }}
           >
-		<SubTrackerCompact
-            subCount={subCount}
-            maxSubs={maxSubs}
-            setMaxSubs={setMaxSubs}
-          />
+		{!isBeachMode && (
+            <SubTrackerCompact
+              subCount={subCount}
+              maxSubs={maxSubs}
+              setMaxSubs={setMaxSubs}
+            />
+          )}
 
             <div
               style={{
@@ -2752,16 +2770,28 @@ const SubTrackerCompact = ({ subCount, maxSubs, setMaxSubs }) => {
             </div>
 
             {/* Court Slots */}
-            <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 10 }}>
-              <CourtSlot index={0} />
-              <CourtSlot index={1} />
-              <CourtSlot index={2} />
-            </div>
-            <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
-              <CourtSlot index={3} />
-              <CourtSlot index={4} />
-              <CourtSlot index={5} />
-            </div>
+            {isBeachMode ? (
+              /* Beach: single centered row with 2 slots */
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 16 }}>
+                {[0, 1].map(idx => (
+                  <CourtSlot key={idx} index={idx} />
+                ))}
+              </div>
+            ) : (
+              /* Indoor: existing two rows of 3 */
+              <>
+                <div style={{ display: "flex", justifyContent: "center", gap: 10, marginBottom: 10 }}>
+                  <CourtSlot index={0} />
+                  <CourtSlot index={1} />
+                  <CourtSlot index={2} />
+                </div>
+                <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+                  <CourtSlot index={3} />
+                  <CourtSlot index={4} />
+                  <CourtSlot index={5} />
+                </div>
+              </>
+            )}
 
             {/* Point Buttons - Below Court */}
             <div style={{ marginTop: 14 }}>
@@ -2778,7 +2808,7 @@ const SubTrackerCompact = ({ subCount, maxSubs, setMaxSubs }) => {
                     textAlign: "center",
                   }}
                 >
-                  Fill all 6 court slots to enable scoring.
+                  {isBeachMode ? "Fill both court slots to enable scoring." : "Fill all 6 court slots to enable scoring."}
                 </div>
               )}
 
@@ -2922,25 +2952,28 @@ const SubTrackerCompact = ({ subCount, maxSubs, setMaxSubs }) => {
             MATCH ANALYTICS
           </div>
 
-          <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6, color: "#666" }}>Rotation +/-</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 12 }}>
-          {rotationPM?.map((v, i) => (
-  <div
-    key={i}
-    style={{
-      border: i === rotationIndex ? "2px solid #007AFF" : "1px solid rgba(0,0,0,0.12)",
-      borderRadius: 12,
-      padding: 10,
-    }}
-  >
-    <div style={{ fontSize: 12, color: "#666", fontWeight: 800 }}>Rot {i + 1}</div>
-    <div style={{ fontSize: 18, fontWeight: 900 }}>
-      {/* ✅ Safe access with fallback for undefined v */}
-      {v?.plusMinus != null && v.plusMinus > 0 ? `+${v.plusMinus}` : `${v?.plusMinus || 0}`}
-    </div>
-  </div>
-))}
-          </div>
+          {!isBeachMode && (
+            <>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6, color: "#666" }}>Rotation +/-</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 12 }}>
+                {rotationPM?.map((v, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      border: i === rotationIndex ? "2px solid #007AFF" : "1px solid rgba(0,0,0,0.12)",
+                      borderRadius: 12,
+                      padding: 10,
+                    }}
+                  >
+                    <div style={{ fontSize: 12, color: "#666", fontWeight: 800 }}>Rot {i + 1}</div>
+                    <div style={{ fontSize: 18, fontWeight: 900 }}>
+                      {v?.plusMinus != null && v.plusMinus > 0 ? `+${v.plusMinus}` : `${v?.plusMinus || 0}`}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
           <div style={{ marginTop: 12, fontSize: 12, color: "#666", fontWeight: 800 }}>
             <div style={{ marginBottom: 6 }}>Point Breakdown</div>
 

@@ -137,6 +137,7 @@ const [attackTypeTrackingEnabled, setAttackTypeTrackingEnabled] = useState(false
   // Check if collaborative mode is enabled
   const isCollaborativeModeActive = match?.collaborativeMode?.enabled;
 const matchMode = match?.mode || match?.matchMode || match?.loggingMode || '';
+  const isBeachMode = match?.beachMode === true || (courtPlayers && courtPlayers.length === 2);
 
   
   // FIXED: Proper auto-join that uses context instead of window globals
@@ -295,7 +296,8 @@ const handleEndSetClick = useCallback(() => {
 
   // Helper function to get volleyball position for any slot
   const getVolleyballPosition = (slotIndex) => {
-    if (typeof slotIndex !== 'number' || slotIndex < 0 || slotIndex > 5) {
+    const maxSlot = isBeachMode ? 1 : 5;
+    if (typeof slotIndex !== 'number' || slotIndex < 0 || slotIndex > maxSlot) {
       return '?';
     }
     return positionMapping[slotIndex] || '?';
@@ -306,17 +308,22 @@ const handleEndSetClick = useCallback(() => {
 const [showMiniDiagram, setShowMiniDiagram] = useState(false);
 
 const orderedNumbers = React.useMemo(() => {
-  if (!Array.isArray(courtPlayers)) return ['–','–','–','–','–','–'];
-  
+  if (!Array.isArray(courtPlayers)) return isBeachMode ? ['–','–'] : ['–','–','–','–','–','–'];
+
+  if (isBeachMode) {
+    // Beach: just show slot 0 (Server) and slot 1
+    return courtPlayers.slice(0, 2).map(p => p?.number || '–');
+  }
+
   // Display order for the diagram: [Pos4, Pos3, Pos2, Pos5, Pos6, Pos1]
   const displayOrder = ['4', '3', '2', '5', '6', '1'];
-  
+
   // Find players by their expressPosition and arrange them in display order
   return displayOrder.map(pos => {
     const player = courtPlayers.find(p => p?.expressPosition === pos);
     return player?.number ?? '–';
   });
-}, [courtPlayers]);
+}, [courtPlayers, isBeachMode]);
 
   const pageStyle = {
     minHeight: '100vh',
@@ -440,6 +447,14 @@ const orderedNumbers = React.useMemo(() => {
   };
 
   function rotateCourtArray(oldCourt) {
+    if (isBeachMode) {
+      // Beach: swap the two players so the non-server becomes the server
+      const [p0, p1] = oldCourt;
+      if (p0 && p1 && p0.name !== '?' && p1.name !== '?') {
+        return [p1, p0];
+      }
+      return oldCourt;
+    }
     const newCourt = [...oldCourt];
 
     // libero edge case (mirrors your court's behavior)
@@ -1527,6 +1542,7 @@ const orderedNumbers = React.useMemo(() => {
           positionMapping={positionMapping}
           currentMatchId={currentMatchId}
           match={match}
+          isBeachMode={isBeachMode}
 		  setMatchSettings={setMatchSettings}
           actionLog={actionLog}
           setActionLog={setActionLog}
