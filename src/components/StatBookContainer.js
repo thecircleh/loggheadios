@@ -117,7 +117,7 @@ const isCompatibleMatch =
 
       // Update match state — force mode to Statbook regardless of what API returns
       setCurrentMatchId(config.matchId);
-      setMatch({ ...matchData, mode: config.mode });
+      setMatch({ ...matchData, mode: config.mode, beachMode: config.beachMode || matchData.beachMode || false });
 
       // Initialize match settings if needed
       if (setMatchSettings) {
@@ -129,6 +129,7 @@ const isCompatibleMatch =
           points: config.points,
           decidingSetPoints: config.decidingSetPoints,
           playAllSets: config.playAllSets,
+          beachMode: config.beachMode || false,
         });
       }
 

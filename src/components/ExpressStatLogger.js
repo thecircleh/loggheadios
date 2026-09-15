@@ -101,7 +101,7 @@ const PlayerSlotCard = ({
             alignItems: 'center',
             gap: '6px'
           }}>
-            #{player.number}
+            {player.number != null && player.number !== '' && `#${player.number}`}
             <span>{player.name}</span>
           </div>
           {player.isLibero && (
@@ -374,6 +374,7 @@ const [assistMode, setAssistMode] = useState(false);
 const [selectedAssistPlayer, setSelectedAssistPlayer] = useState(null);
 const assistPromptTimerRef = useRef(null);
 const assistKillSelectedRef = useRef(null);
+const completeAssistKillSequenceRef = useRef(null); // ref so beach auto-assign can reach it before definition
 const DISPLAY_ORDER = ['4','3','2','5','6','1'];
 const EMPTY_PLAYER = { _id: null, name: '?', number: '', isLibero: false };
 
@@ -700,8 +701,17 @@ useEffect(() => {
 
 
 
+// Format player name; omits number when null/empty/placeholder (e.g. beach players).
+// Guards against null, '', '?', and NaN — all indicate "no jersey number".
+const fmtPlayer = (p) => {
+  if (!p) return '?';
+  const num = p.number;
+  const hasNumber = num != null && num !== '' && num !== '?' && num === num; // last check: NaN !== NaN
+  return `${p.name}${hasNumber ? ` (#${num})` : ''}`;
+};
+
 const formatPlayerAction = useCallback((player, action) => {
-  return `${player.name} (#${player.number}) ${action}`;
+  return `${fmtPlayer(player)} ${action}`;
 }, []);
 
 
@@ -901,7 +911,7 @@ useEffect(() => {
           return {
             id: `empty-${idx}`,
             name: '?',
-            number: '?',
+            number: null,
             isLibero: false,
             expressPosition: p?.expressPosition
           };
@@ -2174,7 +2184,7 @@ const submitBlock = useCallback(async () => {
         player, 
         blockMode === 'assist' ? "Block Assist" : "Block Error",
         [statType],
-        `${player.name} (#${player.number}) → Block ${blockMode === 'assist' ? 'Assist' : 'Error'}`
+        `${fmtPlayer(player)} → Block ${blockMode === 'assist' ? 'Assist' : 'Error'}`
       );
       
       // Award points for block assist only
@@ -2182,7 +2192,7 @@ const submitBlock = useCallback(async () => {
         if (collaborativeMode && isCollaborativeReady()) {
           await logCollaborativeStat(player._id, "Block Assist Points", pointValue, {
             statKeys: ["points"],
-            actionText: `${player.name} (#${player.number}) → Block Assist Points (${pointValue})`,
+            actionText: `${fmtPlayer(player)} → Block Assist Points (${pointValue})`,
             playerName: player.name,
             playerNumber: player.number,
             isPointsOnly: true
@@ -2251,7 +2261,7 @@ const submitBlock = useCallback(async () => {
     });
   }
   
-  const playerNames = processedPlayers.map(p => `${p.name} (#${p.number})`).join(', ');
+  const playerNames = processedPlayers.map(p => `${fmtPlayer(p)}`).join(', ');
   addActionLogEntry(
     `Block ${blockMode === 'assist' ? 'Assist' : 'Error'} by: ${playerNames}`,
     {
@@ -2374,7 +2384,7 @@ const handleAssistTimeout = useCallback(async () => {
   }
   
   addActionLogEntry(
-    `Assist by ${player.name} (#${player.number}) → Earned point (10s timeout, no kill recorded)`,
+    `Assist by ${fmtPlayer(player)} → Earned point (10s timeout, no kill recorded)`,
     {
       type: 'assist_timeout',
       meta: {
@@ -2529,7 +2539,7 @@ const ignoreKill = useCallback(async (assistPlayerIndex = null) => {
   
   // Use logStat for collaborative sync
   await logStat(assistPlayer, "Assist", assistStatKeys, 
-    `${assistPlayer.name} (#${assistPlayer.number}) → Assist (Kill ignored)`);
+    `${fmtPlayer(assistPlayer)} → Assist (Kill ignored)`);
   
   // 🔥 FIXED: ALWAYS update local score immediately for responsive UX
   setTeamStats && setTeamStats(prev => ({ ...prev, ourEarned: prev.ourEarned + 1 }));
@@ -2544,7 +2554,7 @@ const ignoreKill = useCallback(async (assistPlayerIndex = null) => {
   
   // Add action log entry for ignored kill
   addActionLogEntry(
-    `Assist by ${assistPlayer.name} (#${assistPlayer.number}) → Kill ignored (inactive player or other reason)`,
+    `Assist by ${fmtPlayer(assistPlayer)} → Kill ignored (inactive player or other reason)`,
     {
       type: 'assist_kill_ignored',
       meta: {
@@ -2632,7 +2642,7 @@ const submitBlockAssist = useCallback(async () => {
       // Log the block assist stat
       console.log(`🏐 Logging block assist for ${player.name}...`);
       await logStat(player, "Block Assist", ["blockAssist"], 
-        `${player.name} (#${player.number}) → Block Assist`);
+        `${fmtPlayer(player)} → Block Assist`);
       
       // Award 0.5 points through collaborative system when available
       if (collaborativeMode && isCollaborativeReady()) {
@@ -2640,7 +2650,7 @@ const submitBlockAssist = useCallback(async () => {
         try {
           const pointsSuccess = await logCollaborativeStat(player._id, "Block Assist Points", 0.5, {
             statKeys: ["points"],
-            actionText: `${player.name} (#${player.number}) → Block Assist Points (0.5)`,
+            actionText: `${fmtPlayer(player)} → Block Assist Points (0.5)`,
             playerName: player.name,
             playerNumber: player.number,
             isPointsOnly: true
@@ -2679,7 +2689,7 @@ const submitBlockAssist = useCallback(async () => {
       }
       
       console.log(`✅ Block assist complete for ${player.name}`);
-      playerNames.push(`${player.name} (#${player.number})`);
+      playerNames.push(`${fmtPlayer(player)}`);
       processedPlayers.push(player);
       
       // Small delay between players to avoid overwhelming the collaborative system
@@ -3227,6 +3237,21 @@ if (actionType === 'ASSIST') {
   if (otherOnPlayers.length === 0) {
     console.log('🎯 Only one player ON, auto-ignoring kill for assist');
     await ignoreKill(playerIndex);
+    return;
+  }
+
+  // Beach: only one other player possible — auto-assign kill without showing selector
+  if (isBeachMode && otherOnPlayers.length === 1) {
+    const otherPlayer = otherOnPlayers[0];
+    const assistPlayer = courtPlayers[playerIndex];
+    console.log('🏖️ Beach mode — auto-assigning kill to', otherPlayer.name);
+    // Mirror the cleanup handleAssistSelection does before calling completeAssistKillSequence
+    // so the SET sub-menu doesn't re-appear after auto-completion
+    setAssistMode(false);
+    setSelectedAssistPlayer(null);
+    setAssistInitiatorIndex(null);
+    setSelectedActionFamily(null);
+    await completeAssistKillSequenceRef.current?.(assistPlayer, otherPlayer);
     return;
   }
 
@@ -4305,7 +4330,7 @@ const selectPlayer = useCallback(async (player, isCollaborativeUpdate = false) =
 
       // FIXED: Log to action log as well
       addActionLogEntry(
-        `Express: ${player.name} (#${player.number}) substituted in for ${targetPlayer.name} (#${targetPlayer.number}) at position ${targetPlayer.expressPosition}`,
+        `Express: ${fmtPlayer(player)} substituted in for ${fmtPlayer(targetPlayer)} at position ${targetPlayer.expressPosition}`,
         {
           type: 'substitution',
           meta: {
@@ -4426,7 +4451,7 @@ const handleCollaborativeIgnoreKill = useCallback(async () => {
   
   // Add action log
   addActionLogEntry(
-    `Assist by ${player.name} (#${player.number}) → Point awarded (kill ignored)`,
+    `Assist by ${fmtPlayer(player)} → Point awarded (kill ignored)`,
     {
       type: 'assist_kill_ignored',
       meta: {
@@ -4724,203 +4749,91 @@ const renderCollaborativeControls = () => {
   }
 
   // OWNERS: Show full collaborative mode management - ALWAYS VISIBLE regardless of user state
-  const myAssignments = user && playerAssignments ? playerAssignments.filter(a => 
-    a.isActive && a.assignedTo?.userId === user.id
-  ) : [];
-
   return (
     <div style={{
-      position: 'static',
       display: 'flex',
       flexDirection: 'column',
       gap: '10px',
-      alignItems: 'center',
-      marginTop: '8px'
+      alignItems: 'stretch',
+      marginTop: '16px',
+      padding: '0 4px',
     }}>
 
-      {/* Collaborative Mode Toggle - match owners only */}
-      {isMatchOwner() && (
-        <label style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          cursor: 'pointer',
-          fontSize: '14px'
-        }}>
-          <input
-            type="checkbox"
-            checked={!!collaborativeMode}
-            onChange={(e) => toggleCollaborativeMode(e.target.checked)}
-            style={{
-              transform: 'scale(1.2)',
-              accentColor: '#007AFF'
-            }}
-          />
-          Enable Multi-User Logging
-        </label>
-      )}
-
-      {collaborativeMode && (
-        <div style={{
-          marginTop: '4px',
-          padding: '6px 10px',
-          borderRadius: '6px',
-          backgroundColor: isCollaborativeReady() ? 'rgba(40, 167, 69, 0.1)' : 'rgba(220, 53, 69, 0.1)',
-          border: `1px solid ${isCollaborativeReady() ? '#28a745' : '#dc3545'}`,
-          fontSize: '11px',
-          fontWeight: '600',
-          color: isCollaborativeReady() ? '#155724' : '#721c24',
-          textAlign: 'center'
-        }}>
-          {isCollaborativeReady() ? '🟢 Connected' : '🔴 Connecting…'}
-        </div>
-      )}
-
-      {/* Connection and Assignment Controls - OWNERS ONLY, only when collaborative mode enabled AND user exists */}
-      {collaborativeMode && user && (
+      {/* ── Main action buttons ── */}
+      {!collaborativeMode ? (
+        /* OFF: single prominent "Start Collaborating" button */
+        <button
+          onClick={() => toggleCollaborativeMode(true)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            padding: '14px 20px',
+            borderRadius: '12px',
+            border: '2px solid #FF9500',
+            background: 'linear-gradient(135deg, #FFF7E6, #FFECD0)',
+            color: '#b45309',
+            fontWeight: '700',
+            fontSize: '15px',
+            cursor: 'pointer',
+            boxShadow: '0 2px 8px rgba(255,149,0,0.2)',
+          }}
+        >
+          🤝 Start Collaborating
+        </button>
+      ) : (
+        /* ON: status + management buttons */
         <>
-          {/* Connection Controls */}
-          <button
-            onClick={async () => {
-              if (connecting) return;
-              if (!currentMatchId) {
-                alert('Open or create a match first.');
-                return;
-              }
-              try {
-                setConnecting(true);
-                const ok = isConnected
-                  ? await leaveMatch()
-                  : await joinMatch(currentMatchId);
-                if (ok === false) {
-                  alert('Could not connect. Check network/WebSocket.');
-                }
-              } finally {
-                setConnecting(false);
-              }
-            }}
-            style={{
-              padding: '8px 12px',
-              borderRadius: '6px',
-              border: 'none',
-              backgroundColor: isCollaborativeReady() ? '#28a745' : '#6c757d',
-              color: '#fff',
-              fontSize: '12px',
-              cursor: 'pointer'
-            }}
-          >
-            {isCollaborativeReady() ? 'Connected & Ready' : (connecting ? 'Connecting…' : 'Connect')}
-          </button>
+          <div style={{
+            padding: '8px 12px',
+            borderRadius: '8px',
+            backgroundColor: isCollaborativeReady() ? 'rgba(40,167,69,0.1)' : 'rgba(220,53,69,0.1)',
+            border: `1px solid ${isCollaborativeReady() ? '#28a745' : '#dc3545'}`,
+            fontSize: '13px',
+            fontWeight: '600',
+            color: isCollaborativeReady() ? '#155724' : '#721c24',
+            textAlign: 'center',
+          }}>
+            {isCollaborativeReady()
+              ? `🟢 Connected · ${activeSessions.filter(s => s.isOnline).length} online`
+              : (connecting ? '⏳ Connecting…' : '🔴 Disconnected')}
+          </div>
 
-          {isCollaborativeReady() && activeSessions.length > 1 && (
-            <div style={{
-              padding: '6px 10px',
-              borderRadius: '6px',
-              backgroundColor: 'rgba(255,255,255,0.9)',
-              fontSize: '11px',
-              textAlign: 'center',
-              border: '1px solid #ddd'
-            }}>
-              {activeSessions.filter(s => s.isOnline).length} users online
-            </div>
-          )}
-
-          {/* Assignment Management - OWNERS ONLY */}
-          {isCollaborativeReady() && (
-            <div style={{
-              backgroundColor: '#fff',
-              borderRadius: '12px',
-              padding: '12px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-              border: '1px solid #ddd'
-            }}>
-              <div style={{
-                fontSize: '12px',
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => setShowAssignmentModal(true)}
+              style={{
+                flex: 1,
+                padding: '12px',
+                borderRadius: '10px',
+                border: 'none',
+                backgroundColor: '#007AFF',
+                color: '#fff',
                 fontWeight: '600',
-                marginBottom: '8px',
-                color: '#333',
-                textAlign: 'center'
-              }}>
-                Player Assignment Management
-              </div>
-              
-              {myAssignments.length > 0 ? (
-                <div style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: '6px',
-                  justifyContent: 'center',
-                  marginBottom: '8px'
-                }}>
-                  {myAssignments.map(assignment => (
-                    <div
-                      key={assignment.playerId}
-                      style={{
-                        padding: '4px 8px',
-                        backgroundColor: '#28a745',
-                        color: '#fff',
-                        borderRadius: '12px',
-                        fontSize: '11px',
-                        fontWeight: '600'
-                      }}
-                    >
-                      {assignment.playerName}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{
-                  fontSize: '11px',
-                  color: '#999',
-                  textAlign: 'center',
-                  fontStyle: 'italic',
-                  marginBottom: '8px'
-                }}>
-                  No assignments set
-                </div>
-              )}
-
-              <button
-                onClick={async () => {
-                  try {
-                    await loadAssignmentsFromBackend();
-                    console.log('Assignments refreshed');
-                  } catch (error) {
-                    console.error('Failed to refresh assignments:', error);
-                  }
-                }}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  backgroundColor: '#007AFF',
-                  color: '#fff',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                  width: '100%',
-                  marginBottom: '8px'
-                }}
-              >
-                Refresh My Assignments
-              </button>
-              
-              <button
-                onClick={() => setShowAssignmentModal(true)}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  backgroundColor: '#28a745',
-                  color: '#fff',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  width: '100%'
-                }}
-              >
-                Assign All Players
-              </button>
-            </div>
-          )}
+                fontSize: '14px',
+                cursor: 'pointer',
+              }}
+            >
+              👥 Assign Players
+            </button>
+            <button
+              onClick={() => toggleCollaborativeMode(false)}
+              style={{
+                flex: 1,
+                padding: '12px',
+                borderRadius: '10px',
+                border: '1.5px solid #dc3545',
+                backgroundColor: '#fff',
+                color: '#dc3545',
+                fontWeight: '600',
+                fontSize: '14px',
+                cursor: 'pointer',
+              }}
+            >
+              ✕ Stop
+            </button>
+          </div>
         </>
       )}
     </div>
@@ -4951,7 +4864,7 @@ const togglePlayerActivation = useCallback((playerIndex) => {
       
       // FIXED: Log the deactivation
       addActionLogEntry(
-        `Express: ${player.name} (#${player.number}) deactivated from stat tracking`,
+        `Express: ${fmtPlayer(player)} deactivated from stat tracking`,
         {
           type: 'player_deactivated',
           meta: { type: 'player_deactivated', playerId }
@@ -4969,7 +4882,7 @@ const togglePlayerActivation = useCallback((playerIndex) => {
       
       // FIXED: Log the activation
       addActionLogEntry(
-        `Express: ${player.name} (#${player.number}) activated for stat tracking`,
+        `Express: ${fmtPlayer(player)} activated for stat tracking`,
         {
           type: 'player_activated',
           meta: { type: 'player_activated', playerId }
@@ -5300,8 +5213,8 @@ if (pendingAttackType?.playerIndex === playerIndex) {
           actions: [
             { 
               key: `ASSIST_NO_PLAYERS`, 
-              label: `Only #${player.number} on court`, 
-              variant: 'secondary' 
+              label: `Only ${player.number != null ? `#${player.number} ` : ''}${player.name?.split(' ')[0]} on court`,
+              variant: 'secondary'
             },
             { key: `ASSIST_CANCEL`, label: '✕ Cancel', variant: 'danger' }
           ]
@@ -5315,7 +5228,7 @@ if (pendingAttackType?.playerIndex === playerIndex) {
         actions: [
           ...otherPlayers.map(({ player, index }) => ({
             key: `ASSIST_KILL_SELECT_${playerIndex}_${index}`,
-            label: `#${player.number} - ${player.name?.split(' ')[0]}`,
+            label: player.number != null ? `#${player.number} - ${player.name?.split(' ')[0]}` : player.name?.split(' ')[0],
             variant: 'primary'
           })),
           {
@@ -5364,8 +5277,8 @@ if (pendingAttackType?.playerIndex === playerIndex) {
           actions: [
             { 
               key: `BLOCK_SOLO`, 
-              label: `Only #${player.number} on court`, 
-              variant: 'secondary' 
+              label: `Only ${player.number != null ? `#${player.number} ` : ''}${player.name?.split(' ')[0]} on court`,
+              variant: 'secondary'
             },
             { key: `BLOCK_CANCEL`, label: '✕ Cancel', variant: 'danger' }
           ]
@@ -5379,7 +5292,9 @@ if (pendingAttackType?.playerIndex === playerIndex) {
         actions: [
           ...otherPlayers.map(({ player, index }) => ({
             key: `BLOCK_SELECT_${index}`,
-            label: selectedBlockPlayers.has(index) ? `✓ #${player.number}` : `#${player.number} - ${player.name?.split(' ')[0]}`,
+            label: selectedBlockPlayers.has(index)
+              ? `✓ ${player.number != null ? `#${player.number} ` : ''}${player.name?.split(' ')[0]}`
+              : player.number != null ? `#${player.number} - ${player.name?.split(' ')[0]}` : player.name?.split(' ')[0],
             variant: selectedBlockPlayers.has(index) ? 'success' : 'primary'
           })),
 {
@@ -5543,7 +5458,7 @@ const completeAssistKillSequence = useCallback(async (assistPlayer, killPlayer) 
       assistPlayer,
       "Assist",
       assistStatKeys,
-      `${assistPlayer.name} (#${assistPlayer.number}) → Assist${selectedAssistDistribution ? ` (${selectedAssistDistribution})` : ''}`,
+      `${fmtPlayer(assistPlayer)} → Assist${selectedAssistDistribution ? ` (${selectedAssistDistribution})` : ''}`,
       { skipUndo: true }
     );
 
@@ -5553,7 +5468,7 @@ const completeAssistKillSequence = useCallback(async (assistPlayer, killPlayer) 
       killPlayer,
       "Kill",
       killStatKeys,
-      `${killPlayer.name} (#${killPlayer.number}) → Kill`,
+      `${fmtPlayer(killPlayer)} → Kill`,
       { skipUndo: true }
     );
 
@@ -5563,7 +5478,7 @@ const completeAssistKillSequence = useCallback(async (assistPlayer, killPlayer) 
         undoId: comboUndoId,
         timestamp: Date.now(),
         label: 'Assist → Kill',
-        actionText: `${assistPlayer.name} (#${assistPlayer.number}) → Assist | ${killPlayer.name} (#${killPlayer.number}) → Kill`,
+        actionText: `${fmtPlayer(assistPlayer)} → Assist | ${fmtPlayer(killPlayer)} → Kill`,
         operations: [
           {
             playerId: assistPlayer._id,
@@ -5597,7 +5512,7 @@ const completeAssistKillSequence = useCallback(async (assistPlayer, killPlayer) 
     }
 
     addActionLogEntry(
-      `Assist by ${assistPlayer.name} (#${assistPlayer.number}) → Kill by ${killPlayer.name} (#${killPlayer.number})`,
+      `Assist by ${fmtPlayer(assistPlayer)} → Kill by ${fmtPlayer(killPlayer)}`,
       {
         type: 'assist_kill_combo',
         undoId: comboUndoId,
@@ -5632,6 +5547,8 @@ const completeAssistKillSequence = useCallback(async (assistPlayer, killPlayer) 
   scoreCooldownRemaining,
   selectedAssistDistribution
 ]);
+// Keep ref current so handlePlayerAction (defined earlier) can reach it
+completeAssistKillSequenceRef.current = completeAssistKillSequence;
   
 
 
@@ -6236,7 +6153,7 @@ const getBottomBarButtonStyleWithFeedback = useCallback((backgroundColor, textCo
                     borderBottom: isOn && actionGroups.length > 0 ? 'none' : undefined,
                     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                     transition: 'all 0.2s ease',
-                    opacity: isOn ? (isBeachMode && lastTouchedPlayerId && lastTouchedPlayerId === player._id ? 0.45 : 1) : 0.7,
+                    opacity: isOn ? (isBeachMode && lastTouchedPlayerId && lastTouchedPlayerId === player._id && playerIndex !== selectedPlayerForActions ? 0.45 : 1) : 0.7,
                     position: 'relative'
                   }}
                 >
@@ -6369,8 +6286,8 @@ const getBottomBarButtonStyleWithFeedback = useCallback((backgroundColor, textCo
                   )}
                 </div>
 
-                {/* Beach mode: show "other player's turn" hint when this player just touched */}
-                {isBeachMode && lastTouchedPlayerId === player._id && (
+                {/* Beach mode: show "other player's turn" hint when this player just touched (not mid-flow) */}
+                {isBeachMode && lastTouchedPlayerId === player._id && playerIndex !== selectedPlayerForActions && (
                   <div style={{
                     padding: '6px 12px',
                     backgroundColor: '#f0f4ff',
@@ -6386,8 +6303,9 @@ const getBottomBarButtonStyleWithFeedback = useCallback((backgroundColor, textCo
                   </div>
                 )}
 
-                {/* Action Buttons - Show if player is ON (and not the just-touched player in beach mode) */}
-                {isOn && actionGroups.length > 0 && !(isBeachMode && lastTouchedPlayerId === player._id) && (
+                {/* Action Buttons - Show if player is ON. In beach mode, hide after a completed touch
+                    but NOT when this player has a sub-menu open (mid-flow). */}
+                {isOn && actionGroups.length > 0 && !(isBeachMode && lastTouchedPlayerId === player._id && playerIndex !== selectedPlayerForActions) && (
                   <div
                     style={{
                       display: 'flex',
@@ -6532,7 +6450,7 @@ const getBottomBarButtonStyleWithFeedback = useCallback((backgroundColor, textCo
           fontWeight: '700',
           marginBottom: '2px'
         }}>
-          ✔ Assist: {assistWaitingPlayer.name} (#{assistWaitingPlayer.number})
+          ✔ Assist: {assistWaitingPlayer.name}{assistWaitingPlayer.number != null ? ` (#${assistWaitingPlayer.number})` : ''}
         </div>
         <div style={{
           fontSize: '11px',

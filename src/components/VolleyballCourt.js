@@ -128,6 +128,17 @@ const arraysEqual = (a, b) => {
 
 
 
+// Returns jersey number for indoor players, or initials for beach players (null number).
+const benchChipLabel = (player) => {
+  const num = player?.number;
+  if (num != null && num !== '' && num !== '?' && num === num) return num;
+  const parts = (player?.name || '').trim().split(/\s+/);
+  if (parts.length === 0 || !parts[0]) return '?';
+  return parts.length >= 2
+    ? `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+    : parts[0][0].toUpperCase();
+};
+
 const DraggableBenchCard = ({
   player,
   benchCardStyle,
@@ -180,7 +191,7 @@ const [{ isDragging }, drag] = useDrag(
         }}>
         
 		
-		{player ? player.number : ""}
+		{player ? benchChipLabel(player) : ""}
       </span>
     </div>
   );
@@ -378,6 +389,8 @@ const [ballPosition, setBallPosition] = useState(
   // Controls whether the block circles are visible.
   const [blockCirclesVisible, setBlockCirclesVisible] = useState(false);
   const [pendingErrorType, setPendingErrorType] = useState(null); // e.g. "Receiving", "Setting", etc.
+  // Beach mode: track which slot (0 or 1) is currently serving — alternates on side-out
+  const [beachServerSlot, setBeachServerSlot] = useState(0);
 const [awaitingRefBlownDecision, setAwaitingRefBlownDecision] = useState(false);
 const [hasDraggedPlayer, setHasDraggedPlayer] = useState(false);
 const [substitutionCount, setSubstitutionCount] = useState(0);
@@ -433,12 +446,7 @@ const CourtSlot = useMemo(() => React.forwardRef(({ player, index, flash }, ref)
   });
 
   const ctx = courtSlotCtxRef.current;
-  const isEmptySlot =
-    !player ||
-    player.name === "?" ||
-    player.number === "?" ||
-    player.number === undefined ||
-    player.number === null;
+  const isEmptySlot = !player || !player.name || player.name === "?";
   const { line1, line2 } = splitPlayerName(isEmptySlot ? "" : (player.name || ""), 10);
 
   return (
@@ -478,7 +486,7 @@ const CourtSlot = useMemo(() => React.forwardRef(({ player, index, flash }, ref)
             <div>{line1}</div>
             {line2 && <div>{line2}</div>}
           </div>
-          {!isEmptySlot && (
+          {!isEmptySlot && player.number != null && player.number !== '' && player.number !== '?' && (
             <div style={ctx.slotNumberStyle}>
               #{String(player.number)}
             </div>
@@ -486,8 +494,8 @@ const CourtSlot = useMemo(() => React.forwardRef(({ player, index, flash }, ref)
         </>
       )}
       {ctx.isBeachMode ? (
-        // Beach: index 0 = "Server", index 1 = no label
-        index === 0 ? <div style={ctx.slotPosStyle}>Server</div> : null
+        // Beach: the serving player shows "Server", alternates via beachServerSlot
+        index === ctx.serverSlotIndex ? <div style={ctx.slotPosStyle}>Server</div> : null
       ) : (
         <div style={ctx.slotPosStyle}>Pos {ctx.positionLabels[index]}</div>
       )}
@@ -515,10 +523,13 @@ const VoiceInterface = useMemo(() => () => {
   };
   const voiceStatus = getVoiceStatus();
 
+  const voiceTop = (isMobile && isPortrait) ? undefined
+    : ctx.isBeachMode ? "10px"    // beach landscape: above the player row, near the net
+    : "150px";                     // indoor landscape: mid-court (between rows)
   return (
     <div style={{
       position: (isMobile && isPortrait) ? "static" : "absolute",
-      top: (isMobile && isPortrait) ? undefined : "150px",
+      top: voiceTop,
       left: (isMobile && isPortrait) ? undefined : "3px",
       display: "flex",
       flexDirection: "column",
@@ -652,13 +663,8 @@ const AdvancedLoggingToggle = useMemo(() => () => {
 }, []); // stable
 
 
-const hasEmptyCourtSlots = courtPlayers.some(
-  (p) =>
-    !p ||
-    p.name === "?" ||
-    p.number === "?" ||
-    p.number === null ||
-    p.number === undefined
+const hasEmptyCourtSlots = (match?.beachMode ? courtPlayers.slice(0, 2) : courtPlayers).some(
+  (p) => !p || !p.name || p.name === "?"
 );
 
     const subLogRef = useRef(null);
@@ -858,20 +864,28 @@ const getContextualHints = () => {
   } else if (showErrorTypeModal) {
     return "Say: 'out', 'net', or 'foot fault'";
   } else if (showAceTargetModal) {
-    return "Say: player's jersey number or 'unsure'";
+    return isBeachMode ? "Say: player's name, 'player one', or 'player two'" : "Say: player's jersey number or 'unsure'";
   } else if (advancedLoggingEnabled && ballState === "serve" && currentServeSide === "our") {
-    return "Say: 'zone number', 'unsure', 'out', 'net', or 'foot fault'";
+    return isBeachMode
+      ? "Say: 'player one', 'player two', 'between', or 'left'/'right'"
+      : "Say: 'zone number', 'unsure', 'out', 'net', or 'foot fault'";
   } else if (ballState === "serve") {
     if (currentServeSide === "our" && !showServeZoneOverlay) {
       return "Say: 'ace', 'error', or 'in play'";
     } else {
-      return "Say: 'the receiving player's #' or 'opponent ace' or 'service error'";
+      return isBeachMode
+        ? "Say: player's name or 'player one' / 'player two'"
+        : "Say: 'the receiving player's #' or 'opponent ace' or 'service error'";
     }
   } else if (ballState === "inplay") {
     if (blockCirclesVisible) {
-      return "Say: 'block kill', 'block error', 'block in play' followed by player(s) # or just the player number that received the ball";
+      return isBeachMode
+        ? "Say: 'block kill', 'block error', or 'block in play' then player name or 'player one' / 'player two'"
+        : "Say: 'block kill', 'block error', 'block in play' followed by player(s) # or just the player number that received the ball";
     } else {
-      return "Say: 'kill', 'error', 'in play', or player #s";
+      return isBeachMode
+        ? "Say: player name, 'player one', 'player two', 'kill', 'error', or 'in play'"
+        : "Say: 'kill', 'error', 'in play', or player #s";
     }
   }
   return "Say: 'rotate', 'switch serve', or 'undo'";
@@ -883,17 +897,57 @@ const getContextualHints = () => {
 const VoiceHelpModal = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
-  const commandGroups = [
+  const commandGroups = isBeachMode ? [
+    {
+      title: "Serve Commands",
+      commands: [
+        "ace, service ace",
+        "error, serve error",
+        "in play, serve over"
+      ]
+    },
+    {
+      title: "Serve Zone (where it lands)",
+      commands: [
+        "'player one' or 'left' → Player 1",
+        "'between' or 'center' → Between",
+        "'player two' or 'right' → Player 2",
+      ]
+    },
+    {
+      title: "Rally Commands",
+      commands: [
+        "kill, error, in play",
+        "[Name] kill / [Name] error",
+        "'player one' or 'player two' + result"
+      ]
+    },
+    {
+      title: "Block Commands",
+      commands: [
+        "block kill, block error, block in play",
+        "'block kill [name]' or '[name] block kill'"
+      ]
+    },
+    {
+      title: "Court Management",
+      commands: [
+        "rotate (swap servers)",
+        "switch serve, undo, free ball",
+        "replay"
+      ]
+    }
+  ] : [
     {
       title: "Serve Commands",
       commands: [
         "ace, service ace, aced them",
-        "error, serve error, service fault", 
+        "error, serve error, service fault",
         "in play, serve good, serve over"
       ]
     },
     {
-      title: "Rally Commands", 
+      title: "Rally Commands",
       commands: [
         "kill, winner, put it away",
         "error, out, attack error",
@@ -920,9 +974,9 @@ const VoiceHelpModal = ({ isOpen, onClose }) => {
       title: "Court Management",
       commands: [
         "rotate, rotation",
-        "switch serve, change serve", 
+        "switch serve, change serve",
         "clear court, undo, free ball",
-		"replay"
+        "replay"
       ]
     },
     {
@@ -1169,7 +1223,7 @@ const { isListening, lastCommand } = useSimpleVoiceCommands(
   voiceEnabled && (hasPremium || user?.role === 'admin'),
   {
     ballState,
-    currentServeSide, 
+    currentServeSide,
     showServeZoneOverlay,
     showErrorTypeModal,
 	showAceTargetModal,
@@ -1178,7 +1232,8 @@ const { isListening, lastCommand } = useSimpleVoiceCommands(
 	advancedLoggingEnabled,
 	errorContext,
     awaitingRefBlownDecision,
-    pendingErrorType  
+    pendingErrorType,
+    isBeachMode: match?.beachMode === true || (courtPlayers && courtPlayers.length === 2),
   }
 );
 
@@ -1356,8 +1411,10 @@ const handleVoiceCommand = (command) => {
         const newTouches = [];
 
         for (let i = 0; i < command.numbers.length && i < roles.length; i++) {
-          const jerseyNumber = command.numbers[i];
-          const slotIndex = courtPlayers.findIndex(p => parseInt(p.number, 10) === jerseyNumber);
+          // Beach: numbers are already slot indices; indoor: look up by jersey number
+          const slotIndex = command.isBeach
+            ? command.numbers[i]
+            : courtPlayers.findIndex(p => parseInt(p.number, 10) === command.numbers[i]);
           if (slotIndex !== -1) {
             newTouches.push({ slotIndex, role: roles[i], side: "our" });
           }
@@ -1403,25 +1460,25 @@ const handleVoiceCommand = (command) => {
     case "block_sequence":
       if (ballState === "inplay" && blockCirclesVisible) {
         const { numbers, result } = command;
-        
-        // Convert player numbers to slot indices
-        const slots = numbers.map(num => {
-          const player = courtPlayers.find(p => parseInt(p.number) === num);
-          return player ? courtPlayers.findIndex(p => p === player) : -1;
-        }).filter(slot => slot !== -1);
-        
+
+        // Beach: numbers are already slot indices; indoor: look up by jersey number
+        const slots = command.isBeach
+          ? numbers.filter(s => s >= 0 && s < courtPlayers.length)
+          : numbers.map(num => {
+              const player = courtPlayers.find(p => parseInt(p.number) === num);
+              return player ? courtPlayers.findIndex(p => p === player) : -1;
+            }).filter(slot => slot !== -1);
+
         if (slots.length > 0) {
-          console.log(`🏐 Voice block sequence: Players ${numbers.join(',')} → ${result}`);
-          
-          // Create blockInfo object
+          console.log(`🏐 Voice block sequence: ${numbers.join(',')} → ${result}`);
+
           const voiceBlockInfo = { slots };
-          
-          // Set up blockInfo state (for UI consistency)
           setBlockInfo(voiceBlockInfo);
-          
-          // Log the block attempt
+
           const involvedPlayers = slots.map(i => courtPlayers[i]).filter(Boolean);
-          const playerList = involvedPlayers.map(p => `${p.name} (#${p.number})`).join(" & ");
+          const playerList = involvedPlayers.map(p =>
+            (p.number != null && p.number !== '' && p.number !== '?') ? `${p.name} (#${p.number})` : p.name
+          ).join(" & ");
           
           const blockType = ["Single", "Double", "Triple"][slots.length - 1];
           const attemptAction = `${blockType} block attempt by ${playerList}`;
@@ -1499,10 +1556,11 @@ const handleVoiceCommand = (command) => {
 
       console.log(`🏐 Processing voice sequence immediately: ${numbers.join(',')} → ${result}`);
 
-      // Build touches array
+      // Build touches array; beach numbers are slot indices, indoor are jersey numbers
       for (let i = 0; i < numbers.length && i < roles.length; i++) {
-        const jerseyNumber = numbers[i];
-        const slotIndex = courtPlayers.findIndex(p => parseInt(p.number, 10) === jerseyNumber);
+        const slotIndex = command.isBeach
+          ? numbers[i]
+          : courtPlayers.findIndex(p => parseInt(p.number, 10) === numbers[i]);
         if (slotIndex !== -1) {
           newTouches.push({ slotIndex, role: roles[i], side: "our" });
         }
@@ -1779,8 +1837,8 @@ const getNetLabelStyle = () => ({
 
   const isBeachMode = match?.beachMode === true || (courtPlayers && courtPlayers.length === 2);
   // In indoor volleyball the server is always at rotation slot 5 (position 1).
-  // In beach volleyball there are only 2 slots and the server is at slot 0.
-  const serverSlotIndex = isBeachMode ? 0 : 5;
+  // In beach volleyball the server alternates between slot 0 and 1 each side-out.
+  const serverSlotIndex = isBeachMode ? beachServerSlot : 5;
 
 const slotStyle = (index, player, flash) => {
   const size = (isMobile && isPortrait) ? 85 : (isMobile && deviceInfo.isLandscape ? 80 : (isMobile ? 90 : 100));
@@ -1901,7 +1959,7 @@ const logsPanelStyle = {
   flexShrink: 0,
   flexGrow: 0,
   display: "flex",
-  flexDirection: (isMobile && isPortrait) ? "column" : "column",
+  flexDirection: "column",
   gap: (isMobile && isPortrait) ? "6px" : "10px",
   ...noSelect,
   order: (isMobile && isPortrait) ? 6 : (isMobile ? 3 : 0),
@@ -1914,8 +1972,10 @@ const logsPanelStyle = {
     padding: "8px",
     flex: "1 1 auto",
     overflowY: "auto",
-  minHeight: (isMobile && isPortrait) ? "200px" : (isMobile ? "160px" : "210px"),
-  maxHeight: (isMobile && isPortrait) ? "200px" : (isMobile ? "160px" : "210px"),
+    minHeight: (isMobile && isPortrait) ? "200px" : (isMobile ? "160px" : "210px"),
+    maxHeight: isBeachMode
+      ? (isMobile && isPortrait) ? "400px" : (isMobile ? "320px" : "480px")
+      : (isMobile && isPortrait) ? "200px" : (isMobile ? "160px" : "210px"),
   };
 
   const logTitleStyle = {
@@ -2027,15 +2087,14 @@ const buttonStyle2 = {
   return blockInfo !== null;
 };
 
-// Beach volleyball: on side-out, swap who is at slot 0 (server) vs slot 1
-const swapBeachServers = async () => {
-  const [p0, p1] = courtPlayers;
-  // Only swap if both slots have real players
-  if (!p0 || !p1 || p0.name === '?' || p1.name === '?') return;
-  await updatePlayersOnCourt([p1, p0]);
-};
 
 const rotatePlayers = async () => {
+  // Beach mode: toggle the server slot (no physical player swap)
+  if (isBeachMode) {
+    setBeachServerSlot(prev => prev === 0 ? 1 : 0);
+    return;
+  }
+
   // Save current state before rotation
   const rotationRecord = {
     beforeCourt: [...courtPlayers],
@@ -2252,8 +2311,9 @@ const getErrorLabel = (key) => {
 
 const formatPlayerAction = (player, label) => {
   const name = player?.name?.trim() || "Unknown";
-  const number = player?.number ?? "?";
-  return `${name} (#${number}) ${label}`;
+  const number = player?.number;
+  const numPart = (number != null && number !== '' && number !== '?') ? ` (#${number})` : '';
+  return `${name}${numPart} ${label}`;
 };
 
 
@@ -2520,11 +2580,9 @@ const clearCourt = async () => {
   }
 
   // Local state reset
-  const clearedCourt = Array.from({ length: 6 }, () => ({
-    name: "?",
-    number: "?",
-    isOnCourt: false,
-  }));
+  const clearedCourt = isBeachMode
+    ? Array.from({ length: 2 }, () => ({ name: "?", number: null, isOnCourt: false }))
+    : Array.from({ length: 6 }, () => ({ name: "?", number: "?", isOnCourt: false }));
 
   updatePlayersOnCourt(clearedCourt);
   refreshBenchPlayers();
@@ -2597,7 +2655,8 @@ const resetBall = (newServeSide, position, shouldRotate = false) => {
   
   if (shouldRotate && newServeSide === "our") {
     if (isBeachMode) {
-      swapBeachServers();
+      // Beach: alternate the serving slot — no physical player swap
+      setBeachServerSlot(prev => prev === 0 ? 1 : 0);
     } else {
       rotatePlayers();
     }
@@ -3482,22 +3541,27 @@ useEffect(() => {
   const updateFreeBallPosition = () => {
     if (!slot2Ref.current || !containerRef.current) return;
 
-    const slotEl = slot2Ref.current;
-    const containerEl = containerRef.current;
+    const slotRect = slot2Ref.current.getBoundingClientRect();
+    const containerRect = containerRef.current.getBoundingClientRect();
 
-    const top = slotEl.offsetTop;
-    const left = slotEl.offsetLeft + slotEl.offsetWidth + 8; // 8px right offset
+    // Position the button to the right of the slot, vertically aligned with it
+    const top = slotRect.top - containerRect.top - 50;
+    const left = slotRect.right - containerRect.left;
 
     setFreeBallStyle({
       position: "absolute",
       top: `${top}px`,
       left: `${left}px`,
     });
-  }; 
+  };
 
-  updateFreeBallPosition();
+  // Run after layout settles
+  const raf = requestAnimationFrame(updateFreeBallPosition);
   window.addEventListener("resize", updateFreeBallPosition);
-  return () => window.removeEventListener("resize", updateFreeBallPosition);
+  return () => {
+    cancelAnimationFrame(raf);
+    window.removeEventListener("resize", updateFreeBallPosition);
+  };
 }, [courtPlayers]);
 
 
@@ -3529,6 +3593,9 @@ useEffect(() => {
 
 const renderBlockAreas = () => {
   if (ballState !== "inplay" || !blockCirclesVisible) return null;
+
+  // Beach mode: block buttons rendered inline above the player row — skip here
+  if (isBeachMode) return null;
 
   const frontRowSlots = [0, 1, 2];
   const frontPlayers = frontRowSlots
@@ -5435,7 +5502,7 @@ function renderBench() {
                 key={`bench-${player._id || i}`}
                 player={player}
                 benchCardStyle={benchCardStyle}
-                canSub={(ballState === "serve" || hasEmptyCourtSlots) && !playersOnCourtIds.has(player._id) && (!isBeachMode || hasEmptyCourtSlots)}
+                canSub={(ballState === "serve" || hasEmptyCourtSlots) && !playersOnCourtIds.has(player._id)}
                 slot5TargetId={slot5TargetId}
                 allowedLiberoSubTarget={allowedLiberoSubTarget}
                 currentServeSide={currentServeSide}
@@ -5601,16 +5668,60 @@ function renderCourtArea() {
       {!enableAITracking && (
         <>
           {isBeachMode ? (
-            /* BEACH MODE: single centered row with 2 player slots */
-            <div style={{ ...rowStyle, gap: (isMobile && isPortrait) ? 20 : 32 }}>
-              {courtPlayers.slice(0, 2).map((player, idx) => (
-                <CourtSlot
-                  key={idx}
-                  player={player}
-                  index={idx}
-                  flash={flashSlots[idx]}
-                />
-              ))}
+            /* BEACH MODE: vertically center the 2 players in the court space */
+            <div style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              minHeight: (isMobile && isPortrait) ? "80px" : "160px",
+            }}>
+              {/* Beach block buttons — rendered in flow directly above the player row */}
+              {ballState === "inplay" && blockCirclesVisible && (
+                <div style={{ display: "flex", gap: (isMobile && isPortrait) ? 20 : 32, marginBottom: 6 }}>
+                  {[0, 1].map((slot) => {
+                    const player = courtPlayers[slot];
+                    if (!player || !player.name || player.name === "?") return null;
+                    const isSelected = blockInfo?.slots?.length === 1 && blockInfo.slots[0] === slot;
+                    const firstName = player.name.trim().split(/\s+/)[0];
+                    return (
+                      <div
+                        key={`beach-block-${slot}`}
+                        onClick={(e) => handleBlockClick([slot], e)}
+                        style={{
+                          width: (isMobile && isPortrait) ? "100px" : "90px",
+                          height: "28px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          borderRadius: "14px",
+                          backgroundColor: isSelected ? "#34C759" : "rgba(255,255,255,0.95)",
+                          border: isSelected ? "1px solid #34C759" : "1px solid #ccc",
+                          cursor: "pointer",
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
+                        }}
+                        title={`${player.name} Block`}
+                      >
+                        <span style={{ fontSize: "11px", fontWeight: 600, color: isSelected ? "#fff" : "#333", whiteSpace: "nowrap" }}>
+                          🙌 {firstName}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div style={{ ...rowStyle, gap: (isMobile && isPortrait) ? 20 : 32, marginBottom: 0 }}>
+                {courtPlayers.slice(0, 2).map((player, idx) => (
+                  <CourtSlot
+                    key={idx}
+                    player={player}
+                    index={idx}
+                    flash={flashSlots[idx]}
+                    ref={idx === 1 ? slot2Ref : null}
+                  />
+                ))}
+              </div>
             </div>
           ) : (
             <>
@@ -5695,7 +5806,7 @@ function renderCourtArea() {
         <>
           {hasEmptyCourtSlots && !enableAITracking && (
             <div style={{ textAlign: "center", fontSize: 12, color: "#FF9500", fontWeight: 600, padding: "4px 0 2px" }}>
-              Fill all 6 positions to enable stat tracking
+              Fill all court positions to enable stat tracking
             </div>
           )}
           <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginTop: "5px", position: "relative", zIndex: 1 }}>
@@ -5738,7 +5849,7 @@ function renderCourtArea() {
 
     return (
       <div style={logsPanelStyle}>
-        {substitutionLog.length >= 0 && (
+        {!isBeachMode && substitutionLog.length >= 0 && (
           <div style={logCardStyle}>
             <h3 style={logTitleStyle}>Substitution Log</h3>
             <div style={logContentStyle} ref={subLogRef}>
@@ -5758,7 +5869,7 @@ function renderCourtArea() {
           <div style={logCardStyle}>
 		  <h3 style={logTitleStyle}>Action Log</h3>
            
-            <div style={logContentStyle} ref={actionLogRef}>
+            <div style={{...logContentStyle, ...(isBeachMode ? { height: isMobile ? "280px" : "440px" } : {})}} ref={actionLogRef}>
               <ul style={logListStyle}>
                 {actionLog.map((act, i) => (
                   <li
@@ -5830,6 +5941,7 @@ courtSlotCtxRef.current = {
   liberoBadgeStyle,
   positionLabels,
   isBeachMode,
+  serverSlotIndex,
   slot5TargetId,
   allowedLiberoSubTarget,
   showVideoBackground,
@@ -6028,7 +6140,7 @@ return (
         <div style={{ order: 1, width: "100%" }}>
           {hasEmptyCourtSlots && !enableAITracking && (
             <div style={{ textAlign: "center", fontSize: 12, color: "#FF9500", fontWeight: 600, padding: "4px 0 2px" }}>
-              Fill all 6 positions to enable stat tracking
+              Fill all positions to enable stat tracking
             </div>
           )}
           <div style={{ display: "flex", gap: "8px", justifyContent: "center", padding: "4px 0" }}>
@@ -6146,7 +6258,7 @@ return (
   }}
       >
         <h3 style={{ marginBottom: "16px" }}>
-          Where did {courtPlayers[serverSlotIndex]?.name || "this player"} #{courtPlayers[serverSlotIndex]?.number || "?"} serve to?
+          Where did {courtPlayers[serverSlotIndex]?.name || "this player"}{!isBeachMode && courtPlayers[serverSlotIndex]?.number != null ? ` #${courtPlayers[serverSlotIndex]?.number}` : ""} serve to?
         </h3>
         
         <div
@@ -6200,60 +6312,80 @@ return (
           Service Error
         </div>
         
-        {/* Serve Zone Grid */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(5, 70px)",
-            gap: "10px",
-            marginBottom: "20px",
-            justifyContent: "center"
-          }}
-        >
-          {/* Row 1 */}
-          <button key="1" onClick={() => { setSelectedServeZone("1"); setShowServeZoneOverlay(false); }} 
-            style={{ width: "70px", height: "80px", fontSize: "2rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#007AFF", color: "#fff", border: "none", cursor: "pointer" }}>
-            1
-          </button>
-          <button key="1-6" onClick={() => { setSelectedServeZone("1-6"); setShowServeZoneOverlay(false); }} 
-            style={{ width: "70px", height: "80px", fontSize: "0.7rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#34C759", color: "#fff", border: "none", cursor: "pointer" }}>
-            1-6
-          </button>
-          <button key="6" onClick={() => { setSelectedServeZone("6"); setShowServeZoneOverlay(false); }} 
-            style={{ width: "70px", height: "80px", fontSize: "2rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#007AFF", color: "#fff", border: "none", cursor: "pointer" }}>
-            6
-          </button>
-          <button key="6-5" onClick={() => { setSelectedServeZone("6-5"); setShowServeZoneOverlay(false); }} 
-            style={{ width: "70px", height: "80px", fontSize: "0.7rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#34C759", color: "#fff", border: "none", cursor: "pointer" }}>
-            6-5
-          </button>
-          <button key="5" onClick={() => { setSelectedServeZone("5"); setShowServeZoneOverlay(false); }} 
-            style={{ width: "70px", height: "80px", fontSize: "2rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#007AFF", color: "#fff", border: "none", cursor: "pointer" }}>
-            5
-          </button>
+        {/* Serve Zone Selection */}
+        {isBeachMode ? (
+          /* Beach: three simple targets – one per player + between */
+          <div style={{ display: "flex", gap: "12px", marginBottom: "20px", justifyContent: "center" }}>
+            {[
+              { zone: "P1", label: "Player 1", color: "#007AFF" },
+              { zone: "Between", label: "Between", color: "#34C759" },
+              { zone: "P2", label: "Player 2", color: "#007AFF" },
+            ].map(({ zone, label, color }) => (
+              <button
+                key={zone}
+                onClick={() => { setSelectedServeZone(zone); setShowServeZoneOverlay(false); }}
+                style={{ width: "90px", height: "80px", fontSize: "0.85rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: color, color: "#fff", border: "none", cursor: "pointer" }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          /* Indoor: full 6-zone grid */
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(5, 70px)",
+              gap: "10px",
+              marginBottom: "20px",
+              justifyContent: "center"
+            }}
+          >
+            {/* Row 1 */}
+            <button key="1" onClick={() => { setSelectedServeZone("1"); setShowServeZoneOverlay(false); }}
+              style={{ width: "70px", height: "80px", fontSize: "2rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#007AFF", color: "#fff", border: "none", cursor: "pointer" }}>
+              1
+            </button>
+            <button key="1-6" onClick={() => { setSelectedServeZone("1-6"); setShowServeZoneOverlay(false); }}
+              style={{ width: "70px", height: "80px", fontSize: "0.7rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#34C759", color: "#fff", border: "none", cursor: "pointer" }}>
+              1-6
+            </button>
+            <button key="6" onClick={() => { setSelectedServeZone("6"); setShowServeZoneOverlay(false); }}
+              style={{ width: "70px", height: "80px", fontSize: "2rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#007AFF", color: "#fff", border: "none", cursor: "pointer" }}>
+              6
+            </button>
+            <button key="6-5" onClick={() => { setSelectedServeZone("6-5"); setShowServeZoneOverlay(false); }}
+              style={{ width: "70px", height: "80px", fontSize: "0.7rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#34C759", color: "#fff", border: "none", cursor: "pointer" }}>
+              6-5
+            </button>
+            <button key="5" onClick={() => { setSelectedServeZone("5"); setShowServeZoneOverlay(false); }}
+              style={{ width: "70px", height: "80px", fontSize: "2rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#007AFF", color: "#fff", border: "none", cursor: "pointer" }}>
+              5
+            </button>
 
-          {/* Row 2 */}
-          <button key="2" onClick={() => { setSelectedServeZone("2"); setShowServeZoneOverlay(false); }} 
-            style={{ width: "70px", height: "80px", fontSize: "2rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#007AFF", color: "#fff", border: "none", cursor: "pointer" }}>
-            2
-          </button>
-          <button key="2-3" onClick={() => { setSelectedServeZone("2-3"); setShowServeZoneOverlay(false); }} 
-            style={{ width: "70px", height: "80px", fontSize: "0.7rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#34C759", color: "#fff", border: "none", cursor: "pointer" }}>
-            2-3
-          </button>
-          <button key="3" onClick={() => { setSelectedServeZone("3"); setShowServeZoneOverlay(false); }} 
-            style={{ width: "70px", height: "80px", fontSize: "2rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#007AFF", color: "#fff", border: "none", cursor: "pointer" }}>
-            3
-          </button>
-          <button key="3-4" onClick={() => { setSelectedServeZone("3-4"); setShowServeZoneOverlay(false); }} 
-            style={{ width: "70px", height: "80px", fontSize: "0.7rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#34C759", color: "#fff", border: "none", cursor: "pointer" }}>
-            3-4
-          </button>
-          <button key="4" onClick={() => { setSelectedServeZone("4"); setShowServeZoneOverlay(false); }} 
-            style={{ width: "70px", height: "80px", fontSize: "2rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#007AFF", color: "#fff", border: "none", cursor: "pointer" }}>
-            4
-          </button>
-        </div>
+            {/* Row 2 */}
+            <button key="2" onClick={() => { setSelectedServeZone("2"); setShowServeZoneOverlay(false); }}
+              style={{ width: "70px", height: "80px", fontSize: "2rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#007AFF", color: "#fff", border: "none", cursor: "pointer" }}>
+              2
+            </button>
+            <button key="2-3" onClick={() => { setSelectedServeZone("2-3"); setShowServeZoneOverlay(false); }}
+              style={{ width: "70px", height: "80px", fontSize: "0.7rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#34C759", color: "#fff", border: "none", cursor: "pointer" }}>
+              2-3
+            </button>
+            <button key="3" onClick={() => { setSelectedServeZone("3"); setShowServeZoneOverlay(false); }}
+              style={{ width: "70px", height: "80px", fontSize: "2rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#007AFF", color: "#fff", border: "none", cursor: "pointer" }}>
+              3
+            </button>
+            <button key="3-4" onClick={() => { setSelectedServeZone("3-4"); setShowServeZoneOverlay(false); }}
+              style={{ width: "70px", height: "80px", fontSize: "0.7rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#34C759", color: "#fff", border: "none", cursor: "pointer" }}>
+              3-4
+            </button>
+            <button key="4" onClick={() => { setSelectedServeZone("4"); setShowServeZoneOverlay(false); }}
+              style={{ width: "70px", height: "80px", fontSize: "2rem", fontWeight: "bold", borderRadius: "12px", backgroundColor: "#007AFF", color: "#fff", border: "none", cursor: "pointer" }}>
+              4
+            </button>
+          </div>
+        )}
         
         <div
           style={{

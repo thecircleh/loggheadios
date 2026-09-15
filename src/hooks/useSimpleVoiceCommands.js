@@ -251,9 +251,36 @@ const useSimpleVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameS
   const parseSimpleCommand = (transcript) => {
     const originalText = transcript.toLowerCase().trim();
     const gameState = gameStateRef.current;
-    
+
     // Get advanced logging setting from game state
     const advancedLoggingEnabled = gameState.advancedLoggingEnabled;
+    const isBeachMode = gameState.isBeachMode === true;
+
+    // ─── Beach helpers ───────────────────────────────────────────────────────
+    // Returns slot index (0 or 1) for a phrase, or -1 if no match.
+    const findBeachSlot = (text) => {
+      const t = text.trim().toLowerCase();
+      // Positional keywords
+      if (/^(player\s*one|one|first|left|p1|player\s*1|1)$/.test(t)) return 0;
+      if (/^(player\s*two|two|second|right|p2|player\s*2|2)$/.test(t)) return 1;
+      // First-name match
+      const players = courtPlayersRef.current;
+      for (let i = 0; i < Math.min(players.length, 2); i++) {
+        const firstName = (players[i]?.name || '').trim().split(/\s+/)[0].toLowerCase();
+        if (firstName && firstName === t) return i;
+        // full name
+        if ((players[i]?.name || '').toLowerCase() === t) return i;
+      }
+      return -1;
+    };
+
+    // Produce a player_touch command for beach slot index
+    const beachTouch = (slotIndex) => ({
+      type: "player_touch",
+      slotIndex,
+      player: courtPlayersRef.current[slotIndex],
+      number: null
+    });
     
     // Calculate allowSequence using current game state
     const allowSequence = (gameState.ballState === "inplay" && !gameState.showServeZoneOverlay) ||
@@ -271,43 +298,39 @@ const useSimpleVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameS
       approach: "rapid volleyball parsing"
     });
 
-    // *** ACE TARGET MODAL COMMANDS (keep existing) ***
+    // *** ACE TARGET MODAL COMMANDS ***
     if (gameState.showAceTargetModal) {
       console.log("🎾 Processing ace target modal command:", originalText);
-      
-      // Handle "unsure" command
+
       if (originalText.match(/^(unsure|not\s+sure|don'?t\s+know|unclear|uncertain)$/)) {
-        console.log("✅ Ace target: unsure");
-        return {
-          type: "ace_target",
-          action: "unsure"
-        };
+        return { type: "ace_target", action: "unsure" };
       }
-      
-      // Handle player number commands
+
+      if (isBeachMode) {
+        // Beach: match by name / "player one" / "player two"
+        const slot = findBeachSlot(originalText);
+        if (slot !== -1) {
+          const player = courtPlayersRef.current[slot];
+          return { type: "ace_target", action: "select_player", slotIndex: slot, player };
+        }
+        console.log("❌ Beach ace target: no player match");
+        return null;
+      }
+
+      // Indoor: match by jersey number
       const convertedText = forceToInteger(originalText);
       const numberMatch = convertedText.match(/^(\d+)$/);
       if (numberMatch) {
         const playerNumber = parseInt(numberMatch[1]);
-        
-        // Find the player by jersey number
         const player = courtPlayersRef.current.find(p => parseInt(p.number) === playerNumber);
         if (player) {
           const slotIndex = courtPlayersRef.current.findIndex(p => p === player);
-          console.log(`✅ Ace target: Player #${playerNumber} at slot ${slotIndex}`);
-          return {
-            type: "ace_target",
-            action: "select_player",
-            slotIndex: slotIndex,
-            playerNumber: playerNumber,
-            player: player
-          };
-        } else {
-          console.log(`❌ Player #${playerNumber} not found on court`);
-          return null;
+          return { type: "ace_target", action: "select_player", slotIndex, playerNumber, player };
         }
+        console.log(`❌ Player #${playerNumber} not found on court`);
+        return null;
       }
-      
+
       console.log("❌ No valid ace target command found");
       return null;
     }
@@ -405,8 +428,66 @@ const useSimpleVoiceCommands = (handleCommand, courtPlayers, voiceEnabled, gameS
     // RAPID OPTIMIZATION: Force integer conversion first for all number inputs
     const possibleNumber = forceToInteger(originalText);
     console.log("⚡ Rapid number conversion:", { original: originalText, converted: possibleNumber });
-    
-    // If we got a pure number, try player touch immediately
+
+    // ── BEACH MODE: all player identification is name/position based ──────────
+    if (isBeachMode) {
+      // Single-touch by name / "player one" / "player two"
+      const slot = findBeachSlot(originalText);
+      if (slot !== -1) {
+        console.log(`⚡ Beach single touch: "${originalText}" → slot ${slot}`);
+        return beachTouch(slot);
+      }
+
+      // Serve-zone overlay: left / player one / between / right / player two
+      if (gameState.showServeZoneOverlay && gameState.ballState === "serve") {
+        if (/^(player\s*one|one|first|left|p1|player\s*1|1)$/.test(originalText)) return { type: "serve_zone", action: "select_zone", zone: "P1" };
+        if (/^(between|center|centre|middle|both)$/.test(originalText))            return { type: "serve_zone", action: "select_zone", zone: "Between" };
+        if (/^(player\s*two|two|second|right|p2|player\s*2|2)$/.test(originalText)) return { type: "serve_zone", action: "select_zone", zone: "P2" };
+        if (/^(unsure|not\s+sure|unclear)$/.test(originalText))                    return { type: "serve_zone", action: "unsure" };
+        // still allow "service error" phrases to fall through
+      }
+
+      // Sequence with result: "[name/pos] [name/pos] kill|error|in play"
+      const seqMatch = originalText.match(/^([\w\s]+)\s+(kill|error|ace|in\s+play)$/);
+      if (seqMatch && allowSequence) {
+        const namePart = seqMatch[1].trim();
+        const result = seqMatch[2];
+        // try splitting into two tokens
+        const tokens = namePart.split(/\s+/);
+        const slots = [];
+        // first try whole left half + right half for two-word names
+        for (let split = 1; split < tokens.length; split++) {
+          const s0 = findBeachSlot(tokens.slice(0, split).join(' '));
+          const s1 = findBeachSlot(tokens.slice(split).join(' '));
+          if (s0 !== -1 && s1 !== -1) { slots.push(s0, s1); break; }
+        }
+        // single token per player
+        if (slots.length === 0) {
+          tokens.forEach(t => { const s = findBeachSlot(t); if (s !== -1) slots.push(s); });
+        }
+        if (slots.length >= 2) {
+          return { type: "sequence", numbers: slots, result, isBeach: true };
+        }
+      }
+
+      // Beach block by name when block circles visible
+      if (gameState.ballState === "inplay" && gameState.blockCirclesVisible) {
+        const blkMatch = originalText.match(/^block\s+(kill|error|in\s+play)\s+(.+)$/) ||
+                         originalText.match(/^(.+)\s+block\s+(kill|error|in\s+play)$/);
+        if (blkMatch) {
+          const namePart = blkMatch[2] || blkMatch[1];
+          const result   = blkMatch[1] || blkMatch[2];
+          const bSlot    = findBeachSlot(namePart.trim());
+          if (bSlot !== -1) return { type: "block_sequence", numbers: [bSlot], result, isBeach: true };
+        }
+        const bSlot = findBeachSlot(originalText);
+        if (bSlot !== -1) return { type: "player_touch", slotIndex: bSlot, player: courtPlayersRef.current[bSlot], number: null };
+      }
+
+      // Fall through to simple action words (kill/error/ace/in play/rotate/etc.)
+    }
+
+    // If we got a pure number, try player touch immediately (indoor)
     if (/^\d+$/.test(possibleNumber)) {
       const playerNumber = parseInt(possibleNumber);
       const player = courtPlayersRef.current.find(p => parseInt(p.number) === playerNumber);

@@ -705,8 +705,8 @@ const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName, isMob
                           ) : (
                             filteredSubs.map((s, i) => (
                               <tr key={i} style={{ borderTop: '1px solid #f1f5f9' }}>
-                                <td style={{ padding: '15px', fontWeight: 'bold' }}><span style={{ color: '#0f172a' }}>#{s.playerNum}</span> {s.player}</td>
-                                <td style={{ fontSize: '13px', color: '#64748b' }}><span style={{ color: '#0f172a' }}>#{s.replacedNum}</span> {s.replaced}</td>
+                                <td style={{ padding: '15px', fontWeight: 'bold' }}><span style={{ color: '#0f172a' }}>{s.playerNum != null ? `#${s.playerNum}` : ''}</span> {s.player}</td>
+                                <td style={{ fontSize: '13px', color: '#64748b' }}><span style={{ color: '#0f172a' }}>{s.replacedNum != null ? `#${s.replacedNum}` : ''}</span> {s.replaced}</td>
                                 <td style={{ fontSize: '13px' }}>{s.match} (S{s.set})</td>
                                 <td style={{ fontSize: '13px', fontWeight: '600', color: '#2563eb' }}>{s.scoreAtEntry}</td>
                                 <td style={{ fontSize: '13px', fontWeight: '600', color: '#2563eb' }}>{s.scoreAtExit}</td>
@@ -864,7 +864,7 @@ const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName, isMob
                 if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
               }}
             >
-              <td style={{ padding: isMobile ? '10px' : '15px', fontWeight: '700' }}>#{p.num} {p.name}</td>
+              <td style={{ padding: isMobile ? '10px' : '15px', fontWeight: '700' }}>{p.num != null ? `#${p.num} ` : ''}{p.name}</td>
               <td style={{ padding: isMobile ? '10px 8px' : '15px' }}>{p.sets}</td>
               <td style={{ padding: isMobile ? '10px 8px' : '15px' }}>{p.rotationsPlayed}</td>
               <td style={{ padding: isMobile ? '10px 8px' : '15px', fontWeight: 'bold' }}>

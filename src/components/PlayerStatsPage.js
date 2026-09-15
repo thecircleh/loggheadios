@@ -1191,7 +1191,7 @@ const exportPremiumPDF = async () => {
       const pts = kills + (s.aces || 0) + (s.blockSolo || 0) + 0.5 * (s.blockAssist || 0);
  
       return [
-        p.number.toString(),
+        p.number != null ? String(p.number) : '',
         p.name.length > 18 ? p.name.substring(0, 17) + '.' : p.name,
         p.position || '--',
         (s.gamesPlayed || 0).toString(),
@@ -1375,7 +1375,7 @@ const exportPremiumPDF = async () => {
       const dumpPct = dumpAtt > 0 ? ((dumpK - dumpE) / dumpAtt).toFixed(3) : '.000';
       
       return [
-        p.number.toString(),
+        p.number != null ? String(p.number) : '',
         p.name.length > 18 ? p.name.substring(0, 17) + '.' : p.name,
         p.position || '--',
         hitAtt.toString(), hitK.toString(), hitE.toString(), hitPct,
@@ -1465,7 +1465,7 @@ const exportPremiumPDF = async () => {
       const totalPct = totalSets > 0 ? ((totalAst / totalSets) * 100).toFixed(1) : '0.0';
       
       return [
-        p.number.toString(),
+        p.number != null ? String(p.number) : '',
         p.name.length > 18 ? p.name.substring(0, 17) + '.' : p.name,
         p.position || '--',
         outSets.toString(), outAst.toString(), outErr.toString(), outPct,
@@ -1552,7 +1552,7 @@ const exportPremiumPDF = async () => {
       const overallRate = totalSets > 0 ? ((totalAst / totalSets) * 100).toFixed(1) : '0.0';
       
       return [
-        p.number.toString(),
+        p.number != null ? String(p.number) : '',
         p.name.length > 18 ? p.name.substring(0, 17) + '.' : p.name,
         p.position || '--',
         outSets.toString(), outAst.toString(), outConv,
@@ -2195,7 +2195,7 @@ const exportMaxPreps = async () => {
       const ballhandlingattempt = (stats.digs || 0) + (stats.sets || 0) + (stats.receptions || 0); // Basic estimation
       
       const dataRow = [
-        player.number.toString(),
+        player.number != null ? String(player.number) : '',
         stats.gamesPlayed || 0, // Use actual games played, fallback to 1
         stats.serves || 0,
         stats.aces || 0,
@@ -2319,7 +2319,7 @@ const handleSaveInsights = async () => {
                     backgroundColor: isSelected ? '#e6f0ff' : '#fff',
                   }}
                 >
-                  <div style={{ fontSize: 10, fontWeight: 'bold' }}># {p.number}</div>
+                  <div style={{ fontSize: 10, fontWeight: 'bold' }}>{p.number != null ? `#${p.number}` : '–'}</div>
                   <div style={{ fontWeight: 'bold' }}>{(p.name || '').slice(0, 9)}</div>
                   <div style={{ fontSize: 12, color: '#666' }}>{p.position || '–'}</div>
                 </div>
@@ -3146,7 +3146,7 @@ const handleSaveInsights = async () => {
                 }}
               >
                 <span>
-                  #{p.number} {p.name}
+                  {p.number != null ? `#${p.number} ` : ''}{p.name}
                 </span>
                 <span style={{ fontSize: 12, color: "#6B7280" }}>
                   Overall: {a.totalKills}/{a.totalAttacks} ({a.overallPct}%)
@@ -3432,7 +3432,7 @@ const handleSaveInsights = async () => {
                 }}
               >
                 <span>
-                  #{p.number} {p.name}
+                  {p.number != null ? `#${p.number} ` : ''}{p.name}
                 </span>
                 <span style={{ fontSize: 12, color: "#6B7280" }}>
                   {s.totalAssists}/{s.totalSets} Assists ({s.overallAssistRate}%)
@@ -3726,7 +3726,7 @@ const handleSaveInsights = async () => {
                 }}
               >
                 <span>
-                  #{p.number} {p.name}
+                  {p.number != null ? `#${p.number} ` : ''}{p.name}
                 </span>
                 <span style={{ fontSize: 12, color: "#6B7280" }}>
                   {a.totalAssists}/{a.totalSets} Assists ({a.overallAssistRate}%)

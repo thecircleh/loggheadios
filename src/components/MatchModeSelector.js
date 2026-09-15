@@ -73,6 +73,7 @@ export default function MatchModeSelector({
   const { user, token } = useAuth();
 
   const [teams, setTeams] = useState([]);
+  const [beachTeams, setBeachTeams] = useState([]);
   const [teamRosters, setTeamRosters] = useState([]);
   const [existingMatches, setExistingMatches] = useState([]);
   const [activeTab, setActiveTab] = useState("new");
@@ -128,12 +129,16 @@ export default function MatchModeSelector({
         });
 
         const fetchedTeams = userRes.data?.teams || [];
+        const fetchedBeachTeams = userRes.data?.beachTeams || [];
         setTeams(fetchedTeams);
+        setBeachTeams(fetchedBeachTeams);
 
         if (fetchedTeams.length > 0) {
+          const isFirstBeach = fetchedBeachTeams.includes(fetchedTeams[0]);
           setFormData((prev) => ({
             ...prev,
             teamName: prev.teamName || fetchedTeams[0],
+            ...(isFirstBeach && !prev.teamName ? { sets: 1, points: 21, decidingSetPoints: 15 } : {}),
           }));
         }
 
@@ -191,7 +196,9 @@ export default function MatchModeSelector({
               match.status !== "Final" &&
               match.status !== "completed" &&
               !match.finalized;
-            return compatible && notCurrent && notFinal;
+            // Beach matches can't be resumed in Match Tracking
+            const notBeach = !isMatchTrackingPage || !match.beachMode;
+            return compatible && notCurrent && notFinal && notBeach;
           })
           .sort((a, b) => {
             const da = new Date(a.updatedAt || a.timestamp || a.createdAt || 0);
@@ -219,8 +226,23 @@ export default function MatchModeSelector({
 
   const selectedRosterCount = teamRosters[formData.teamName]?.length || 0;
 
+  // Beach teams cannot use Match Tracking mode (Classic and Express are fine)
+  const isMatchTrackingPage = currentPage === "match";
+  const selectedTeamIsBeach = beachTeams.includes(formData.teamName);
+  const beachBlocked = isMatchTrackingPage && selectedTeamIsBeach;
+
   const updateField = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    if (field === 'teamName') {
+      // When switching to a beach team, auto-apply beach defaults
+      const isBeach = beachTeams.includes(value);
+      setFormData((prev) => ({
+        ...prev,
+        teamName: value,
+        ...(isBeach ? { sets: 1, points: 21, decidingSetPoints: 15 } : {}),
+      }));
+    } else {
+      setFormData((prev) => ({ ...prev, [field]: value }));
+    }
     setError("");
   };
 
@@ -237,6 +259,8 @@ export default function MatchModeSelector({
   };
 
   const handleStartNewMatch = async () => {
+    if (beachBlocked) return;
+
     if (!formData.teamName) {
       setError("Please select a team.");
       return;
@@ -255,23 +279,26 @@ export default function MatchModeSelector({
     try {
       setCreating(true);
 
+      const isBeachTeam = beachTeams.includes(formData.teamName);
       const payload = {
         teamName: formData.teamName,
         opponentName: formData.opponent.trim(),
         mode: config.newMatchMode,
-        totalSets: Number(formData.sets) || 3,
+        totalSets: Number(formData.sets) || (isBeachTeam ? 1 : 3),
         playAllSets: !!formData.playAllSets,
-        pointsNonDeciding: Number(formData.points) || 25,
+        pointsNonDeciding: Number(formData.points) || (isBeachTeam ? 21 : 25),
         pointsDeciding: Number(formData.decidingSetPoints) || 15,
+        beachMode: isBeachTeam || undefined,
         eventName: "",
         location: "",
         matchData: {
           opponentName: formData.opponent.trim(),
           teamName: formData.teamName,
-          sets: Number(formData.sets) || 3,
-          points: Number(formData.points) || 25,
+          sets: Number(formData.sets) || (isBeachTeam ? 1 : 3),
+          points: Number(formData.points) || (isBeachTeam ? 21 : 25),
           decidingSetPoints: Number(formData.decidingSetPoints) || 15,
           playAllSets: !!formData.playAllSets,
+          beachMode: isBeachTeam || undefined,
         },
       };
 
@@ -295,6 +322,7 @@ export default function MatchModeSelector({
         decidingSetPoints: payload.pointsDeciding,
         playAllSets: payload.playAllSets,
         mode: payload.mode,
+        beachMode: payload.beachMode || false,
       });
     } catch (err) {
       console.error("Failed to start new match:", err);
@@ -399,6 +427,11 @@ export default function MatchModeSelector({
                   : "This team has no players yet"}
               </div>
             )}
+            {beachBlocked && (
+              <div style={{ fontSize: 13, color: '#b45309', marginTop: 4, fontWeight: 600, background: '#fff7ed', borderRadius: 8, padding: '8px 10px' }}>
+                🏖️ Beach teams can't use this mode — use <strong>Stat Book</strong> instead.
+              </div>
+            )}
 
             <label style={styles.label}>Opponent</label>
             <input
@@ -457,8 +490,11 @@ export default function MatchModeSelector({
 
             <button
               onClick={handleStartNewMatch}
-              disabled={creating}
-              style={styles.primaryButton}
+              disabled={creating || beachBlocked}
+              style={{
+                ...styles.primaryButton,
+                ...(beachBlocked ? { background: '#9ca3af', cursor: 'not-allowed' } : {}),
+              }}
             >
               {creating ? "Starting..." : `Start New ${config.displayName} Match`}
             </button>

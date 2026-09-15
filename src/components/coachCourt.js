@@ -75,6 +75,18 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl();
 
+// Returns the label for a bench chip: jersey number for indoor players, initials for beach (null number).
+const benchChipLabel = (player) => {
+  const num = player?.number;
+  if (num != null && num !== '' && num !== '?' && num === num) return num; // indoor: show number
+  // Beach: show initials from name
+  const parts = (player?.name || '').trim().split(/\s+/);
+  if (parts.length === 0 || !parts[0]) return '?';
+  return parts.length >= 2
+    ? `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+    : parts[0][0].toUpperCase();
+};
+
 const DraggableBenchCard = ({ player, canSub, slot5TargetId, allowedLiberoSubTarget, liberoPartners = {} }) => {
   if (!player) return <div style={{ height: 40 }} />;
 
@@ -86,8 +98,10 @@ const DraggableBenchCard = ({ player, canSub, slot5TargetId, allowedLiberoSubTar
   // Determine styling: libero gets lilac background, partners get lighter lilac background
   const bgColor = player?.isLibero ? "#E6D5F5" : isLiberoPartner ? "#fff" : "#fff";
   const textColor = "#333";
-  
+
   const lpDesignation = liberoPartners[player?._id];
+  const chipLabel = benchChipLabel(player);
+  const hasNumber = player?.number != null && player?.number !== '' && player?.number !== '?';
 
   if (!canSub) {
     return (
@@ -103,12 +117,13 @@ const DraggableBenchCard = ({ player, canSub, slot5TargetId, allowedLiberoSubTar
           alignItems: "center",
           justifyContent: "center",
           fontWeight: 700,
+          fontSize: hasNumber ? undefined : 12,
           userSelect: "none",
           color: textColor,
         }}
-        title={`${player.name} #${player.number}${player.isLibero ? " (Libero)" : ""}`}
+        title={`${player.name}${hasNumber ? ` #${player.number}` : ''}${player.isLibero ? " (Libero)" : ""}`}
       >
-        {player.number}
+        {chipLabel}
       </div>
     );
   }
@@ -135,15 +150,16 @@ const DraggableBenchCard = ({ player, canSub, slot5TargetId, allowedLiberoSubTar
         alignItems: "center",
         justifyContent: "center",
         fontWeight: 800,
+        fontSize: hasNumber ? undefined : 12,
         userSelect: "none",
         cursor: "grab",
         opacity: isDragging ? 0.5 : 1,
         color: textColor,
         position: "relative",
       }}
-      title={`${player.name} #${player.number}${player.isLibero ? " (Libero)" : ""}${lpDesignation ? ` (${lpDesignation})` : ""}`}
+      title={`${player.name}${hasNumber ? ` #${player.number}` : ''}${player.isLibero ? " (Libero)" : ""}${lpDesignation ? ` (${lpDesignation})` : ""}`}
     >
-      {player.number}
+      {chipLabel}
       {lpDesignation && (
         <div
           style={{
@@ -418,11 +434,15 @@ const applyDeltaToRotation = (delta) => {
 
   const doRotateIfSideout = async (winner) => {
     if (isBeachMode) {
-      // Beach: swap slot 0 and slot 1 (server alternates on side-out)
-      const [p0, p1] = courtPlayers;
-      if (p0 && p1 && p0.name !== '?' && p1.name !== '?') {
-        updatePlayersOnCourt([p1, p0]);
+      // Beach: swap slot 0 and slot 1 ONLY on side-out (serving team loses the point)
+      const isSideout = winner !== servingSide;
+      if (isSideout) {
+        const [p0, p1] = courtPlayers;
+        if (p0 && p1 && p0.name !== '?' && p1.name !== '?') {
+          updatePlayersOnCourt([p1, p0]);
+        }
       }
+      setServingSide(winner); // must update so next point has correct serving side
       return;
     }
     // Only rotate when WE win a point while THEY were serving (we gain serve)
@@ -1656,7 +1676,7 @@ setSubLog((prev) => [
 <div style={{ fontSize: 18, color: "#666" }}>
   {isEmpty
     ? (isBeachMode ? (index === 0 ? "Server" : "") : "Position")
-    : `#${player.number}`}
+    : (player.number != null ? `#${player.number}` : '')}
 </div>
         {showServer && (
           <div

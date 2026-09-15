@@ -14,7 +14,9 @@ const getApiUrl = () => {
   return process.env.REACT_APP_API_URL || "https://api.loggerhead.app";
 };
 
-const API_URL = getApiUrl(); 
+const API_URL = getApiUrl();
+
+
 
 // Modern SVG Icon Components
 const StatsIcon = ({ size = 16, color = "#FFFFFF" }) => (
@@ -168,7 +170,9 @@ const SettingsPanel = ({
   const [playAllSets, setPlayAllSets] = useState(() => matchSettings?.playAllSets ?? false);
   const [pointsNonDeciding, setPointsNonDeciding] = useState(() => matchSettings?.pointsNonDeciding ??  25);
   const [pointsDeciding, setPointsDeciding] = useState(() => matchSettings?.pointsDeciding ?? 15);
-  const [isBeachMode, setIsBeachMode] = useState(() => matchSettings?.mode === 'beach');
+  const [isBeachMode, setIsBeachMode] = useState(() =>
+    matchSettings?.beachMode === true || matchSettings?.mode === 'beach'
+  );
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerNumber, setNewPlayerNumber] = useState('');
   const [savedMatches, setSavedMatches] = useState([]);
@@ -187,6 +191,10 @@ const SettingsPanel = ({
   const [searchPlayerName, setSearchPlayerName] = useState('');
   const [showExternalSearch, setShowExternalSearch] = useState(false);
   const [showTeamNameBuilder, setShowTeamNameBuilder] = useState(false);
+
+  const [beachTeams, setBeachTeams] = useState([]);
+  // Derived: true when the currently selected team is marked as a beach team
+  const isCurrentTeamBeach = beachTeams.includes(selectedTeam);
 
   const [openSections, setOpenSections] = useState({
     teamRoster: false,
@@ -327,7 +335,8 @@ const SettingsPanel = ({
 
       setUserTeams(res.data.teams);
       setArchivedTeams(res.data.archivedTeams || []);
-      
+      setBeachTeams(res.data.beachTeams || []);
+
       if (selectedTeam === teamName) {
         setSelectedTeam('');
         setBenchPlayers([]);
@@ -350,7 +359,8 @@ const SettingsPanel = ({
 
       setUserTeams(res.data.teams);
       setArchivedTeams(res.data.archivedTeams || []);
-      
+      setBeachTeams(res.data.beachTeams || []);
+
       alert('Team unarchived successfully!');
     } catch (err) {
       console.error('Failed to unarchive team:', err);
@@ -371,8 +381,9 @@ const SettingsPanel = ({
         }
 
         setUserTeams([]);
+        setBeachTeams([]);
         setBenchPlayers([]);
-        
+
         const res = await axios.get(`${API_URL}/api/users/${user.id}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -380,6 +391,7 @@ const SettingsPanel = ({
         if (res.data && Array.isArray(res.data.teams)) {
           setUserTeams(res.data.teams);
           setArchivedTeams(res.data.archivedTeams || []);
+          setBeachTeams(res.data.beachTeams || []);
 
           if (!selectedTeam && res.data.teams.length > 0) {
             const defaultTeam = res.data.teams[0];
@@ -395,6 +407,7 @@ const SettingsPanel = ({
           console.warn("No teams found in user profile.");
           setUserTeams([]);
           setArchivedTeams([]);
+          setBeachTeams([]);
           setBenchPlayers([]);
           setSelectedTeam('');
         }
@@ -514,32 +527,42 @@ const SettingsPanel = ({
     setShowTeamNameBuilder(true);
   };
 
-const handleTeamNameBuilderSubmit = async (teamName, logoUrl = null) => {
+const handleTeamNameBuilderSubmit = async (teamName, logoUrl = null, isBeachTeam = false) => {
   if (!teamName || teamName.trim() === "") return;
-  
+
   try {
     const payload = { teamName };
     if (logoUrl) {
       payload.logoUrl = logoUrl;
     }
-    
+
     await axios.post(
       `${API_URL}/api/users/${user.id}/teams`,
       payload,
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    
+
+    // If this is a beach team, mark it on the server right away
+    if (isBeachTeam) {
+      await axios.post(
+        `${API_URL}/api/users/${user.id}/teams/beach`,
+        { teamName: teamName.trim(), isBeach: true },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+    }
+
     const res = await axios.get(`${API_URL}/api/users/${user.id}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
-    
+
     setUserTeams(res.data.teams);
     setArchivedTeams(res.data.archivedTeams || []);
+    setBeachTeams(res.data.beachTeams || []);
     setSelectedTeam(teamName);
     setMatchSettings((prev) => ({ ...prev, teamName: teamName }));
-    
+
     setShowTeamNameBuilder(false);
-    alert(`Team "${teamName}" created!`);
+    alert(`${isBeachTeam ? '🏖️ Beach team' : 'Team'} "${teamName}" created!`);
   } catch (err) {
     console.error("Failed to create team:", err);
     alert(err.response?.data?.message || "Failed to create team.");
@@ -577,30 +600,38 @@ const handleTeamNameBuilderSubmit = async (teamName, logoUrl = null) => {
   };
 
 const handleAddPlayer = async (e) => {
-	e.preventDefault();
-  if (!newPlayerName.trim() || !newPlayerNumber) {
+  e.preventDefault();
+  const isBeach = isCurrentTeamBeach || isBeachMode;
+
+  if (!newPlayerName.trim()) {
+    alert("Name is required.");
+    return;
+  }
+  if (!isBeach && !newPlayerNumber) {
     alert("Name and Number are required.");
     return;
   }
 
-  const playerNumber = parseInt(newPlayerNumber);
-  if (isNaN(playerNumber) || playerNumber < 0) {
+  const playerNumber = isBeach
+    ? (newPlayerNumber ? parseInt(newPlayerNumber) : null)
+    : parseInt(newPlayerNumber);
+  if (!isBeach && (isNaN(playerNumber) || playerNumber < 0)) {
     alert("Please enter a valid number (0 or greater).");
     return;
   }
 
   try {
     const res = await axios.post(
-      `${API_URL}/api/players`, 
+      `${API_URL}/api/players`,
       {
         name: newPlayerName.trim(),
         number: playerNumber,
-        position: newPlayerPosition || "Unknown",
+        position: newPlayerPosition || (isBeach ? "Beach" : "Unknown"),
         isLibero: false,
         team: selectedTeam,
       },
       {
-        headers: { Authorization: `Bearer ${token}` }  // ← ADD THIS
+        headers: { Authorization: `Bearer ${token}` }
       }
     );
 
@@ -862,6 +893,28 @@ const canJoin = isOwner || hasPremium || canJoinAsNonPremium;
     );
   };
 
+  // Auto-drive isBeachMode from team type whenever selected team or beachTeams list changes
+  useEffect(() => {
+    setIsBeachMode(beachTeams.includes(selectedTeam));
+  }, [selectedTeam, beachTeams]); // eslint-disable-line
+
+  const handleToggleBeachTeam = async () => {
+    if (!selectedTeam) return;
+    const nowBeach = !isCurrentTeamBeach;
+    try {
+      const res = await axios.post(
+        `${API_URL}/api/users/${user.id}/teams/beach`,
+        { teamName: selectedTeam, isBeach: nowBeach },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setBeachTeams(res.data.beachTeams || []);
+      setIsBeachMode(nowBeach);
+    } catch (err) {
+      console.error('Failed to update beach team status:', err);
+      alert(err.response?.data?.message || 'Failed to update beach team status.');
+    }
+  };
+
   const handleTeamSelect = async (teamName) => {
     setSelectedTeam(teamName);
 
@@ -950,6 +1003,7 @@ const canJoin = isOwner || hasPremium || canJoinAsNonPremium;
   });
 
   const handleSaveAndStartMatchTracking = async () => {
+    if (isCurrentTeamBeach) return; // Beach teams → Stat Book only
     if (!validateRosteredTeam()) return;
     const updatedSettings = buildMatchSettings('match');
     setMatchSettings(updatedSettings);
@@ -987,21 +1041,12 @@ const canJoin = isOwner || hasPremium || canJoinAsNonPremium;
 
   const handleCollabMatch = async () => {
     if (!validateRosteredTeam()) return;
-    
+
     const updatedSettings = {
-      ...matchSettings,
-      opponentName,
-      totalSets: maxSets, 
-      playAllSets,
-      eventName,
-      location,
-      pointsNonDeciding,
-      pointsDeciding,
-      teamName: selectedTeam,
-	  mode: 'collab',
-      collaborativeMode: { 
+      ...buildMatchSettings('collab'),
+      collaborativeMode: {
         enabled: true,
-        allowedUsers: [], 
+        allowedUsers: [],
         maxUsers: 15
       }
     };
@@ -1396,46 +1441,52 @@ if (isDup) {
                 placeholder="Player name"
               />
             </div>
-            
-            <div style={styles.formField}>
-              <label style={styles.formLabel}>Number</label>
-              <input
-                type="number"
-                value={playerEditFormData.number}
-                onChange={(e) => setPlayerEditFormData(prev => ({ ...prev, number: e.target.value }))}
-                style={styles.formInput}
-                min="0"
-                placeholder="Jersey number"
-              />
-            </div>
-            
-            <div style={styles.formField}>
-              <label style={styles.formLabel}>Position</label>
-              <select
-                value={playerEditFormData.position}
-                onChange={(e) => setPlayerEditFormData(prev => ({ ...prev, position: e.target.value }))}
-                style={styles.formInput}
-              >
-                <option value="">Select Position</option>
-                <option value="OH">OH (Outside Hitter)</option>
-                <option value="MB">MB (Middle Blocker)</option>
-                <option value="S">S (Setter)</option>
-                <option value="OPP">OPP (Opposite)</option>
-                <option value="DS">DS (Defensive Specialist)</option>
-              </select>
-            </div>
-            
-            <div style={styles.formField}>
-              <label style={styles.checkboxLabel}>
+
+            {!isCurrentTeamBeach && (
+              <div style={styles.formField}>
+                <label style={styles.formLabel}>Number</label>
                 <input
-                  type="checkbox"
-                  checked={playerEditFormData.isLibero}
-                  onChange={(e) => setPlayerEditFormData(prev => ({ ...prev, isLibero: e.target.checked }))}
-                  style={{ marginRight: '8px' }}
+                  type="number"
+                  value={playerEditFormData.number}
+                  onChange={(e) => setPlayerEditFormData(prev => ({ ...prev, number: e.target.value }))}
+                  style={styles.formInput}
+                  min="0"
+                  placeholder="Jersey number"
                 />
-                Libero
-              </label>
-            </div>
+              </div>
+            )}
+
+            {!isCurrentTeamBeach && (
+              <div style={styles.formField}>
+                <label style={styles.formLabel}>Position</label>
+                <select
+                  value={playerEditFormData.position}
+                  onChange={(e) => setPlayerEditFormData(prev => ({ ...prev, position: e.target.value }))}
+                  style={styles.formInput}
+                >
+                  <option value="">Select Position</option>
+                  <option value="OH">OH (Outside Hitter)</option>
+                  <option value="MB">MB (Middle Blocker)</option>
+                  <option value="S">S (Setter)</option>
+                  <option value="OPP">OPP (Opposite)</option>
+                  <option value="DS">DS (Defensive Specialist)</option>
+                </select>
+              </div>
+            )}
+
+            {!isCurrentTeamBeach && (
+              <div style={styles.formField}>
+                <label style={styles.checkboxLabel}>
+                  <input
+                    type="checkbox"
+                    checked={playerEditFormData.isLibero}
+                    onChange={(e) => setPlayerEditFormData(prev => ({ ...prev, isLibero: e.target.checked }))}
+                    style={{ marginRight: '8px' }}
+                  />
+                  Libero
+                </label>
+              </div>
+            )}
           </div>
           
           <div style={styles.modalActions}>
@@ -2281,6 +2332,21 @@ const nextScheduled = scheduledMatches
 
               {selectedTeam && (
                 <>
+                  {/* Beach team toggle */}
+                  <button
+                    onClick={handleToggleBeachTeam}
+                    title={isCurrentTeamBeach ? 'Mark as indoor team' : 'Mark as beach team — players don\'t need numbers'}
+                    style={{
+                      padding: '9px 16px', fontSize: 14, fontWeight: 600,
+                      background: isCurrentTeamBeach ? 'linear-gradient(135deg,#f5c842,#e8a020)' : '#f3f4f6',
+                      color: isCurrentTeamBeach ? '#7a4800' : '#6b7280',
+                      border: isCurrentTeamBeach ? '1.5px solid #e8a020' : '1.5px solid #e5e7eb',
+                      borderRadius: 10, cursor: 'pointer',
+                    }}
+                  >
+                    {isCurrentTeamBeach ? '🏖️ Beach' : '🏐 Indoor'}
+                  </button>
+
                   {/* Archive - low-key outline blue */}
                   <button
                     onClick={() => handleArchiveTeam(selectedTeam)}
@@ -2371,7 +2437,9 @@ const nextScheduled = scheduledMatches
               <div key={player._id} style={styles.playerCard}>
                 <div style={styles.playerInfo}>
                   <div><span style={styles.playerName}>{(player.name || "").slice(0, 20)}</span></div>
-                  <span style={styles.playerNumber}>#{player.number}</span>
+                  {player.number != null && player.number !== '' && (
+                    <span style={styles.playerNumber}>#{player.number}</span>
+                  )}
                   <small style={{ fontSize: '14px', color: '#888' }}>{player.position || '—'}</small>
                   {player.linkedPlayers && player.linkedPlayers.length > 0 && (
                     <small style={{ fontSize: '10px', color: '#fff', backgroundColor: '#5856D6', borderRadius: '10px', padding: '1px 6px', fontWeight: '600', marginTop: '2px', display: 'inline-block' }}>
@@ -2455,7 +2523,7 @@ const nextScheduled = scheduledMatches
                 }}
               >
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center', marginBottom: 2 }}>
-                  New Player
+                  {(isCurrentTeamBeach || isBeachMode) ? '🏖️ New Player' : 'New Player'}
                 </div>
                 <input
                   type="text"
@@ -2464,25 +2532,29 @@ const nextScheduled = scheduledMatches
                   onChange={(e) => setNewPlayerName(e.target.value)}
                   style={{ padding: '8px 10px', fontSize: 14, border: '1.5px solid #e5e7eb', borderRadius: 8, width: '100%', boxSizing: 'border-box' }}
                 />
-                <input
-                  type="number"
-                  placeholder="#"
-                  value={newPlayerNumber}
-                  onChange={(e) => setNewPlayerNumber(e.target.value)}
-                  style={{ padding: '8px 10px', fontSize: 14, border: '1.5px solid #e5e7eb', borderRadius: 8, width: '100%', boxSizing: 'border-box' }}
-                />
-                <select
-                  value={newPlayerPosition}
-                  onChange={(e) => setNewPlayerPosition(e.target.value)}
-                  style={{ padding: '8px 10px', fontSize: 14, border: '1.5px solid #e5e7eb', borderRadius: 8, width: '100%', boxSizing: 'border-box', background: '#fff' }}
-                >
-                  <option value="">Position</option>
-                  <option value="OH">OH</option>
-                  <option value="MB">MB</option>
-                  <option value="S">S</option>
-                  <option value="OPP">OPP</option>
-                  <option value="DS">DS</option>
-                </select>
+                {!(isCurrentTeamBeach || isBeachMode) && (
+                  <input
+                    type="number"
+                    placeholder="#"
+                    value={newPlayerNumber}
+                    onChange={(e) => setNewPlayerNumber(e.target.value)}
+                    style={{ padding: '8px 10px', fontSize: 14, border: '1.5px solid #e5e7eb', borderRadius: 8, width: '100%', boxSizing: 'border-box' }}
+                  />
+                )}
+                {!(isCurrentTeamBeach || isBeachMode) && (
+                  <select
+                    value={newPlayerPosition}
+                    onChange={(e) => setNewPlayerPosition(e.target.value)}
+                    style={{ padding: '8px 10px', fontSize: 14, border: '1.5px solid #e5e7eb', borderRadius: 8, width: '100%', boxSizing: 'border-box', background: '#fff' }}
+                  >
+                    <option value="">Position</option>
+                    <option value="OH">OH</option>
+                    <option value="MB">MB</option>
+                    <option value="S">S</option>
+                    <option value="OPP">OPP</option>
+                    <option value="DS">DS</option>
+                  </select>
+                )}
                 <button
                   onClick={handleAddPlayer}
                   style={{
@@ -2497,7 +2569,7 @@ const nextScheduled = scheduledMatches
                     width: '100%',
                   }}
                 >
-                  {newPlayerNumber ? `Add #${newPlayerNumber}` : 'Add'}
+                  {(isCurrentTeamBeach || isBeachMode) ? 'Add Player' : (newPlayerNumber ? `Add #${newPlayerNumber}` : 'Add')}
                 </button>
               </div>
 
@@ -2816,31 +2888,35 @@ const nextScheduled = scheduledMatches
 
       <div style={{
         display: 'grid',
-        gridTemplateColumns: isMobile && isPortrait ? '1fr 1fr' : 'repeat(3, 1fr)',
+        gridTemplateColumns: '1fr 1fr',
         gap: 12,
         width: '100%',
       }}>
 
-        {/* Match Tracking - primary filled */}
+        {/* Match Tracking - disabled for beach teams */}
         <button
-          onClick={handleSaveAndStartMatchTracking}
-          disabled={!selectedTeam || !benchPlayers || benchPlayers.length === 0}
+          onClick={isCurrentTeamBeach ? undefined : handleSaveAndStartMatchTracking}
+          disabled={isCurrentTeamBeach || !selectedTeam || !benchPlayers || benchPlayers.length === 0}
+          title={isCurrentTeamBeach ? 'Not available for beach teams' : undefined}
           style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 6, padding: '18px 16px', border: 'none', borderRadius: 14, cursor: 'pointer',
-            background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-            boxShadow: '0 4px 14px rgba(37,99,235,0.28)',
-            color: '#fff', fontWeight: 700, fontSize: 15, lineHeight: 1.25,
+            gap: 6, padding: '18px 16px', border: 'none', borderRadius: 14,
+            cursor: isCurrentTeamBeach ? 'not-allowed' : 'pointer',
+            background: isCurrentTeamBeach ? '#e5e7eb' : 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+            boxShadow: isCurrentTeamBeach ? 'none' : '0 4px 14px rgba(37,99,235,0.28)',
+            color: isCurrentTeamBeach ? '#9ca3af' : '#fff', fontWeight: 700, fontSize: 15, lineHeight: 1.25,
             opacity: (!selectedTeam || !benchPlayers || benchPlayers.length === 0) ? 0.45 : 1,
             transition: 'opacity 0.15s',
           }}
         >
           <span style={{ fontSize: 22 }}>&#9889;</span>
           <span>Match Tracking</span>
-          <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.85 }}>Score + rotations</span>
+          <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.85 }}>
+            {isCurrentTeamBeach ? '🏖️ Beach: use Stat Book' : 'Score + rotations'}
+          </span>
         </button>
 
-        {/* Stat Book - outlined */}
+        {/* Stat Book - always available */}
         <button
           onClick={handleExpressMatch}
           disabled={!selectedTeam || !benchPlayers || benchPlayers.length === 0}
@@ -2854,11 +2930,11 @@ const nextScheduled = scheduledMatches
           }}
         >
           <span style={{ fontSize: 22 }}>&#128203;</span>
-          <span>Stat Book</span>
+          <span>{isCurrentTeamBeach ? 'Stat Book for Beach' : 'Stat Book'}</span>
           <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.7 }}>Full stat logging</span>
         </button>
 
-        {/* Classic - ghost */}
+        {/* Classic - available for all teams including beach */}
         <button
           onClick={handleSaveAndStartMatch}
           disabled={!selectedTeam || !benchPlayers || benchPlayers.length === 0}
@@ -2872,8 +2948,28 @@ const nextScheduled = scheduledMatches
           }}
         >
           <span style={{ fontSize: 22 }}>&#127952;</span>
-          <span>Classic</span>
+          <span>{isCurrentTeamBeach ? 'Classic Beach Stats' : 'Classic'}</span>
           <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.6 }}>Gameflow mode</span>
+        </button>
+
+        {/* Collaborate - stat book with multi-device collaboration (premium) */}
+        <button
+          onClick={hasPremium ? handleCollabMatch : undefined}
+          disabled={!hasPremium || !selectedTeam || !benchPlayers || benchPlayers.length === 0}
+          title={!hasPremium ? 'Premium subscription required for collaboration' : undefined}
+          style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 6, padding: '18px 16px', border: '2px solid #FF9500', borderRadius: 14,
+            cursor: hasPremium ? 'pointer' : 'not-allowed',
+            background: hasPremium ? 'linear-gradient(135deg, #FFF7E6, #FFF0CC)' : '#f3f4f6',
+            color: hasPremium ? '#b45309' : '#9ca3af', fontWeight: 700, fontSize: 15, lineHeight: 1.25,
+            opacity: (!selectedTeam || !benchPlayers || benchPlayers.length === 0) ? 0.45 : 1,
+            transition: 'opacity 0.15s',
+          }}
+        >
+          <span style={{ fontSize: 22 }}>🤝{!hasPremium && ' 🔒'}</span>
+          <span>Collaborate</span>
+          <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.7 }}>Multi-device stat book</span>
         </button>
 
       </div>

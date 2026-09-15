@@ -291,20 +291,65 @@ body {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 2px;
-    padding: 6px 8px;
+    gap: 1px;
+    padding: 4px 4px;
     border-top: 1px solid rgba(0,0,0,0.06);
   }
 
   .ios-nav-link, .ios-nav-links a,
   .ios-nav-dropdown-wrapper button {
     font-size: 13px !important;
-    padding: 6px 10px !important;
+    padding: 5px 7px !important;
   }
 
   .ios-dropdown-menu {
     left: auto;
     right: 0;
+  }
+
+  /* Row-2 dropdowns open rightward so they don't fly off the left edge */
+  .dropdown-left .ios-dropdown-menu {
+    left: 0;
+    right: auto;
+  }
+}
+
+/* Portrait mobile: compact header so game content actually fits */
+@media (max-width: 640px) and (orientation: portrait) {
+  .ios-header-content {
+    height: 44px;
+    padding: 0 12px;
+  }
+
+  .ios-logo-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .ios-app-title {
+    font-size: 15px;
+  }
+
+  .ios-nav-links {
+    flex-wrap: wrap;
+    gap: 1px;
+    padding: 2px 4px;
+  }
+
+  .ios-nav-link, .ios-nav-links a,
+  .ios-nav-dropdown-wrapper button {
+    font-size: 11px !important;
+    padding: 4px 6px !important;
+    white-space: nowrap;
+  }
+
+  .ios-logout-btn {
+    padding: 4px 6px !important;
+    font-size: 11px !important;
+  }
+
+  .ios-logo-title {
+    gap: 6px;
   }
 }
 

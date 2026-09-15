@@ -593,21 +593,6 @@ const NotificationBell = ({ count, onClick }) => (
 );
 
 
-function CoachBridgeJobsPage() {
-  return (
-    <div style={{ height: "calc(100vh - 60px)", background: "#fff", paddingTop: "env(safe-area-inset-top, 0px)", boxSizing: "border-box" }}>
-      <iframe
-        title="CoachBridge Volleyball Jobs"
-        src="https://coachbridge.org/jobs/?q=volleyball&l="
-        style={{
-          width: "100%",
-          height: "100%",
-          border: "0",
-        }}
-      />
-    </div>
-  );
-}
 
 
 function App() {
@@ -637,7 +622,7 @@ function AppWrapper() {
 
 function BlogDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
   return (
-    <div className="ios-nav-dropdown-wrapper" onMouseEnter={() => onOpen('blog')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}>
+    <div className="ios-nav-dropdown-wrapper dropdown-left" onMouseEnter={() => onOpen('blog')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}>
       <a href="#" onClick={(e) => { e.preventDefault(); isOpen ? onClose() : onOpen('blog'); }} onFocus={() => onOpen('blog')} className="ios-nav-link">
         Blog<span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
       </a>
@@ -686,7 +671,7 @@ function LoggingModeDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
 
 function CoachesCornerDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
   return (
-    <div className="ios-nav-dropdown-wrapper" onMouseEnter={() => onOpen('coaches')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}>
+    <div className="ios-nav-dropdown-wrapper dropdown-left" onMouseEnter={() => onOpen('coaches')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}>
       <a href="#" onClick={(e) => { e.preventDefault(); isOpen ? onClose() : onOpen('coaches'); }} onFocus={() => onOpen('coaches')} className="ios-nav-link">
         Coaches' Corner<span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
       </a>
@@ -696,7 +681,6 @@ function CoachesCornerDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
           <a href="/coaches-corner/drills" onClick={onClose} className="ios-dropdown-item">My Drills</a>
           <a href="/coaches-corner/practice" onClick={onClose} className="ios-dropdown-item">Practice Assist</a>
           <a href="/coaches-corner/referrals" onClick={onClose} className="ios-dropdown-item">Referrals</a>
-          <a href="/coaches-corner/jobs" onClick={onClose} className="ios-dropdown-item">Jobs</a>
         </div>
       )}
     </div>
@@ -727,7 +711,7 @@ function AppContent({ matchSettings, setMatchSettings }) {
   const [headerScrollHidden, setHeaderScrollHidden] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
   const [courtPlayers, setCourtPlayers] = useState(
-    Array.from({ length: 6 }, (_, i) => ({ id: `empty-${i}`, name: "?", number: "?", isLibero: false }))
+    Array.from({ length: 6 }, (_, i) => ({ id: `empty-${i}`, name: "?", number: null, isLibero: false }))
   );
   const [deactivatedPlayers, setDeactivatedPlayers]  = useState([]);
   const [ourScore, setOurScore] = useState(0);
@@ -2763,6 +2747,7 @@ payload = {
   pointsNonDeciding: newSettings?.pointsNonDeciding || 25,
   pointsDeciding: newSettings?.pointsDeciding || 15,
   mode: modeForAccess,
+  beachMode: newSettings?.beachMode || false,
   accessKey: shouldAttachAccessKey ? getAccessKeyForMode(modeForAccess) : undefined,
   collaborativeMode: newSettings?.collaborativeMode,
   courtPlayers: Array.from({ length: newSettings?.beachMode ? 2 : 6 }, (_, i) => ({
@@ -4056,6 +4041,9 @@ useEffect(() => {
 
         setOpponentName(match.opponentName || "Opponent");
 
+        // Detect beach mode early so it's in matchSettings from the first render
+        const isBeachMatch = match.beachMode === true || (match.courtPlayers && match.courtPlayers.length === 2);
+
         setMatchSettings({
           teamName: resolvedTeamName,
           opponentName: match.opponentName || "Opponent",
@@ -4068,6 +4056,7 @@ useEffect(() => {
           pointsDeciding: match.pointsDeciding || 15,
           collaborativeMode: match.collaborativeMode,
 		  mode: match.mode,
+          beachMode: isBeachMatch,
           userId: isOwner ? (match.userId || user.id) : undefined,
           _id: match._id,
         });
@@ -4109,8 +4098,7 @@ useEffect(() => {
           }
         });
 
-        // Beach mode: 2-slot array, no position mapping needed
-        const isBeachMatch = match.beachMode === true || (match.courtPlayers && match.courtPlayers.length === 2);
+        // Beach mode: 2-slot array, no position mapping needed (isBeachMatch computed above)
         let filledCourtPlayers;
 
         if (isBeachMatch) {
@@ -5002,8 +4990,27 @@ if (location.pathname === "/match-tracking") {
                   `}</style>
                 </div>
                 {user && location.pathname !== "/login" && location.pathname !== "/register" && (
-                  <button onClick={handleLogout} className="ios-logout-btn">
-                    Logout
+                  <button
+                    onClick={handleLogout}
+                    className="ios-logout-btn"
+                    title="Logout"
+                    style={isMobile && isPortrait ? {
+                      padding: '6px 8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    } : undefined}
+                  >
+                    {isMobile && isPortrait ? (
+                      /* Power / exit icon */
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" stroke="#ff3b30" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <polyline points="16 17 21 12 16 7" stroke="#ff3b30" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                        <line x1="21" y1="12" x2="9" y2="12" stroke="#ff3b30" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    ) : (
+                      'Logout'
+                    )}
                   </button>
                 )}
               </div>
@@ -5266,14 +5273,6 @@ if (location.pathname === "/match-tracking") {
 			  
 			  {/* /coaches-corner/referrals */}
 			  <Route path="referrals" element={<ReferralPage />} 
-/>
-<Route
-  path="jobs"
-  element={
-    <PrivateRoute>
-      <CoachBridgeJobsPage />
-    </PrivateRoute>
-  }
 />
             </Route>
 			

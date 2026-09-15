@@ -1603,6 +1603,7 @@ const handleSendEmails = async () => {
                   <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("email")}>Email</th>
                   <th style={{ border: "1px solid #ccc", padding: 8 }}>Role</th>
                   <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("consentToEmails")} title="Email consent">📧</th>
+                  <th style={{ border: "1px solid #ccc", padding: 8 }}>Platform</th>
                   <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("lastSeen")}>Last Seen {sortKey === "lastSeen" && (sortDirection === "desc" ? "↓" : "↑")}</th>
                   <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("subscription.current_period_end")}>Sub End</th>
                   <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("createdAt")}>Registered</th>
@@ -1628,6 +1629,25 @@ const handleSendEmails = async () => {
                       </td>
                       <td style={{ border: "1px solid #ccc", padding: 8, textAlign: "center", backgroundColor: u.consentToEmails ? "#e8f5e9" : "#ffebee" }}>
                         <span title={u.consentToEmails ? "Opted in" : "Not opted in"}>{u.consentToEmails ? "✅" : "❌"}</span>
+                      </td>
+                      <td style={{ border: "1px solid #ccc", padding: 8, textAlign: "center" }}>
+                        {(u.recentPlatforms || []).length === 0 ? (
+                          <span style={{ color: "#ccc", fontSize: 12 }}>—</span>
+                        ) : (
+                          <div style={{ display: "flex", gap: 3, justifyContent: "center", flexWrap: "wrap" }}>
+                            {(u.recentPlatforms || []).map((p, i) => (
+                              <span key={i} title={p} style={{
+                                fontSize: 11, padding: "2px 6px", borderRadius: 99,
+                                background: p === "ios" ? "#E3F2FD" : p === "android" ? "#E8F5E9" : "#F3F4F6",
+                                border: `1px solid ${p === "ios" ? "#90CAF9" : p === "android" ? "#A5D6A7" : "#D1D5DB"}`,
+                                color: p === "ios" ? "#1565C0" : p === "android" ? "#2E7D32" : "#374151",
+                                fontWeight: 600,
+                              }}>
+                                {p === "ios" ? "🍎" : p === "android" ? "🤖" : "🌐"}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td style={{ border: "1px solid #ccc", padding: 8 }}>{formatLastSeen(u.lastSeen)}</td>
                       <td style={{ border: "1px solid #ccc", padding: 8 }}>{getSubscriptionEndDate(u)}</td>

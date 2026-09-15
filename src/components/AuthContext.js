@@ -206,9 +206,14 @@ export const AuthProvider = ({ children }) => {
       setToken(newToken);
 
       try {
+        const cap = window.Capacitor;
+        let platform = 'web';
+        if (cap?.isNativePlatform?.()) {
+          platform = cap.getPlatform?.() === 'ios' ? 'ios' : 'android';
+        }
         await axios.post(
           `${API_URL}/api/users/set-online`,
-          {},
+          { platform },
           {
             headers: { Authorization: `Bearer ${newToken}` },
             withCredentials: true,

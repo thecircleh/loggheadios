@@ -129,6 +129,7 @@ const isCompatibleMatch =
         pointsNonDeciding: config.points,
         pointsDeciding: config.decidingSetPoints,
         playAllSets: config.playAllSets,
+        beachMode: config.beachMode || false,
       }));
 
       // Reset scores for new match

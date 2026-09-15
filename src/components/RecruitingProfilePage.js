@@ -426,36 +426,398 @@ const emptyProfile = (playerId, userId) => ({
   playerId, userId,
   headshotUrl: '', actionPhotoUrl: '',
   bio: '', graduationYear: '', positions: [],
+  dob: '', jerseyNumber: '', dominantHand: '', cityState: '',
+  teamName: '', teamColorHex: '#8B1A1A',
   heightFt: '', heightIn: '', verticalJump: '', armSpan: '', weight: '',
   schoolName: '', gpa: '', satScore: '', actScore: '', intendedMajor: '',
+  involvement: '',
+  ncaaStatus: '', naiaStatus: '',
   clubTeamName: '', clubCoachName: '', clubCoachContact: '',
+  hsCoachName: '', hsCoachPhone: '', hsCoachEmail: '',
   hudlUrl: '', highlightUrl: '',
   playerEmail: '', playerPhone: '',
   parentName: '', parentEmail: '', parentPhone: '',
+  parent2Name: '', parent2Email: '', parent2Phone: '',
   awards: [],
   targetSchools: [],
   upcomingEvents: [],
+  tournamentSchedule: [],
   swot: null,
 });
 
-// ─── PDF Generator ────────────────────────────────────────────────────────────
-const generatePDF = (player, profile, stats, knownTeams = []) => {
-  const doc  = new jsPDF({ unit: 'pt', format: 'letter' });
-  const W    = doc.internal.pageSize.getWidth();
-  const H    = doc.internal.pageSize.getHeight();
-  const ML   = 48;
-  const MR   = 48;
-  const CW   = W - ML - MR;   // full content width
-  const GAP  = 16;
-  const COL  = (CW - GAP) / 2;
+// ─── Circular-crop a data-URL or URL onto a canvas, return PNG data URL ──────
+const clipToCircle = (url, size) =>
+  new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width  = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(img, 0, 0, size, size);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
 
-  const GREEN = [52, 199, 89];
-  const DARK  = [22, 22, 24];
-  const MID   = [100, 100, 105];
-  const LGRAY = [210, 210, 215];
-  const BGSTAT= [246, 246, 249];
-  // ── Helpers ──────────────────────────────────────────────────────────────────
-  const playerName = player?.name || 'Player';
+// ─── PDF Generator ────────────────────────────────────────────────────────────
+const generatePDF = async (player, profile, stats, knownTeams = []) => {
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  const PW  = 612;
+  const PH  = 792;
+
+  // ── Color helpers ─────────────────────────────────────────────────────────
+  const hexToRgb = (hex) => {
+    const h = (hex || '#8B1A1A').replace('#', '');
+    return [parseInt(h.substr(0,2),16), parseInt(h.substr(2,2),16), parseInt(h.substr(4,2),16)];
+  };
+  const PRIMARY = hexToRgb(profile.teamColorHex || '#8B1A1A');
+  const WHITE   = [255,255,255];
+  const DARK    = [28,28,30];
+  const MID     = [110,110,115];
+  const LGRAY   = [230,230,235];
+
+  const sf = (rgb) => doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+  const sd = (rgb) => doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
+  const st = (rgb) => doc.setTextColor(rgb[0], rgb[1], rgb[2]);
+  const font = (style, size) => { doc.setFont('helvetica', style); doc.setFontSize(size); };
+
+  const playerName = (player?.name || 'Player Name').toUpperCase();
+  const nameParts  = playerName.trim().split(/\s+/);
+  const firstName  = nameParts[0] || '';
+  const lastName   = nameParts.slice(1).join(' ') || '';
+
+  // ── Layout ────────────────────────────────────────────────────────────────
+  const SB_W    = 72;   // sidebar width
+  const HDR_H   = 200;  // header band height
+  const PH_D    = 112;  // action photo diameter
+  const PH_CX   = SB_W + (PW - SB_W) / 2;   // photo center X (mid of content area)
+  const PH_CY   = HDR_H - 8;                  // photo center Y (overlaps header bottom)
+  const CT_X    = SB_W + 16;                  // content left edge
+  const CT_W    = PW - CT_X - 20;             // content width
+  const COL_W   = (CT_W - 14) / 2;
+  const COL2_X  = CT_X + COL_W + 14;
+  const CT_Y    = PH_CY + PH_D / 2 + 18;     // content top (below photo)
+
+  // Pre-render photos as circular PNGs via canvas
+  const HS_R  = 34;              // headshot radius (68pt diameter)
+  const HS_CX = SB_W + 52;
+  const HS_CY = 155;
+  const CANVAS_PX = 256;        // canvas resolution for crisp rendering
+  const [headshotCircle, actionCircle] = await Promise.all([
+    profile.headshotUrl  ? clipToCircle(profile.headshotUrl,  CANVAS_PX) : Promise.resolve(null),
+    profile.actionPhotoUrl ? clipToCircle(profile.actionPhotoUrl, CANVAS_PX) : Promise.resolve(null),
+  ]);
+
+  const fmt   = v => (v == null || isNaN(+v)) ? '—' : Number(v).toFixed(1);
+  const fmtP  = v => (v == null || isNaN(+v)) ? '—' : (Number(v) * 100).toFixed(1) + '%';
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  // Section header: colored label + underline rule
+  const secHdr = (x, w, label, y) => {
+    font('bold', 8);
+    st(PRIMARY);
+    doc.text(label.toUpperCase(), x, y);
+    sd(PRIMARY);
+    doc.setLineWidth(0.75);
+    doc.line(x, y + 2.5, x + w, y + 2.5);
+    return y + 14;
+  };
+
+  // Field: small bold label on its own line, value below
+  const field = (x, y, label, value, w = COL_W) => {
+    if (!value) return y;
+    font('bold', 7.5);
+    st(MID);
+    doc.text(label.toUpperCase(), x, y);
+    y += 9;
+    font('normal', 8.5);
+    st(DARK);
+    const lines = doc.splitTextToSize(String(value), w - 2);
+    doc.text(lines.slice(0, 3), x, y);
+    return y + Math.min(lines.length, 3) * 10.5 + 2;
+  };
+
+  // Inline label: value on the same line, bold label
+  const inlineField = (x, y, label, value, w = COL_W) => {
+    if (!value) return y;
+    font('bold', 8.5);
+    st(DARK);
+    doc.text(label + ': ', x, y);
+    const lw = doc.getTextWidth(label + ': ');
+    font('normal', 8.5);
+    doc.text(String(value), x + lw, y);
+    return y + 12;
+  };
+
+  const para = (x, y, text, w = COL_W, maxLines = 8) => {
+    font('normal', 8.5);
+    st(DARK);
+    const lines = doc.splitTextToSize(text, w);
+    doc.text(lines.slice(0, maxLines), x, y);
+    return y + Math.min(lines.length, maxLines) * 11;
+  };
+
+  // ── 1. Sidebar ────────────────────────────────────────────────────────────
+  sf(PRIMARY);
+  doc.rect(0, 0, SB_W, PH, 'F');
+
+  // Tournament schedule table in sidebar
+  const sched = (profile.tournamentSchedule || []).filter(t => t.dates || t.tournament);
+  if (sched.length > 0) {
+    const sTitle = new Date().getFullYear() + ' Club Tournament';
+    font('bold', 6.5);
+    st(WHITE);
+    doc.text(sTitle.toUpperCase(), SB_W / 2, 22, { align: 'center' });
+    // Table header
+    let ty = 32;
+    sf([...PRIMARY.map(c => Math.max(0, c - 25))]);
+    doc.rect(3, ty - 7, SB_W - 6, 9, 'F');
+    font('bold', 6);
+    doc.text('Dates', 5, ty - 1);
+    doc.text('Tournament', 28, ty - 1);
+    ty += 5;
+    sched.slice(0, 7).forEach((t, i) => {
+      if (i % 2 === 0) {
+        sf([...PRIMARY.map(c => Math.min(255, c + 15))]);
+        doc.rect(3, ty - 7, SB_W - 6, 9, 'F');
+      }
+      font('normal', 5.5);
+      st(WHITE);
+      doc.text(t.dates || '', 5, ty - 1, { maxWidth: 22 });
+      doc.text(t.tournament || '', 28, ty - 1, { maxWidth: 38 });
+      ty += 10;
+    });
+  }
+
+  // Rotated player name + number going upward from bottom
+  const sideLabel = `${lastName || playerName}${profile.jerseyNumber ? '  #' + profile.jerseyNumber : ''}`;
+  font('bold', 22);
+  st(WHITE);
+  doc.text(sideLabel, SB_W / 2, PH - 28, { angle: 90, align: 'left' });
+
+  // ── 2. Header band ────────────────────────────────────────────────────────
+  sf(PRIMARY);
+  doc.rect(SB_W, 0, PW - SB_W, HDR_H, 'F');
+
+  // Left portion: mascot placeholder + team name
+  const hx = SB_W + 12;
+  if (profile.teamName) {
+    font('bold', 13);
+    st(WHITE);
+    doc.text(profile.teamName.toUpperCase(), hx, 36, { maxWidth: (PW - SB_W) / 2 - 10 });
+  }
+  if (profile.schoolName) {
+    font('normal', 8.5);
+    st([...WHITE]);
+    doc.setTextColor(210, 210, 220);
+    doc.text(profile.schoolName.toUpperCase(), hx, sched.length > 0 ? 52 : 50, { maxWidth: (PW - SB_W) / 2 - 10 });
+  }
+
+  // Right portion: player name large stacked
+  const nameX = SB_W + (PW - SB_W) * 0.68;
+  font('bold', 44);
+  st(WHITE);
+  doc.text(firstName, nameX, 68, { align: 'center' });
+  font('bold', 38);
+  doc.text(lastName, nameX, 112, { align: 'center' });
+
+  // Sub-info below name
+  const subParts = [
+    profile.graduationYear ? `CLASS OF ${profile.graduationYear}` : null,
+    profile.cityState ? profile.cityState.toUpperCase() : null,
+  ].filter(Boolean);
+  if (subParts.length) {
+    font('bold', 9.5);
+    st([200, 200, 210]);
+    doc.text(subParts.join('   ·   '), nameX, 136, { align: 'center' });
+  }
+
+  // ── 2b. Headshot — lower-left of header band ─────────────────────────────
+  // HS_R / HS_CX / HS_CY declared above with the canvas pre-processing
+  // White border ring
+  sf(WHITE);
+  doc.ellipse(HS_CX, HS_CY, HS_R + 4, HS_R + 4, 'F');
+  if (headshotCircle) {
+    try {
+      doc.addImage(headshotCircle, 'PNG', HS_CX - HS_R, HS_CY - HS_R, HS_R * 2, HS_R * 2);
+    } catch (_) {}
+  } else {
+    // Placeholder circle
+    sf([...PRIMARY.map(c => Math.max(0, c - 30))]);
+    doc.ellipse(HS_CX, HS_CY, HS_R, HS_R, 'F');
+    font('bold', 6.5);
+    st(WHITE);
+    doc.text('HEADSHOT', HS_CX, HS_CY - 3, { align: 'center' });
+    font('normal', 5.5);
+    doc.text('Add in profile', HS_CX, HS_CY + 5, { align: 'center' });
+  }
+
+  // ── 3. Action photo ───────────────────────────────────────────────────────
+  // White border ring
+  sf(WHITE);
+  doc.ellipse(PH_CX, PH_CY, PH_D / 2 + 5, PH_D / 2 + 5, 'F');
+
+  if (actionCircle) {
+    try {
+      const r = PH_D / 2;
+      doc.addImage(actionCircle, 'PNG', PH_CX - r, PH_CY - r, PH_D, PH_D);
+    } catch (_) {}
+  } else {
+    sf(LGRAY);
+    doc.ellipse(PH_CX, PH_CY, PH_D / 2, PH_D / 2, 'F');
+    font('bold', 8);
+    st(MID);
+    doc.text('ACTION PHOTO', PH_CX, PH_CY + 3, { align: 'center' });
+  }
+
+  // ── 4. Content ────────────────────────────────────────────────────────────
+
+  // ─ LEFT column ─────────────────────────────────────────────────────────────
+  let ly = CT_Y;
+
+  // Personal Goals (bio)
+  if (profile.bio) {
+    ly = secHdr(CT_X, COL_W, 'Personal Goals', ly);
+    ly = para(CT_X, ly, profile.bio, COL_W, 6) + 8;
+  }
+
+  // Player Information
+  ly = secHdr(CT_X, COL_W, 'Player Information', ly);
+  ly = inlineField(CT_X, ly, 'Phone',  profile.playerPhone);
+  ly = inlineField(CT_X, ly, 'Email',  profile.playerEmail);
+  ly = inlineField(CT_X, ly, 'DOB',    profile.dob);
+  const ht = profile.heightFt ? `${profile.heightFt}'${profile.heightIn || 0}"` : '';
+  ly = inlineField(CT_X, ly, 'Height', ht);
+  ly += 8;
+
+  // Parent Contact
+  ly = secHdr(CT_X, COL_W, 'Parent Contact', ly);
+  if (profile.parentName) {
+    font('bold', 8.5); st(DARK); doc.text(profile.parentName, CT_X, ly); ly += 11;
+    ly = inlineField(CT_X, ly, 'Phone', profile.parentPhone);
+    ly = inlineField(CT_X, ly, 'Email', profile.parentEmail);
+  }
+  if (profile.parent2Name) {
+    ly += 4;
+    font('bold', 8.5); st(DARK); doc.text(profile.parent2Name, CT_X, ly); ly += 11;
+    ly = inlineField(CT_X, ly, 'Phone', profile.parent2Phone);
+    ly = inlineField(CT_X, ly, 'Email', profile.parent2Email);
+  }
+  ly += 8;
+
+  // Coach Contact
+  ly = secHdr(CT_X, COL_W, 'Coach Contact', ly);
+  if (profile.hsCoachName) {
+    font('bold', 8); st(PRIMARY); doc.text('HIGH SCHOOL COACH', CT_X, ly); ly += 10;
+    font('bold', 8.5); st(DARK); doc.text(profile.hsCoachName, CT_X, ly); ly += 11;
+    ly = inlineField(CT_X, ly, 'Phone', profile.hsCoachPhone);
+    ly = inlineField(CT_X, ly, 'Email', profile.hsCoachEmail);
+    ly += 4;
+  }
+  if (profile.clubCoachName) {
+    font('bold', 8); st(PRIMARY); doc.text('TRAVEL TEAM COACH', CT_X, ly); ly += 10;
+    font('bold', 8.5); st(DARK); doc.text(profile.clubCoachName, CT_X, ly); ly += 11;
+    if (profile.clubCoachContact) {
+      font('normal', 8.5); doc.text(profile.clubCoachContact, CT_X, ly); ly += 11;
+    }
+  }
+
+  // ─ RIGHT column ────────────────────────────────────────────────────────────
+  let ry = CT_Y;
+
+  // Academics
+  ry = secHdr(COL2_X, COL_W, 'Academics', ry);
+
+  // Scores row
+  const scores = [
+    profile.gpa      ? `GPA: ${profile.gpa}` : null,
+    profile.satScore ? `SAT: ${profile.satScore}` : null,
+    profile.actScore ? `ACT: ${profile.actScore}` : null,
+  ].filter(Boolean);
+  if (scores.length) {
+    font('bold', 8.5); st(DARK);
+    doc.text(scores.join('   '), COL2_X, ry); ry += 13;
+  }
+
+  // Involvement
+  if (profile.involvement) {
+    font('bold', 7.5); st(MID); doc.text('INVOLVEMENT', COL2_X, ry); ry += 9;
+    font('normal', 8.5); st(DARK);
+    const il = doc.splitTextToSize(profile.involvement, COL_W);
+    doc.text(il.slice(0, 3), COL2_X, ry); ry += Math.min(il.length, 3) * 11 + 4;
+  }
+
+  // Awards & Accomplishments (first batch)
+  const awards = profile.awards || [];
+  if (awards.length) {
+    font('bold', 7.5); st(MID); doc.text('AWARDS & ACCOMPLISHMENTS', COL2_X, ry); ry += 9;
+    awards.slice(0, 4).forEach(a => {
+      font('normal', 8.5); st(DARK);
+      const al = doc.splitTextToSize(a, COL_W);
+      doc.text(al[0] || '', COL2_X, ry); ry += 11;
+    });
+    ry += 6;
+  }
+
+  // On the Court
+  ry = secHdr(COL2_X, COL_W, 'On the Court', ry);
+  if (profile.positions?.length) ry = inlineField(COL2_X, ry, 'Position',       profile.positions.join(' / '));
+  if (profile.dominantHand)       ry = inlineField(COL2_X, ry, 'Dominant Hand',  profile.dominantHand);
+  if (stats.killsPerGame   != null) ry = inlineField(COL2_X, ry, 'Avg. Kills per Game',   fmt(stats.killsPerGame));
+  if (stats.assistsPerGame != null) ry = inlineField(COL2_X, ry, 'Avg. Assists per Game', fmt(stats.assistsPerGame));
+  if (stats.digsPerGame    != null) ry = inlineField(COL2_X, ry, 'Avg. Digs per Game',    fmt(stats.digsPerGame));
+  ry += 8;
+
+  // Additional awards (spill-over)
+  if (awards.length > 4) {
+    ry = secHdr(COL2_X, COL_W, 'Awards & Accomplishments', ry);
+    awards.slice(4).forEach(a => {
+      font('normal', 8.5); st(DARK);
+      doc.text(a, COL2_X, ry); ry += 11;
+    });
+    ry += 6;
+  }
+
+  // NCAA / NAIA Clearing House
+  if (profile.ncaaStatus || profile.naiaStatus) {
+    ry = secHdr(COL2_X, COL_W, 'Clearing House', ry);
+    if (profile.ncaaStatus) {
+      font('bold', 8.5); st(DARK); doc.text('NCAA CLEARING HOUSE', COL2_X, ry);
+      font('normal', 8.5);
+      const sw = doc.getTextWidth('NCAA CLEARING HOUSE ');
+      doc.text(profile.ncaaStatus, COL2_X + sw, ry); ry += 12;
+    }
+    if (profile.naiaStatus) {
+      font('bold', 8.5); st(DARK); doc.text('NAIA CLEARING HOUSE', COL2_X, ry);
+      font('normal', 8.5);
+      const sw = doc.getTextWidth('NAIA CLEARING HOUSE ');
+      doc.text(profile.naiaStatus, COL2_X + sw, ry); ry += 12;
+    }
+  }
+
+  // ── 5. Footer ─────────────────────────────────────────────────────────────
+  sf(PRIMARY);
+  doc.rect(SB_W, PH - 26, PW - SB_W, 26, 'F');
+  font('bold', 8.5);
+  st(WHITE);
+  doc.text('Loggerhead.app  ·  Recruiting Profile', SB_W + 12, PH - 10);
+  font('normal', 8);
+  const dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  doc.text(dateStr, PW - 12, PH - 10, { align: 'right' });
+
+  // ── Save ──────────────────────────────────────────────────────────────────
+  const safeName = (player?.name || 'player').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+  doc.save(`${safeName}-recruiting-card.pdf`);
+};
+
+/* ─── legacy body removed ──────────────────────────────────────────────────── */
+const _deadCode_start = null; const _deadCode_start2 = null; if (false) {
+  const playerName = '';
 
   // Section label: thin green left bar + spaced green caps
   // Returns the y where body content should start (label height + gap below it)
@@ -797,43 +1159,16 @@ const generatePDF = (player, profile, stats, knownTeams = []) => {
   doc.text(footerLeft,  ML,      H - 14);
   doc.text(footerRight, W - MR,  H - 14, { align: 'right' });
 
-  // Save
-  const safeName = playerName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
-  doc.save(`${safeName}-recruiting-card.pdf`);
-};
+} // end dead code block
 
-// ─── Dev gate ─────────────────────────────────────────────────────────────────
-// The recruiting card feature is still in development.
-// Gate it so it only renders in local dev builds; show a placeholder everywhere else.
-const IS_DEV = process.env.NODE_ENV === 'development';
+// ─── Dev gate removed — feature is now live ───────────────────────────────────
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const RecruitingProfilePage = ({ isNative }) => {
   const { token, user } = useAuth();
 
-  // Feature gate — remove once the server-side persistence is deployed and
-  // the UI has gone through QA.
-  if (!IS_DEV) {
-    return (
-      <div style={{
-        maxWidth: 480,
-        margin: '80px auto',
-        padding: '32px 24px',
-        textAlign: 'center',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-      }}>
-        <div style={{ fontSize: 48, marginBottom: 16 }}>🏐</div>
-        <h2 style={{ fontSize: 22, fontWeight: 700, color: '#1C1C1E', marginBottom: 8 }}>
-          Recruiting Card
-        </h2>
-        <p style={{ fontSize: 15, color: '#8E8E93', lineHeight: 1.5 }}>
-          This feature is coming soon. We're putting the finishing touches on your
-          personalized recruiting card — check back shortly!
-        </p>
-      </div>
-    );
-  }
+  // Feature gate lifted — Recruiting Card is now live.
 
   const [claimedPlayers, setClaimedPlayers] = useState([]);
   const [selectedIdx, setSelectedIdx]       = useState(0);
@@ -1100,12 +1435,12 @@ const RecruitingProfilePage = ({ isNative }) => {
               <div style={s.card}>
                 <p style={s.sectionTitle}>Personal Info</p>
                 <div style={s.fieldWrap()}>
-                  <label style={s.label}>Bio / Athlete Statement</label>
+                  <label style={s.label}>Bio / Personal Goals Statement</label>
                   <textarea
                     style={s.textarea}
                     value={draft.bio}
                     onChange={e => set('bio', e.target.value)}
-                    placeholder="A short statement about who you are as a player and person…"
+                    placeholder="Why you want to play at the collegiate level, your values as a player and person…"
                   />
                 </div>
                 <div style={{ ...s.row, marginTop: 10 }}>
@@ -1117,6 +1452,49 @@ const RecruitingProfilePage = ({ isNative }) => {
                       value={draft.graduationYear}
                       onChange={e => set('graduationYear', e.target.value)}
                       placeholder="2026"
+                    />
+                  </div>
+                  <div style={s.fieldWrap()}>
+                    <label style={s.label}>Date of Birth</label>
+                    <input
+                      style={s.input}
+                      type="date"
+                      value={draft.dob}
+                      onChange={e => set('dob', e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div style={{ ...s.row, marginTop: 8 }}>
+                  <div style={s.fieldWrap()}>
+                    <label style={s.label}>Jersey Number</label>
+                    <input
+                      style={s.input}
+                      value={draft.jerseyNumber}
+                      onChange={e => set('jerseyNumber', e.target.value)}
+                      placeholder="#14"
+                    />
+                  </div>
+                  <div style={s.fieldWrap()}>
+                    <label style={s.label}>Dominant Hand</label>
+                    <select
+                      style={s.select}
+                      value={draft.dominantHand}
+                      onChange={e => set('dominantHand', e.target.value)}
+                    >
+                      <option value="">—</option>
+                      <option value="Right">Right</option>
+                      <option value="Left">Left</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{ ...s.row, marginTop: 8 }}>
+                  <div style={s.fieldWrap()}>
+                    <label style={s.label}>City, State</label>
+                    <input
+                      style={s.input}
+                      value={draft.cityState}
+                      onChange={e => set('cityState', e.target.value)}
+                      placeholder="Indianapolis, IN"
                     />
                   </div>
                   <div style={s.fieldWrap()}>
@@ -1191,6 +1569,45 @@ const RecruitingProfilePage = ({ isNative }) => {
                 </div>
               </div>
 
+              {/* Team / Card Appearance */}
+              <div style={s.card}>
+                <p style={s.sectionTitle}>Team & Card Appearance</p>
+                <div style={s.row}>
+                  <div style={s.fieldWrap()}>
+                    <label style={s.label}>Team Name (shown on PDF)</label>
+                    <input
+                      style={s.input}
+                      value={draft.teamName}
+                      onChange={e => set('teamName', e.target.value)}
+                      placeholder="Indianapolis Lady Bears"
+                    />
+                  </div>
+                </div>
+                <div style={{ ...s.row, marginTop: 8, alignItems: 'center' }}>
+                  <div style={s.fieldWrap(1)}>
+                    <label style={s.label}>Card Color</label>
+                    <input
+                      type="color"
+                      value={draft.teamColorHex || '#8B1A1A'}
+                      onChange={e => set('teamColorHex', e.target.value)}
+                      style={{ width: '100%', height: 40, borderRadius: 8, border: '1px solid #E5E5EA', cursor: 'pointer', padding: 2 }}
+                    />
+                  </div>
+                  <div style={s.fieldWrap(3)}>
+                    <label style={s.label}>Hex Value</label>
+                    <input
+                      style={s.input}
+                      value={draft.teamColorHex || '#8B1A1A'}
+                      onChange={e => set('teamColorHex', e.target.value)}
+                      placeholder="#8B1A1A"
+                    />
+                  </div>
+                </div>
+                <p style={{ fontSize: 12, color: '#8E8E93', margin: '6px 0 0' }}>
+                  The sidebar, header band, and footer on the PDF use this color.
+                </p>
+              </div>
+
               {/* Academic */}
               <div style={s.card}>
                 <p style={s.sectionTitle}>Academic</p>
@@ -1244,6 +1661,53 @@ const RecruitingProfilePage = ({ isNative }) => {
                     onChange={e => set('intendedMajor', e.target.value)}
                     placeholder="Exercise Science / Pre-Med"
                   />
+                </div>
+                <div style={{ ...s.fieldWrap(), marginTop: 10 }}>
+                  <label style={s.label}>Involvement (clubs, leadership, activities)</label>
+                  <input
+                    style={s.input}
+                    value={draft.involvement}
+                    onChange={e => set('involvement', e.target.value)}
+                    placeholder="Student Council President, Volleyball Team Captain, Honor Roll"
+                  />
+                </div>
+              </div>
+
+              {/* NCAA / NAIA Clearing House */}
+              <div style={s.card}>
+                <p style={s.sectionTitle}>NCAA / NAIA Clearing House</p>
+                <p style={{ fontSize: 12, color: '#8E8E93', marginTop: -4, marginBottom: 10 }}>
+                  Your eligibility status with the NCAA and NAIA clearing houses.
+                </p>
+                <div style={s.row}>
+                  <div style={s.fieldWrap()}>
+                    <label style={s.label}>NCAA Clearing House Status</label>
+                    <select
+                      style={s.select}
+                      value={draft.ncaaStatus}
+                      onChange={e => set('ncaaStatus', e.target.value)}
+                    >
+                      <option value="">—</option>
+                      <option value="Registered">Registered</option>
+                      <option value="Certified">Certified</option>
+                      <option value="Pending">Pending</option>
+                      <option value="Not Registered">Not Registered</option>
+                    </select>
+                  </div>
+                  <div style={s.fieldWrap()}>
+                    <label style={s.label}>NAIA Clearing House Status</label>
+                    <select
+                      style={s.select}
+                      value={draft.naiaStatus}
+                      onChange={e => set('naiaStatus', e.target.value)}
+                    >
+                      <option value="">—</option>
+                      <option value="Registered">Registered</option>
+                      <option value="Certified">Certified</option>
+                      <option value="Pending">Pending</option>
+                      <option value="Not Registered">Not Registered</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -1299,9 +1763,9 @@ const RecruitingProfilePage = ({ isNative }) => {
                 </div>
               )}
 
-              {/* Club */}
+              {/* Club / Travel Team */}
               <div style={s.card}>
-                <p style={s.sectionTitle}>Club Team</p>
+                <p style={s.sectionTitle}>Travel / Club Team</p>
                 <div style={s.row}>
                   <div style={s.fieldWrap()}>
                     <label style={s.label}>Club Team Name</label>
@@ -1315,7 +1779,7 @@ const RecruitingProfilePage = ({ isNative }) => {
                 </div>
                 <div style={s.row}>
                   <div style={s.fieldWrap()}>
-                    <label style={s.label}>Club Coach Name</label>
+                    <label style={s.label}>Travel Team Coach Name</label>
                     <input
                       style={s.input}
                       value={draft.clubCoachName}
@@ -1369,20 +1833,61 @@ const RecruitingProfilePage = ({ isNative }) => {
                     <input style={s.input} value={draft.playerPhone} onChange={e => set('playerPhone', e.target.value)} />
                   </div>
                 </div>
+
+                <p style={{ fontSize: 12, fontWeight: 600, color: '#3C3C43', margin: '10px 0 6px' }}>Parent / Guardian 1</p>
                 <div style={s.row}>
                   <div style={s.fieldWrap()}>
-                    <label style={s.label}>Parent / Guardian Name</label>
-                    <input style={s.input} value={draft.parentName} onChange={e => set('parentName', e.target.value)} />
+                    <label style={s.label}>Name</label>
+                    <input style={s.input} value={draft.parentName} onChange={e => set('parentName', e.target.value)} placeholder="First Last" />
                   </div>
                 </div>
                 <div style={s.row}>
                   <div style={s.fieldWrap()}>
-                    <label style={s.label}>Parent Email</label>
+                    <label style={s.label}>Email</label>
                     <input style={s.input} value={draft.parentEmail} onChange={e => set('parentEmail', e.target.value)} />
                   </div>
                   <div style={s.fieldWrap()}>
-                    <label style={s.label}>Parent Phone</label>
+                    <label style={s.label}>Phone</label>
                     <input style={s.input} value={draft.parentPhone} onChange={e => set('parentPhone', e.target.value)} />
+                  </div>
+                </div>
+
+                <p style={{ fontSize: 12, fontWeight: 600, color: '#3C3C43', margin: '12px 0 6px' }}>Parent / Guardian 2 <span style={{ fontWeight: 400, color: '#8E8E93' }}>(optional)</span></p>
+                <div style={s.row}>
+                  <div style={s.fieldWrap()}>
+                    <label style={s.label}>Name</label>
+                    <input style={s.input} value={draft.parent2Name} onChange={e => set('parent2Name', e.target.value)} placeholder="First Last" />
+                  </div>
+                </div>
+                <div style={s.row}>
+                  <div style={s.fieldWrap()}>
+                    <label style={s.label}>Email</label>
+                    <input style={s.input} value={draft.parent2Email} onChange={e => set('parent2Email', e.target.value)} />
+                  </div>
+                  <div style={s.fieldWrap()}>
+                    <label style={s.label}>Phone</label>
+                    <input style={s.input} value={draft.parent2Phone} onChange={e => set('parent2Phone', e.target.value)} />
+                  </div>
+                </div>
+              </div>
+
+              {/* High School Coach */}
+              <div style={s.card}>
+                <p style={s.sectionTitle}>High School Coach</p>
+                <div style={s.row}>
+                  <div style={s.fieldWrap()}>
+                    <label style={s.label}>Coach Name</label>
+                    <input style={s.input} value={draft.hsCoachName} onChange={e => set('hsCoachName', e.target.value)} placeholder="First Last" />
+                  </div>
+                </div>
+                <div style={s.row}>
+                  <div style={s.fieldWrap()}>
+                    <label style={s.label}>Coach Phone</label>
+                    <input style={s.input} value={draft.hsCoachPhone} onChange={e => set('hsCoachPhone', e.target.value)} />
+                  </div>
+                  <div style={s.fieldWrap()}>
+                    <label style={s.label}>Coach Email</label>
+                    <input style={s.input} value={draft.hsCoachEmail} onChange={e => set('hsCoachEmail', e.target.value)} />
                   </div>
                 </div>
               </div>
@@ -1466,6 +1971,43 @@ const RecruitingProfilePage = ({ isNative }) => {
                   onClick={() => addItem('targetSchools', { name: '', division: '', status: 'interested', notes: '' })}
                 >
                   + Add School
+                </button>
+              </div>
+
+              {/* Tournament Schedule — appears in PDF sidebar */}
+              <div style={s.card}>
+                <p style={s.sectionTitle}>Club Tournament Schedule</p>
+                <p style={{ fontSize: 12, color: '#8E8E93', marginTop: -4, marginBottom: 10 }}>
+                  Shown in the sidebar of your PDF — lets college coaches know where to see you play.
+                </p>
+                {(draft.tournamentSchedule || []).map((t, i) => (
+                  <div key={i} style={{ ...s.row, alignItems: 'center', marginBottom: 8 }}>
+                    <div style={s.fieldWrap(1)}>
+                      <label style={s.label}>Dates</label>
+                      <input
+                        style={s.input}
+                        value={t.dates}
+                        onChange={e => setNested('tournamentSchedule', i, 'dates', e.target.value)}
+                        placeholder="May 23-24"
+                      />
+                    </div>
+                    <div style={s.fieldWrap(2)}>
+                      <label style={s.label}>Tournament Name</label>
+                      <input
+                        style={s.input}
+                        value={t.tournament}
+                        onChange={e => setNested('tournamentSchedule', i, 'tournament', e.target.value)}
+                        placeholder="Memorial Open"
+                      />
+                    </div>
+                    <button style={s.removeBtn} onClick={() => removeItem('tournamentSchedule', i)}>✕</button>
+                  </div>
+                ))}
+                <button
+                  style={s.addBtn}
+                  onClick={() => addItem('tournamentSchedule', { dates: '', tournament: '' })}
+                >
+                  + Add Tournament
                 </button>
               </div>
 

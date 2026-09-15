@@ -1,1 +1,0 @@
-(self.webpackChunkvolleyball_logger_client=self.webpackChunkvolleyball_logger_client||[]).push([[209],{5817(){},8590(){},4530(){},8108(){},551(){},1234(){}}]);
