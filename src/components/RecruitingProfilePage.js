@@ -433,6 +433,7 @@ const emptyProfile = (playerId, userId) => ({
   involvement: '',
   ncaaStatus: '', naiaStatus: '',
   clubTeamName: '', clubCoachName: '', clubCoachContact: '',
+  clubCoachEmail: '', clubCoachPhone: '',
   hsCoachName: '', hsCoachPhone: '', hsCoachEmail: '',
   hudlUrl: '', highlightUrl: '',
   playerEmail: '', playerPhone: '',
@@ -464,8 +465,274 @@ const clipToCircle = (url, size) =>
     img.src = url;
   });
 
+// ─── Share Graphic Generator ──────────────────────────────────────────────────
+const generateShareGraphic = async (player, profile, stats, opts = {}) => {
+  const {
+    showPhoto = true,
+    showActionBackground = false,
+    showStats = true,
+    showSchool = true,
+    showClub = true,
+    showGPA = false,
+    showUpcomingEvents = false,
+  } = opts;
+  const SIZE = 1080;
+  const canvas = document.createElement('canvas');
+  canvas.width = SIZE;
+  canvas.height = SIZE;
+  const ctx = canvas.getContext('2d');
+
+  const hexToRgb = (hex) => {
+    const h = (hex || '#1C1C1E').replace('#', '');
+    return [parseInt(h.substr(0,2),16), parseInt(h.substr(2,2),16), parseInt(h.substr(4,2),16)];
+  };
+  const [r, g, b] = hexToRgb(profile.teamColorHex || '#1C1C1E');
+  const dr = Math.max(0, r - 50), dg = Math.max(0, g - 50), db = Math.max(0, b - 50);
+
+  // Background gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, SIZE);
+  grad.addColorStop(0, `rgb(${r},${g},${b})`);
+  grad.addColorStop(1, `rgb(${dr},${dg},${db})`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, SIZE, SIZE);
+
+  // Subtle grid overlay
+  ctx.globalAlpha = 0.05;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < SIZE; i += 72) {
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, SIZE); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(SIZE, i); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // ── Action photo full-bleed background (optional) ────────────────────────
+  // Load using the same non-crossOrigin pattern as clipToCircle (proven to work
+  // for this app's CDN), then bounce through a data URL so the main canvas is
+  // never tainted and toDataURL() succeeds at the end.
+  if (showActionBackground && profile.actionPhotoUrl) {
+    const bgData = await new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const tc = document.createElement('canvas');
+          tc.width = SIZE; tc.height = SIZE;
+          const tcx = tc.getContext('2d');
+          const sc = Math.max(SIZE / img.naturalWidth, SIZE / img.naturalHeight);
+          const dw = img.naturalWidth * sc, dh = img.naturalHeight * sc;
+          tcx.drawImage(img, (SIZE - dw) / 2, (SIZE - dh) / 2, dw, dh);
+          resolve(tc.toDataURL('image/png'));
+        } catch (_) { resolve(null); }
+      };
+      img.onerror = () => resolve(null);
+      img.src = profile.actionPhotoUrl;
+    });
+    if (bgData) {
+      const bgImg = new Image();
+      await new Promise(res => { bgImg.onload = res; bgImg.onerror = res; bgImg.src = bgData; });
+      ctx.drawImage(bgImg, 0, 0, SIZE, SIZE);
+    }
+    // Dark gradient overlay so text stays readable
+    const ov = ctx.createLinearGradient(0, 0, 0, SIZE);
+    ov.addColorStop(0,   'rgba(0,0,0,0.52)');
+    ov.addColorStop(0.45,'rgba(0,0,0,0.30)');
+    ov.addColorStop(0.75,'rgba(0,0,0,0.72)');
+    ov.addColorStop(1,   'rgba(0,0,0,0.92)');
+    ctx.fillStyle = ov;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+    // Subtle team-color tint
+    ctx.fillStyle = `rgba(${r},${g},${b},0.22)`;
+    ctx.fillRect(0, 0, SIZE, SIZE);
+  }
+
+  // ── Layout constants ─────────────────────────────────────────────────────────
+  // Bottom 110px is always reserved for school name + branding
+  const BOTTOM_RESERVE = 110;
+  const CONTENT_BOTTOM = SIZE - BOTTOM_RESERVE;
+
+  // Photo: radius 150, top-centered
+  const PHOTO_R  = 150;
+  const PHOTO_CX = SIZE / 2;
+  const PHOTO_CY = showPhoto ? (PHOTO_R + 55) : 0;
+
+  // Draw photo — circle uses headshotUrl specifically
+  if (showPhoto) {
+    const photoUrl = profile.headshotUrl;
+    if (photoUrl) {
+      const circleData = await clipToCircle(photoUrl, 512);
+      if (circleData) {
+        ctx.beginPath();
+        ctx.arc(PHOTO_CX, PHOTO_CY, PHOTO_R + 14, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(PHOTO_CX, PHOTO_CY, PHOTO_R + 6, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        const img = new Image();
+        await new Promise(res => { img.onload = res; img.onerror = res; img.src = circleData; });
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(PHOTO_CX, PHOTO_CY, PHOTO_R, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(img, PHOTO_CX - PHOTO_R, PHOTO_CY - PHOTO_R, PHOTO_R * 2, PHOTO_R * 2);
+        ctx.restore();
+      }
+    } else {
+      ctx.beginPath();
+      ctx.arc(PHOTO_CX, PHOTO_CY, PHOTO_R, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.fill();
+    }
+  }
+
+  // ── Content flow starts just below photo ──────────────────────────────────
+  let cy = showPhoto ? (PHOTO_CY + PHOTO_R + 36) : 80;
+
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = 'rgba(0,0,0,0.4)';
+  ctx.shadowBlur = 10;
+
+  // Player name
+  const nameParts = (player?.name || 'Player').toUpperCase().trim().split(/\s+/);
+  const firstName = nameParts[0] || '';
+  const lastName  = nameParts.slice(1).join(' ') || '';
+  ctx.font = `bold 84px -apple-system, "Helvetica Neue", Arial, sans-serif`;
+  ctx.fillText(firstName, SIZE / 2, cy + 72, SIZE - 60);
+  ctx.font = `bold 68px -apple-system, "Helvetica Neue", Arial, sans-serif`;
+  ctx.fillText(lastName,  SIZE / 2, cy + 148, SIZE - 60);
+  ctx.shadowBlur = 0;
+  cy += 172;
+
+  // Sub line: position / height / class
+  const subParts = [
+    profile.positions?.length ? profile.positions.join(' / ') : null,
+    profile.heightFt ? `${profile.heightFt}'${profile.heightIn || 0}"` : null,
+    profile.graduationYear ? `Class of ${profile.graduationYear}` : null,
+  ].filter(Boolean);
+  if (subParts.length) {
+    cy += 16;
+    ctx.globalAlpha = 0.82;
+    ctx.font = `600 30px -apple-system, "Helvetica Neue", Arial, sans-serif`;
+    ctx.fillText(subParts.join('   ·   '), SIZE / 2, cy, SIZE - 60);
+    ctx.globalAlpha = 1;
+    cy += 44;
+  }
+
+  // Club / travel team name (optional)
+  if (showClub && profile.clubTeamName) {
+    cy += 8;
+    ctx.globalAlpha = 0.72;
+    ctx.font = `600 26px -apple-system, "Helvetica Neue", Arial, sans-serif`;
+    ctx.fillText(profile.clubTeamName, SIZE / 2, cy, SIZE - 60);
+    ctx.globalAlpha = 1;
+    cy += 40;
+  }
+
+  // GPA / test scores (optional)
+  if (showGPA && (profile.gpa || profile.satScore || profile.actScore)) {
+    cy += 6;
+    const gpaParts = [
+      profile.gpa      ? `GPA: ${profile.gpa}` : null,
+      profile.satScore ? `SAT: ${profile.satScore}` : null,
+      profile.actScore ? `ACT: ${profile.actScore}` : null,
+    ].filter(Boolean);
+    ctx.globalAlpha = 0.78;
+    ctx.font = `600 28px -apple-system, "Helvetica Neue", Arial, sans-serif`;
+    ctx.fillText(gpaParts.join('   '), SIZE / 2, cy, SIZE - 60);
+    ctx.globalAlpha = 1;
+    cy += 42;
+  }
+
+  // ── Bottom-anchored sections: stats, events, school, branding ────────────
+  // Calculate how much vertical space each bottom section needs
+  const fmtN  = v => (v == null || isNaN(+v)) ? null : Number(v).toFixed(1);
+  const fmtPt = v => (v == null || isNaN(+v)) ? null : (Number(v)*100).toFixed(1)+'%';
+  const statItems = showStats ? [
+    { label: 'KILLS/GM',  val: fmtN(stats.killsPerGame) },
+    { label: 'HITTING%',  val: fmtPt(stats.hittingPct) },
+    { label: 'DIGS/GM',   val: fmtN(stats.digsPerGame) },
+    { label: 'ACES/GM',   val: fmtN(stats.acesPerGame) },
+  ].filter(s => s.val != null) : [];
+
+  const evts = showUpcomingEvents
+    ? (profile.upcomingEvents || []).filter(e => e.name?.trim()).slice(0, 2)
+    : [];
+
+  // Lay sections from CONTENT_BOTTOM upward
+  let bottomCy = CONTENT_BOTTOM;
+
+  // Events (drawn from bottomCy upward)
+  if (evts.length) {
+    bottomCy -= (evts.length * 34 + 42); // header + rows
+    const evtStartY = bottomCy;
+    ctx.globalAlpha = 0.95;
+    ctx.font = `700 24px -apple-system, "Helvetica Neue", Arial, sans-serif`;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('UPCOMING EVENTS', SIZE / 2, evtStartY + 26);
+    evts.forEach((ev, i) => {
+      ctx.globalAlpha = 0.78;
+      ctx.font = `500 22px -apple-system, "Helvetica Neue", Arial, sans-serif`;
+      const label = [ev.name.trim(), ev.date ? ev.date.slice(5).replace('-','/') : null, ev.location].filter(Boolean).join('  ·  ');
+      ctx.fillText(label, SIZE / 2, evtStartY + 60 + i * 34, SIZE - 60);
+    });
+    ctx.globalAlpha = 1;
+    bottomCy -= 10;
+  }
+
+  // Stats strip (drawn at bottomCy upward)
+  if (statItems.length) {
+    bottomCy -= 104;
+    const stripY = bottomCy;
+    ctx.fillStyle = 'rgba(255,255,255,0.13)';
+    ctx.fillRect(0, stripY, SIZE, 104);
+    const SW = SIZE / statItems.length;
+    statItems.forEach((st, i) => {
+      const sx = i * SW + SW / 2;
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `bold 48px -apple-system, "Helvetica Neue", Arial, sans-serif`;
+      ctx.fillText(st.val, sx, stripY + 58);
+      ctx.globalAlpha = 0.6;
+      ctx.font = `500 22px -apple-system, "Helvetica Neue", Arial, sans-serif`;
+      ctx.fillText(st.label, sx, stripY + 88);
+      ctx.globalAlpha = 1;
+    });
+    bottomCy -= 8;
+  }
+
+  // If cy (content flow from top) is still above bottomCy, add a divider
+  if (cy < bottomCy - 20) {
+    ctx.globalAlpha = 0.15;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(80, bottomCy - 8);
+    ctx.lineTo(SIZE - 80, bottomCy - 8);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // School name — fixed bottom zone
+  if (showSchool && profile.schoolName) {
+    ctx.globalAlpha = 0.72;
+    ctx.font = `500 28px -apple-system, "Helvetica Neue", Arial, sans-serif`;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(profile.schoolName, SIZE / 2, SIZE - 66, SIZE - 60);
+    ctx.globalAlpha = 1;
+  }
+
+  // Branding — very bottom
+  ctx.globalAlpha = 0.45;
+  ctx.font = `500 24px -apple-system, "Helvetica Neue", Arial, sans-serif`;
+  ctx.fillText('Loggerhead.app', SIZE / 2, SIZE - 28);
+  ctx.globalAlpha = 1;
+
+  return canvas.toDataURL('image/png');
+};
+
 // ─── PDF Generator ────────────────────────────────────────────────────────────
-const generatePDF = async (player, profile, stats, knownTeams = []) => {
+const generatePDF = async (player, profile, stats, knownTeams = [], includeSWOT = false) => {
   const doc = new jsPDF({ unit: 'pt', format: 'letter' });
   const PW  = 612;
   const PH  = 792;
@@ -722,9 +989,8 @@ const generatePDF = async (player, profile, stats, knownTeams = []) => {
   if (profile.clubCoachName) {
     font('bold', 8); st(PRIMARY); doc.text('TRAVEL TEAM COACH', CT_X, ly); ly += 10;
     font('bold', 8.5); st(DARK); doc.text(profile.clubCoachName, CT_X, ly); ly += 11;
-    if (profile.clubCoachContact) {
-      font('normal', 8.5); doc.text(profile.clubCoachContact, CT_X, ly); ly += 11;
-    }
+    ly = inlineField(CT_X, ly, 'Phone', profile.clubCoachPhone || profile.clubCoachContact || '');
+    ly = inlineField(CT_X, ly, 'Email', profile.clubCoachEmail || '');
   }
 
   // ─ RIGHT column ────────────────────────────────────────────────────────────
@@ -785,6 +1051,7 @@ const generatePDF = async (player, profile, stats, knownTeams = []) => {
 
   // NCAA / NAIA Clearing House
   if (profile.ncaaStatus || profile.naiaStatus) {
+    if (ry > PH - 80) { doc.addPage(); ry = CT_Y; }
     ry = secHdr(COL2_X, COL_W, 'Clearing House', ry);
     if (profile.ncaaStatus) {
       font('bold', 8.5); st(DARK); doc.text('NCAA CLEARING HOUSE', COL2_X, ry);
@@ -800,6 +1067,33 @@ const generatePDF = async (player, profile, stats, knownTeams = []) => {
     }
   }
 
+  // Upcoming Events & Tournaments
+  const upEvts = (profile.upcomingEvents || []).filter(ev => ev.name?.trim());
+  if (upEvts.length && ry < PH - 80) {
+    ry = secHdr(COL2_X, COL_W, 'Upcoming Events', ry);
+    upEvts.slice(0, 5).forEach(ev => {
+      if (ry > PH - 90) return;
+      font('bold', 8); st(DARK); doc.text(ev.name.trim(), COL2_X, ry, { maxWidth: COL_W }); ry += 11;
+      const evDate = ev.date
+        ? (() => { try { return new Date(ev.date + 'T12:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); } catch(_) { return ev.date; } })()
+        : null;
+      const detail = [evDate, ev.location].filter(Boolean).join(' — ');
+      if (detail) {
+        font('normal', 7.5); st(MID);
+        doc.text(detail, COL2_X + 2, ry, { maxWidth: COL_W - 2 }); ry += 10;
+      }
+      ry += 2;
+    });
+    ry += 4;
+  }
+
+  // Tournament Schedule (if not shown in sidebar because schedule was empty)
+  const tourEvts = (profile.tournamentSchedule || []).filter(t => t.dates || t.tournament);
+  const schedInSidebar = tourEvts.length > 0; // already rendered in sidebar
+  if (!schedInSidebar && ry < PH - 80) {
+    // nothing extra needed — sidebar already handles it when populated
+  }
+
   // ── 5. Footer ─────────────────────────────────────────────────────────────
   sf(PRIMARY);
   doc.rect(SB_W, PH - 26, PW - SB_W, 26, 'F');
@@ -809,6 +1103,60 @@ const generatePDF = async (player, profile, stats, knownTeams = []) => {
   font('normal', 8);
   const dateStr = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   doc.text(dateStr, PW - 12, PH - 10, { align: 'right' });
+
+  // ── 6. SWOT page 2 (optional) ────────────────────────────────────────────
+  if (includeSWOT && profile.swot?.strengths?.length) {
+    doc.addPage();
+
+    // Page 2 header band
+    sf(PRIMARY);
+    doc.rect(0, 0, PW, 52, 'F');
+    font('bold', 16);
+    st(WHITE);
+    doc.text('SWOT ANALYSIS', PW / 2, 28, { align: 'center' });
+    font('normal', 9);
+    st([220, 220, 230]);
+    doc.text(playerName, PW / 2, 44, { align: 'center' });
+
+    const BX = 36;
+    const BW = (PW - 72 - 14) / 2;
+    const BY = 68;
+    const BH = 310;
+
+    const swotBoxes = [
+      { title: 'STRENGTHS',       bg: [230,245,235], tc: [28,122,56],   items: profile.swot.strengths },
+      { title: 'AREAS FOR GROWTH',bg: [255,239,237], tc: [192,57,43],   items: profile.swot.weaknesses },
+      { title: 'OPPORTUNITIES',   bg: [235,242,255], tc: [0,81,168],    items: profile.swot.opportunities },
+      { title: 'WATCH FOR',       bg: [255,244,225], tc: [155,93,0],    items: profile.swot.threats },
+    ];
+
+    swotBoxes.forEach((box, i) => {
+      const bx = BX + (i % 2) * (BW + 14);
+      const by = BY + Math.floor(i / 2) * (BH + 14);
+      sf(box.bg);
+      doc.roundedRect(bx, by, BW, BH, 7, 7, 'F');
+      font('bold', 9);
+      st(box.tc);
+      doc.text(box.title, bx + 10, by + 18);
+      let iy = by + 32;
+      (box.items || []).slice(0, 10).forEach(item => {
+        if (iy > by + BH - 10) return;
+        font('normal', 8);
+        st(DARK);
+        const lines = doc.splitTextToSize(`• ${item}`, BW - 22);
+        doc.text(lines.slice(0, 3), bx + 10, iy);
+        iy += Math.min(lines.length, 3) * 10.5 + 2;
+      });
+    });
+
+    // Page 2 footer
+    sf(PRIMARY);
+    doc.rect(0, PH - 26, PW, 26, 'F');
+    font('bold', 8.5); st(WHITE);
+    doc.text('Loggerhead.app  ·  AI Stat Analysis', 12, PH - 10);
+    font('normal', 8);
+    doc.text(dateStr, PW - 12, PH - 10, { align: 'right' });
+  }
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const safeName = (player?.name || 'player').replace(/[^a-z0-9]/gi, '-').toLowerCase();
@@ -1182,6 +1530,18 @@ const RecruitingProfilePage = ({ isNative }) => {
   const [savedMsg, setSavedMsg]             = useState('');
   const [error, setError]                   = useState('');
   const [knownTeams, setKnownTeams]         = useState([]);
+  const [includeSWOT, setIncludeSWOT]       = useState(false);
+  const [graphicUrl, setGraphicUrl]         = useState(null);
+  const [generatingGraphic, setGeneratingGraphic] = useState(false);
+  const [graphicOptions, setGraphicOptions] = useState({
+    showPhoto: true,
+    showActionBackground: false,
+    showStats: true,
+    showSchool: true,
+    showClub: true,
+    showGPA: false,
+    showUpcomingEvents: false,
+  });
 
   const headers = { Authorization: `Bearer ${token}` };
 
@@ -1207,6 +1567,7 @@ const RecruitingProfilePage = ({ isNative }) => {
     setLoading(true);
     setError('');
     setKnownTeams([]);
+    setGraphicUrl(null);
 
     Promise.all([
       axios.get(`${API_URL}/api/roi/recruiting-profile/${p._id}`, { headers }),
@@ -1779,19 +2140,30 @@ const RecruitingProfilePage = ({ isNative }) => {
                 </div>
                 <div style={s.row}>
                   <div style={s.fieldWrap()}>
-                    <label style={s.label}>Travel Team Coach Name</label>
+                    <label style={s.label}>Club Coach Name</label>
                     <input
                       style={s.input}
                       value={draft.clubCoachName}
                       onChange={e => set('clubCoachName', e.target.value)}
+                      placeholder="First Last"
+                    />
+                  </div>
+                </div>
+                <div style={s.row}>
+                  <div style={s.fieldWrap()}>
+                    <label style={s.label}>Club Coach Phone</label>
+                    <input
+                      style={s.input}
+                      value={draft.clubCoachPhone}
+                      onChange={e => set('clubCoachPhone', e.target.value)}
                     />
                   </div>
                   <div style={s.fieldWrap()}>
-                    <label style={s.label}>Coach Email / Phone</label>
+                    <label style={s.label}>Club Coach Email</label>
                     <input
                       style={s.input}
-                      value={draft.clubCoachContact}
-                      onChange={e => set('clubCoachContact', e.target.value)}
+                      value={draft.clubCoachEmail}
+                      onChange={e => set('clubCoachEmail', e.target.value)}
                     />
                   </div>
                 </div>
@@ -2132,6 +2504,28 @@ const RecruitingProfilePage = ({ isNative }) => {
                   <p style={{ fontSize: 12, color: '#C7C7CC', textAlign: 'center', marginTop: 12 }}>
                     AI analysis based on logged stats. Save to keep it on your PDF.
                   </p>
+
+                  {/* Include in PDF toggle */}
+                  <div
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, padding: '10px 14px', background: '#F9F9FB', borderRadius: 10, border: '1.5px solid #E5E5EA', cursor: 'pointer' }}
+                    onClick={() => setIncludeSWOT(v => !v)}
+                  >
+                    <div style={{
+                      width: 44, height: 26, borderRadius: 13, flexShrink: 0,
+                      background: includeSWOT ? '#34C759' : '#C7C7CC',
+                      position: 'relative', transition: 'background 0.2s',
+                    }}>
+                      <div style={{
+                        position: 'absolute', top: 3, left: includeSWOT ? 21 : 3,
+                        width: 20, height: 20, borderRadius: 10, background: '#fff',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.25)', transition: 'left 0.2s',
+                      }} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: '#1C1C1E' }}>Include in Recruiting Card PDF</div>
+                      <div style={{ fontSize: 12, color: '#8E8E93' }}>Adds a SWOT page 2 when you download the PDF</div>
+                    </div>
+                  </div>
                 </>
               ) : (
                 <div style={{ ...s.card, textAlign: 'center', color: '#8E8E93', padding: '32px 16px' }}>
@@ -2263,15 +2657,112 @@ const RecruitingProfilePage = ({ isNative }) => {
                   ⚠️ You have unsaved changes. Save first so your PDF includes the latest data.
                 </div>
               )}
+
+              {/* SWOT toggle */}
+              {draft.swot?.strengths?.length > 0 && (
+                <div
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, padding: '10px 14px', background: '#F9F9FB', borderRadius: 10, border: '1.5px solid #E5E5EA', cursor: 'pointer' }}
+                  onClick={() => setIncludeSWOT(v => !v)}
+                >
+                  <div style={{
+                    width: 44, height: 26, borderRadius: 13, flexShrink: 0,
+                    background: includeSWOT ? '#34C759' : '#C7C7CC',
+                    position: 'relative', transition: 'background 0.2s',
+                  }}>
+                    <div style={{
+                      position: 'absolute', top: 3, left: includeSWOT ? 21 : 3,
+                      width: 20, height: 20, borderRadius: 10, background: '#fff',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.25)', transition: 'left 0.2s',
+                    }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#1C1C1E' }}>Include AI Stat Analysis</div>
+                    <div style={{ fontSize: 12, color: '#8E8E93' }}>Adds a SWOT page 2 to the PDF</div>
+                  </div>
+                </div>
+              )}
+
               <button
                 style={s.downloadBtn}
-                onClick={() => generatePDF(player, draft, stats, knownTeams)}
+                onClick={async () => {
+                  try {
+                    await generatePDF(player, draft, stats, knownTeams, includeSWOT);
+                  } catch (e) {
+                    setError('PDF generation failed: ' + (e.message || 'unknown error'));
+                  }
+                }}
               >
                 ⬇ Download Recruiting Card PDF
               </button>
               <p style={{ textAlign: 'center', fontSize: 12, color: '#C7C7CC', marginTop: 8 }}>
                 PDF opens in your device's share sheet — save, email, or print.
               </p>
+
+              {/* Share graphic options */}
+              <div style={{ background: '#F9F9FB', borderRadius: 12, padding: '12px 14px', marginTop: 10, border: '1.5px solid #E5E5EA' }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: '#1C1C1E', margin: '0 0 10px' }}>Share Graphic — Choose Sections</p>
+                {[
+                  { key: 'showPhoto',             label: 'Profile Photo (headshot)' },
+                  { key: 'showActionBackground',  label: 'Action Shot Background' },
+                  { key: 'showStats',             label: 'Stat Line' },
+                  { key: 'showSchool',            label: 'School Name' },
+                  { key: 'showClub',              label: 'Club / Travel Team' },
+                  { key: 'showGPA',               label: 'GPA / Test Scores' },
+                  { key: 'showUpcomingEvents',    label: 'Upcoming Events' },
+                ].map(({ key, label }) => (
+                  <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7, cursor: 'pointer', fontSize: 13, color: '#1C1C1E' }}>
+                    <input
+                      type="checkbox"
+                      checked={graphicOptions[key]}
+                      onChange={e => setGraphicOptions(prev => ({ ...prev, [key]: e.target.checked }))}
+                      style={{ width: 16, height: 16, accentColor: '#007AFF' }}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+
+              {/* Share graphic */}
+              <button
+                style={{ ...s.downloadBtn, background: 'linear-gradient(135deg,#FF6B6B,#FF3B30)', marginTop: 8 }}
+                onClick={async () => {
+                  setGeneratingGraphic(true);
+                  try {
+                    const url = await generateShareGraphic(player, draft, stats, graphicOptions);
+                    setGraphicUrl(url);
+                  } catch (e) {
+                    setError('Could not generate graphic — try again.');
+                  } finally {
+                    setGeneratingGraphic(false);
+                  }
+                }}
+                disabled={generatingGraphic}
+              >
+                {generatingGraphic ? '🎨 Generating…' : '🎨 Create Share Graphic'}
+              </button>
+              <p style={{ textAlign: 'center', fontSize: 12, color: '#C7C7CC', marginTop: 8 }}>
+                1080×1080 image — save to camera roll and post to Instagram, X, etc.
+              </p>
+
+              {graphicUrl && (
+                <div style={{ marginTop: 12 }}>
+                  <img
+                    src={graphicUrl}
+                    alt="Share graphic"
+                    style={{ width: '100%', borderRadius: 12, display: 'block' }}
+                  />
+                  <a
+                    href={graphicUrl}
+                    download={`${(player?.name || 'player').replace(/[^a-z0-9]/gi,'-').toLowerCase()}-graphic.png`}
+                    style={{ ...s.downloadBtn, display: 'flex', marginTop: 8, textDecoration: 'none' }}
+                  >
+                    ⬇ Save Graphic
+                  </a>
+                  <p style={{ textAlign: 'center', fontSize: 12, color: '#C7C7CC', marginTop: 6 }}>
+                    On mobile, press and hold the image above to save to your photos.
+                  </p>
+                </div>
+              )}
             </>
           )}
         </>

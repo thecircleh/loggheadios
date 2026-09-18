@@ -324,6 +324,13 @@ const styles = {
   },
 };
 
+// Subscriber-only features, shown everywhere Premium benefits are listed.
+const PREMIUM_FEATURES = [
+  "🏖️ Beach mode — 2v2 beach teams and matches",
+  "Claim your players and follow them across teams",
+  "Recruiting profile for each claimed player",
+];
+
 const SubscriptionButtons = ({ isNative }) => {
   const auth = useAuth();
   const token = auth?.token;
@@ -461,6 +468,7 @@ const premiumValueStack = useMemo(() => {
     return [
       "Recurring subscription with unlimited Stat Book matches",
       "Recurring subscription with unlimited Match Tracking matches",
+      ...PREMIUM_FEATURES,
       "No mid-day paywall decisions",
       "Collaborative workflows when someone else is helping",
       "Full dashboards and breakdowns",
@@ -471,6 +479,7 @@ const premiumValueStack = useMemo(() => {
   if (showParentTone) {
     return [
       "Recurring subscription with unlimited matches",
+      ...PREMIUM_FEATURES,
       "Less stop-and-pay friction during long days",
       "Cleaner, faster logging",
       "Ad-free experience",
@@ -482,6 +491,7 @@ const premiumValueStack = useMemo(() => {
   if (showPlayerTone) {
     return [
       "Recurring subscription with unlimited matches",
+      ...PREMIUM_FEATURES,
       "More complete tracking over time",
       "Cleaner review and trend visibility",
       "Ad-free experience",
@@ -492,6 +502,7 @@ const premiumValueStack = useMemo(() => {
 
   return [
     "Recurring subscription with unlimited matches",
+    ...PREMIUM_FEATURES,
     "No per-match decisions",
     "Collaborative logging",
     "Full dashboards and breakdowns",
@@ -763,6 +774,9 @@ const premiumValueStack = useMemo(() => {
           <ul style={styles.heroList}>
             <li>Unlimited Stat Book matches</li>
             <li>Unlimited Match Tracking matches</li>
+            {PREMIUM_FEATURES.map((x) => (
+              <li key={x}>{x}</li>
+            ))}
             <li>No $1.29 decisions during the day</li>
             <li>Ad-free workflows</li>
           </ul>
@@ -822,6 +836,21 @@ const premiumValueStack = useMemo(() => {
             <div style={styles.compareRow}>
               <div style={styles.compareCellLeft}>1 free Match Tracking match per day</div>
               <div style={styles.compareCellRight}>Unlimited Match Tracking matches</div>
+            </div>
+
+            <div style={styles.compareRow}>
+              <div style={styles.compareCellLeft}>Indoor teams only</div>
+              <div style={styles.compareCellRight}>🏖️ Beach mode — 2v2 beach teams and matches</div>
+            </div>
+
+            <div style={styles.compareRow}>
+              <div style={styles.compareCellLeft}>No player claiming</div>
+              <div style={styles.compareCellRight}>Claim your players and follow them across teams</div>
+            </div>
+
+            <div style={styles.compareRow}>
+              <div style={styles.compareCellLeft}>No recruiting profile</div>
+              <div style={styles.compareCellRight}>Recruiting profile for each claimed player</div>
             </div>
 
             <div style={styles.compareRow}>

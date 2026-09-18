@@ -70,7 +70,7 @@ export default function MatchModeSelector({
   onClose,
 }) {
   const navigate = useNavigate();
-  const { user, token } = useAuth();
+  const { user, token, hasPremium } = useAuth();
 
   const [teams, setTeams] = useState([]);
   const [beachTeams, setBeachTeams] = useState([]);
@@ -229,7 +229,10 @@ export default function MatchModeSelector({
   // Beach teams cannot use Match Tracking mode (Classic and Express are fine)
   const isMatchTrackingPage = currentPage === "match";
   const selectedTeamIsBeach = beachTeams.includes(formData.teamName);
-  const beachBlocked = isMatchTrackingPage && selectedTeamIsBeach;
+  const beachModeBlocked = isMatchTrackingPage && selectedTeamIsBeach;
+  // Beach is a subscriber benefit
+  const beachSubscriberLocked = selectedTeamIsBeach && !hasPremium;
+  const beachBlocked = beachModeBlocked || beachSubscriberLocked;
 
   const updateField = (field, value) => {
     if (field === 'teamName') {
@@ -427,7 +430,21 @@ export default function MatchModeSelector({
                   : "This team has no players yet"}
               </div>
             )}
-            {beachBlocked && (
+            {beachSubscriberLocked ? (
+              <div style={{ fontSize: 13, color: '#b45309', marginTop: 4, fontWeight: 600, background: '#fff7ed', borderRadius: 8, padding: '8px 10px' }}>
+                🔒 🏖️ Beach is a subscriber benefit.{' '}
+                <span
+                  role="link"
+                  tabIndex={0}
+                  onClick={() => navigate('/profile?section=subscription')}
+                  onKeyDown={(e) => { if (e.key === 'Enter') navigate('/profile?section=subscription'); }}
+                  style={{ textDecoration: 'underline', cursor: 'pointer' }}
+                >
+                  Subscribe
+                </span>{' '}
+                to log matches for this team.
+              </div>
+            ) : beachModeBlocked && (
               <div style={{ fontSize: 13, color: '#b45309', marginTop: 4, fontWeight: 600, background: '#fff7ed', borderRadius: 8, padding: '8px 10px' }}>
                 🏖️ Beach teams can't use this mode — use <strong>Stat Book</strong> instead.
               </div>

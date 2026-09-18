@@ -17,6 +17,8 @@ export default function CoachQuickStart({ onStartCoachMatch }) {
   const navigate = useNavigate();
   const { user, token } = useAuth();
   const [teams, setTeams] = useState([]);
+  // Coach mode logs indoor Match Tracking matches, which beach teams can't use.
+  const [beachTeams, setBeachTeams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [formData, setFormData] = useState({
@@ -50,11 +52,15 @@ export default function CoachQuickStart({ onStartCoachMatch }) {
         console.log("🏐 Teams found:", fetchedTeams);
 
         setTeams(fetchedTeams);
+        setBeachTeams(res.data.beachTeams || []);
 
         // Auto-select first team if available
-        if (fetchedTeams.length > 0) {
-          console.log("✅ Auto-selecting first team:", fetchedTeams[0]);
-          setFormData((prev) => ({ ...prev, teamName: fetchedTeams[0] }));
+        // Auto-select the first team Coach mode can use (beach teams can't)
+        const fetchedBeachTeams = res.data.beachTeams || [];
+        const firstUsable = fetchedTeams.find((t) => !fetchedBeachTeams.includes(t));
+        if (firstUsable) {
+          console.log("✅ Auto-selecting first team:", firstUsable);
+          setFormData((prev) => ({ ...prev, teamName: firstUsable }));
         } else {
           console.warn("⚠️ No teams in user data");
         }
@@ -83,6 +89,10 @@ export default function CoachQuickStart({ onStartCoachMatch }) {
   const validateForm = () => {
     if (!formData.teamName) {
       setError("Please select a team");
+      return false;
+    }
+    if (beachTeams.includes(formData.teamName)) {
+      setError("🏖️ Beach teams can't use Coach mode — use Stat Book instead.");
       return false;
     }
     if (!formData.opponent.trim()) {
@@ -221,8 +231,8 @@ export default function CoachQuickStart({ onStartCoachMatch }) {
           >
             <option value="">-- Choose a team --</option>
             {teams.map((teamName) => (
-              <option key={teamName} value={teamName}>
-                {teamName}
+              <option key={teamName} value={teamName} disabled={beachTeams.includes(teamName)}>
+                {beachTeams.includes(teamName) ? `🏖️ ${teamName} (beach — use Stat Book)` : teamName}
               </option>
             ))}
           </select>

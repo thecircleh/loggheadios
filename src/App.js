@@ -809,6 +809,12 @@ const [setEndingDialog, setSetEndingDialog] = useState({
   const previousPathname = useRef(location.pathname);
   const isRestoringMatchRef = useRef(false);
   const setEndingInProgressRef = useRef(false);
+  // True while the collaborative owner's end-set dialog is open and holds the lock.
+  // While it's true, the automatic stuck-lock clears below leave the lock alone.
+  const ownerSetEndingPendingRef = useRef(false);
+  useEffect(() => {
+    if (!setEndingDialog.open) ownerSetEndingPendingRef.current = false;
+  }, [setEndingDialog.open]);
   const previousUserRef = useRef(user?.id);
   const isRestoringScoresRef = useRef(false);
   const [uiState, setUiState] = useState({setEnding: {waitingForOwner: false,info: null}});
@@ -1026,9 +1032,13 @@ const saveMatchData = useCallback(async (showAlert = false) => {
     );
 
     const isCollaborative = matchSettings?.collaborativeMode?.enabled;
-    const targetSetsToWin = Math.ceil((matchSettings?.totalSets || 3) / 2);
-    const isMatchOver =
-      ourSetsWon >= targetSetsToWin || opponentSetsWon >= targetSetsToWin;
+    const totalSetsForMatch = matchSettings?.totalSets || 3;
+    const targetSetsToWin = Math.ceil(totalSetsForMatch / 2);
+    // Play-all-sets matches only end once every set is played — marking them Final
+    // early would also trigger match summary emails mid-match.
+    const isMatchOver = matchSettings?.playAllSets
+      ? ourSetsWon + opponentSetsWon >= totalSetsForMatch
+      : ourSetsWon >= targetSetsToWin || opponentSetsWon >= targetSetsToWin;
 
     let computedStatus = isMatchOver ? "Final" : "In Progress";
     let computedWinner = isMatchOver
@@ -2224,81 +2234,6 @@ const isMatchOwner = useCallback(() => {
   user, navigate, collaborativeMode, isMatchOwner, creditInitialCourtPlayers
 ]);
 
-  // Now define functions that depend on processSetEnding
-const handleSetEndingAsOwner = useCallback(async (winner, winnerName, newOurSets, newOpponentSets, isMatchOver) => {
-  console.log("OWNER: handleSetEndingAsOwner called", {
-    winner, winnerName, newOurSets, newOpponentSets, isMatchOver,
-    currentScore: `${ourScore}-${opponentScore}`
-  });
-
-  if (setEndingInProgressRef.current === false) {
-    console.error("OWNER: Called but lock is not set!");
-    setEndingInProgressRef.current = true;
-  }
-
-  let lockReleaseReason = 'cancelled';
-  
-  try {
-    // Build confirmation message
-    const confirmMessage = isMatchOver
-      ? `MATCH COMPLETE!\n\n${winnerName} wins the match ${newOurSets}-${newOpponentSets}!\n\nClick OK to view match statistics.`
-      : `${winnerName} wins set ${matchSettings.currentSet} (${ourScore}-${opponentScore}).\n\nPrepare for set ${matchSettings.currentSet + 1}?`;
-    
-    console.log("OWNER: Showing confirmation dialog:", confirmMessage);
-    
-    // Show confirmation for BOTH set ending and match ending
-  openEndSetDialog({
-  winner,
-  ourScore,
-  opponentScore,
-});
-return;
-    
-    console.log("OWNER: User response:", shouldContinue ? "OK" : "Cancel");
-
-    if (shouldContinue) {
-      const setEndingDecision = {
-        winner,
-        winnerName,
-        newOurSets,
-        newOpponentSets,
-        isMatchOver,
-        setNumber: matchSettings.currentSet,
-        finalScore: `${ourScore}-${opponentScore}`,
-      };
-      
-      console.log("OWNER: Broadcasting decision to all users");
-      broadcastSetEndingDecision(setEndingDecision);
-      
-      console.log("OWNER: Processing set ending locally");
-      await processSetEnding(winner, winnerName, newOurSets, newOpponentSets, isMatchOver);
-      
-      lockReleaseReason = 'decision_made';
-    } else {
-      console.log("OWNER: Cancelled - broadcasting cancellation");
-      broadcastSetEndingCancellation();
-      lockReleaseReason = 'cancelled';
-    }
-    
-  } catch (error) {
-    console.error("OWNER: Error in set ending:", error);
-    lockReleaseReason = 'error';
-    throw error;
-  } finally {
-    console.log("OWNER: Releasing lock, reason:", lockReleaseReason);
-    releaseSetEndingLock(lockReleaseReason);
-    setEndingInProgressRef.current = false;
-    window.setEndingLockTime = null;
-  }
-}, [
-  broadcastSetEndingDecision, 
-  broadcastSetEndingCancellation, 
-  releaseSetEndingLock, 
-  matchSettings?.currentSet, 
-  ourScore, 
-  opponentScore, 
-  processSetEnding
-]);
 
 
  const handleSetEndingIndividually = useCallback(async (winner, winnerName, newOurSets, newOpponentSets, isMatchOver) => {
@@ -2469,6 +2404,7 @@ const isMatchOver = previewIsMatchOver;
     setEndingInProgressRef.current = false;
     window.setEndingLockTime = null;
   }
+  ownerSetEndingPendingRef.current = false;
 }, [
   previewOurScore,
   previewOpponentScore,
@@ -2487,7 +2423,43 @@ const isMatchOver = previewIsMatchOver;
 
 const cancelEndSetDialog = useCallback(() => {
   setSetEndingDialog(prev => ({ ...prev, open: false }));
-}, []);
+
+  if (ownerSetEndingPendingRef.current) {
+    ownerSetEndingPendingRef.current = false;
+    console.log("OWNER: Cancelled - broadcasting cancellation");
+    broadcastSetEndingCancellation();
+    releaseSetEndingLock('cancelled');
+    setEndingInProgressRef.current = false;
+    window.setEndingLockTime = null;
+  }
+}, [broadcastSetEndingCancellation, releaseSetEndingLock]);
+
+// Collaborative owner: the end-set dialog makes the decision (see confirm/cancel above).
+const handleSetEndingAsOwner = useCallback(async (winner, winnerName, newOurSets, newOpponentSets, isMatchOver) => {
+  console.log("OWNER: handleSetEndingAsOwner called", {
+    winner, winnerName, newOurSets, newOpponentSets, isMatchOver,
+    currentScore: `${ourScore}-${opponentScore}`
+  });
+
+  if (setEndingInProgressRef.current === false) {
+    console.error("OWNER: Called but lock is not set!");
+    setEndingInProgressRef.current = true;
+  }
+
+  // Hold the set-ending lock while the owner decides. The dialog releases it:
+  // confirmEndSetDialog broadcasts the decision, cancelEndSetDialog the cancellation.
+  ownerSetEndingPendingRef.current = true;
+  console.log("OWNER: Showing end-set dialog");
+  openEndSetDialog({
+    winner,
+    ourScore,
+    opponentScore,
+  });
+}, [
+  ourScore,
+  opponentScore,
+  openEndSetDialog
+]);
 
 
 const markNotificationRead = useCallback(async (id) => {
@@ -2713,6 +2685,12 @@ const handleBuyMatchKey = useCallback(async () => {
 
 
 const handleNewMatch = useCallback(async (newSettings) => {
+  // Beach is a subscriber benefit — backstop for every caller, not just the Settings buttons.
+  if (newSettings?.beachMode && !hasPremium) {
+    alert("🏖️ Beach is a subscriber benefit. Subscribe on your Profile page to log beach matches.");
+    return;
+  }
+
   console.log("Starting new match setup...");
   setLoadingMatch(true);
 
@@ -2865,6 +2843,7 @@ payload = {
   syncCreditedPlayersFromState,
   canUseFreeMode,
   hasUnusedMatchKey,
+  hasPremium,
   getAccessKeyForMode,
   user?.matchKeys,
   setTeamStats,
@@ -3708,7 +3687,7 @@ useEffect(() => {
   const recoveryInterval = setInterval(() => {
     const now = Date.now();
     
-    if (setEndingInProgressRef.current && window.setEndingLockTime) {
+    if (setEndingInProgressRef.current && window.setEndingLockTime && !ownerSetEndingPendingRef.current) {
       const lockAge = now - window.setEndingLockTime;
       if (lockAge > 10000) {
         console.error(`🔓 RECOVERY: Force clearing stuck lock (${lockAge}ms)`);
@@ -4433,7 +4412,7 @@ useEffect(() => {
     }
     const lockAge = Date.now() - window.setEndingLockTime;
     
-    if (lockAge > 60000) {
+    if (lockAge > 60000 && !ownerSetEndingPendingRef.current) {
       console.error(`RECOVERY: Lock stuck for ${lockAge}ms, forcing clear`);
       setEndingInProgressRef.current = false;
       window.setEndingLockTime = null;
@@ -4610,6 +4589,8 @@ if (location.pathname === "/match-tracking") {
         console.error("SET ENDING ERROR:", error);
       } finally {
         setTimeout(() => {
+          // Owner still deciding: confirm/cancel in the end-set dialog releases the lock.
+          if (ownerSetEndingPendingRef.current) return;
           setEndingInProgressRef.current = false;
           window.setEndingLockTime = null;
         }, 10000);

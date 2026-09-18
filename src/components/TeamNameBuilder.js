@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import axios from "axios";
+import { useAuth } from "./AuthContext";
 
 const RosterIndicator = () => (
   <span
@@ -127,6 +128,10 @@ export default function TeamNameBuilder({
   onClose,
 }) {
   const [mode, setMode] = useState("club");
+  // Beach vs indoor is decided here and cannot be changed after the team exists.
+  // Beach is a subscriber benefit, so only subscribers can create beach teams.
+  const { hasPremium } = useAuth();
+  const [isBeach, setIsBeach] = useState(false);
   const [seasonYear, setSeasonYear] = useState(String(getDefaultYear("club")));
 
   const [clubName, setClubName] = useState("");
@@ -213,11 +218,11 @@ export default function TeamNameBuilder({
         setPendingTeamName(teamName);
         setShowLogoSelector(true);
       } else {
-        onAddTeam(teamName);
+        onAddTeam(teamName, null, isBeach && !!hasPremium);
       }
     } catch (error) {
       console.error("Logo search failed:", error);
-      onAddTeam(teamName);
+      onAddTeam(teamName, null, isBeach && !!hasPremium);
     } finally {
       setLogoSearching(false);
     }
@@ -234,7 +239,7 @@ export default function TeamNameBuilder({
   };
 
   const selectLogo = (logoUrl) => {
-    onAddTeam(pendingTeamName, logoUrl);
+    onAddTeam(pendingTeamName, logoUrl, isBeach && !!hasPremium);
     setShowLogoSelector(false);
     setFoundLogos([]);
     setPendingTeamName("");
@@ -244,7 +249,7 @@ export default function TeamNameBuilder({
   };
 
   const skipLogo = () => {
-    onAddTeam(pendingTeamName);
+    onAddTeam(pendingTeamName, null, isBeach && !!hasPremium);
     setShowLogoSelector(false);
     setFoundLogos([]);
     setPendingTeamName("");
@@ -429,6 +434,54 @@ if (!cancelled) {
 
   return (
     <div className="team-builder-form">
+
+      {/* ── Indoor / Beach — fixed for the life of the team ── */}
+      <label>Team type</label>
+      <div role="radiogroup" aria-label="Team type" style={{ display: "flex", gap: 8, margin: "2px 0 6px" }}>
+        {[
+          { beach: false, label: "🏐 Indoor" },
+          { beach: true, label: "🏖️ Beach" },
+        ].map((opt) => {
+          const selected = isBeach === opt.beach;
+          const locked = opt.beach && !hasPremium;
+          return (
+            <button
+              key={opt.label}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              aria-disabled={locked}
+              disabled={locked}
+              title={locked ? "Beach is a subscriber benefit" : undefined}
+              onClick={() => setIsBeach(opt.beach)}
+              style={{
+                flex: 1,
+                padding: "9px 12px",
+                borderRadius: 10,
+                cursor: locked ? "not-allowed" : "pointer",
+                opacity: locked ? 0.55 : 1,
+                fontWeight: 700,
+                fontSize: 14,
+                border: selected
+                  ? (opt.beach ? "1.5px solid #e8a020" : "1.5px solid var(--blue)")
+                  : "1.5px solid var(--border)",
+                background: selected
+                  ? (opt.beach ? "linear-gradient(135deg,#f5c842,#e8a020)" : "var(--blue-light)")
+                  : "#fff",
+                color: selected ? (opt.beach ? "#7a4800" : "var(--blue)") : "var(--text-muted)",
+              }}
+            >
+              {opt.label}{locked && " 🔒"}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 14 }}>
+        {isBeach
+          ? "Beach teams log 2v2 beach matches. This can't be changed later."
+          : "Indoor teams log 6v6 indoor matches. This can't be changed later."}
+        {!hasPremium && " Beach teams are a subscriber benefit — subscribe on your Profile page."}
+      </div>
 
       {/* ── Search ── */}
       <label>Search existing teams</label>

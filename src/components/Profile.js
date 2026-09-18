@@ -67,6 +67,9 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
 
   // ── My Players (ROI) ────────────────────────────────────────────────────
   const [claimedPlayers,  setClaimedPlayers]  = useState([]);
+  // Opt-in: email match summaries (claimed player's stats, winner, scores) when a match ends
+  const [matchSummariesOn, setMatchSummariesOn] = useState(false);
+  const [savingSummaries, setSavingSummaries] = useState(false);
   const [showClaimPanel,  setShowClaimPanel]  = useState(false);
   const [availableTeams,  setAvailableTeams]  = useState([]);
   const [loadingClaim,    setLoadingClaim]    = useState(false);
@@ -211,7 +214,32 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
     }
   };
 
-  const pushTeam = (teamName) => {
+  const toggleMatchSummaries = async () => {
+    const next = !matchSummariesOn;
+    setSavingSummaries(true);
+    try {
+      const res = await axios.post(
+        `${API_URL}/api/users/${user.id}/match-summaries`,
+        { enabled: next },
+        { headers: { Authorization: `Bearer ${token}` }, withCredentials: true }
+      );
+      setMatchSummariesOn(res.data.enabled === true);
+      showMessage(
+        next
+          ? "Match summaries on — we'll email you when your player's match ends."
+          : "Match summaries off."
+      );
+    } catch (err) {
+      showMessage(
+        `Error updating match summaries: ${err.response?.data?.message || "Unknown error"}`,
+        "error"
+      );
+    } finally {
+      setSavingSummaries(false);
+    }
+  };
+
+  const pushTeam = (teamName, _logoUrl = null, isBeachTeam = false) => {
     if (!teamName) return;
     if (profile.teams.includes(teamName)) {
       setDuplicateTeamName(teamName);
@@ -224,6 +252,21 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
       return;
     }
     setProfile((prev) => ({ ...prev, teams: [...prev.teams, teamName] }));
+
+    // Beach vs indoor is chosen at creation and never changes afterwards.
+    // Always send it so a re-created name can't inherit a stale beach flag.
+    axios
+      .post(
+        `${API_URL}/api/users/${user.id}/teams/beach`,
+        { teamName: teamName.trim(), isBeach: isBeachTeam },
+        { headers: { Authorization: `Bearer ${token}` }, withCredentials: true }
+      )
+      .catch((err) => {
+        showMessage(
+          `Error setting team type: ${err.response?.data?.message || "Unknown error"}`,
+          "error"
+        );
+      });
   };
 
   const removeTeam = (teamName) => {
@@ -297,6 +340,7 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
           password: "",
           volleyballRole: res.data.volleyballRole || "parent",
         });
+        setMatchSummariesOn(res.data.matchSummaryEmails?.enabled === true);
         if (res.data.country) updateStateList(res.data.country);
       })
       .catch((err) => {
@@ -779,6 +823,38 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
                 </button>
               </div>
             ))}
+
+            {claimedPlayers.length > 0 && (
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                  marginTop: 14,
+                  padding: '11px 14px',
+                  background: 'var(--blue-light, #eff6ff)',
+                  border: '1.5px solid var(--blue-ring, #bfdbfe)',
+                  borderRadius: 10,
+                  cursor: savingSummaries ? 'wait' : 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={matchSummariesOn}
+                  onChange={toggleMatchSummaries}
+                  disabled={savingSummaries}
+                  style={{ marginTop: 3, width: 18, height: 18, flexShrink: 0 }}
+                />
+                <span>
+                  <span style={{ display: 'block', fontWeight: 600, fontSize: 14 }}>
+                    📧 Email me match summaries
+                  </span>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                    When a match your player is in ends, get their stats, who won, and the set scores.
+                  </span>
+                </span>
+              </label>
+            )}
 
             {claimedPlayers.length > 0 && (
               <a

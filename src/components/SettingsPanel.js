@@ -170,9 +170,6 @@ const SettingsPanel = ({
   const [playAllSets, setPlayAllSets] = useState(() => matchSettings?.playAllSets ?? false);
   const [pointsNonDeciding, setPointsNonDeciding] = useState(() => matchSettings?.pointsNonDeciding ??  25);
   const [pointsDeciding, setPointsDeciding] = useState(() => matchSettings?.pointsDeciding ?? 15);
-  const [isBeachMode, setIsBeachMode] = useState(() =>
-    matchSettings?.beachMode === true || matchSettings?.mode === 'beach'
-  );
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerNumber, setNewPlayerNumber] = useState('');
   const [savedMatches, setSavedMatches] = useState([]);
@@ -193,8 +190,15 @@ const SettingsPanel = ({
   const [showTeamNameBuilder, setShowTeamNameBuilder] = useState(false);
 
   const [beachTeams, setBeachTeams] = useState([]);
-  // Derived: true when the currently selected team is marked as a beach team
+  // A team is beach or indoor, fixed when it is created. Matches inherit it.
   const isCurrentTeamBeach = beachTeams.includes(selectedTeam);
+  // Beach is a subscriber benefit: beach teams can only log matches with premium.
+  const beachLocked = isCurrentTeamBeach && !hasPremium;
+  const blockBeachForNonSubscriber = (teamName) => {
+    if (hasPremium || !beachTeams.includes(teamName)) return false;
+    alert("🏖️ Beach is a subscriber benefit. Subscribe on your Profile page to log beach matches.");
+    return true;
+  };
 
   const [openSections, setOpenSections] = useState({
     teamRoster: false,
@@ -542,14 +546,13 @@ const handleTeamNameBuilderSubmit = async (teamName, logoUrl = null, isBeachTeam
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    // If this is a beach team, mark it on the server right away
-    if (isBeachTeam) {
-      await axios.post(
-        `${API_URL}/api/users/${user.id}/teams/beach`,
-        { teamName: teamName.trim(), isBeach: true },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-    }
+    // Beach vs indoor is chosen here, at creation, and never changes afterwards.
+    // Always send it so a re-created name can't inherit a stale beach flag.
+    await axios.post(
+      `${API_URL}/api/users/${user.id}/teams/beach`,
+      { teamName: teamName.trim(), isBeach: isBeachTeam },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
 
     const res = await axios.get(`${API_URL}/api/users/${user.id}`, {
       headers: { Authorization: `Bearer ${token}` }
@@ -601,7 +604,7 @@ const handleTeamNameBuilderSubmit = async (teamName, logoUrl = null, isBeachTeam
 
 const handleAddPlayer = async (e) => {
   e.preventDefault();
-  const isBeach = isCurrentTeamBeach || isBeachMode;
+  const isBeach = isCurrentTeamBeach;
 
   if (!newPlayerName.trim()) {
     alert("Name is required.");
@@ -893,28 +896,6 @@ const canJoin = isOwner || hasPremium || canJoinAsNonPremium;
     );
   };
 
-  // Auto-drive isBeachMode from team type whenever selected team or beachTeams list changes
-  useEffect(() => {
-    setIsBeachMode(beachTeams.includes(selectedTeam));
-  }, [selectedTeam, beachTeams]); // eslint-disable-line
-
-  const handleToggleBeachTeam = async () => {
-    if (!selectedTeam) return;
-    const nowBeach = !isCurrentTeamBeach;
-    try {
-      const res = await axios.post(
-        `${API_URL}/api/users/${user.id}/teams/beach`,
-        { teamName: selectedTeam, isBeach: nowBeach },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      setBeachTeams(res.data.beachTeams || []);
-      setIsBeachMode(nowBeach);
-    } catch (err) {
-      console.error('Failed to update beach team status:', err);
-      alert(err.response?.data?.message || 'Failed to update beach team status.');
-    }
-  };
-
   const handleTeamSelect = async (teamName) => {
     setSelectedTeam(teamName);
 
@@ -987,19 +968,19 @@ const canJoin = isOwner || hasPremium || canJoinAsNonPremium;
     return true;
   };
 
-  // Shared helper: build base settings, overriding with beach rules when the beach toggle is on
+  // Shared helper: build base settings. Beach teams always get beach rules and beach matches.
   const buildMatchSettings = (modeOverride) => ({
     ...matchSettings,
     opponentName,
-    totalSets:          isBeachMode ? 3 : maxSets,
-    playAllSets:        isBeachMode ? false : playAllSets,
+    totalSets:          isCurrentTeamBeach ? 3 : maxSets,
+    playAllSets:        isCurrentTeamBeach ? false : playAllSets,
     eventName,
     location,
-    pointsNonDeciding:  isBeachMode ? 21 : pointsNonDeciding,
-    pointsDeciding:     isBeachMode ? 15 : pointsDeciding,
+    pointsNonDeciding:  isCurrentTeamBeach ? 21 : pointsNonDeciding,
+    pointsDeciding:     isCurrentTeamBeach ? 15 : pointsDeciding,
     teamName: selectedTeam,
-    mode: modeOverride,        // keep the real logging mode
-    beachMode: isBeachMode,    // new: beach is a setting not a mode
+    mode: modeOverride,              // keep the real logging mode
+    beachMode: isCurrentTeamBeach,   // inherited from the team, never chosen per match
   });
 
   const handleSaveAndStartMatchTracking = async () => {
@@ -1015,6 +996,7 @@ const canJoin = isOwner || hasPremium || canJoinAsNonPremium;
   };
 
   const handleSaveAndStartMatch = async () => {
+    if (blockBeachForNonSubscriber(selectedTeam)) return;
     if (!validateRosteredTeam()) return;
     const updatedSettings = buildMatchSettings('classic');
     setMatchSettings(updatedSettings);
@@ -1026,6 +1008,7 @@ const canJoin = isOwner || hasPremium || canJoinAsNonPremium;
   };
 
   const handleExpressMatch = async () => {
+    if (blockBeachForNonSubscriber(selectedTeam)) return;
     if (!validateRosteredTeam()) return;
     const updatedSettings = {
       ...buildMatchSettings('statbook'),
@@ -1040,6 +1023,7 @@ const canJoin = isOwner || hasPremium || canJoinAsNonPremium;
   };
 
   const handleCollabMatch = async () => {
+    if (blockBeachForNonSubscriber(selectedTeam)) return;
     if (!validateRosteredTeam()) return;
 
     const updatedSettings = {
@@ -1117,6 +1101,7 @@ const canJoin = isOwner || hasPremium || canJoinAsNonPremium;
 };
 
 const handleStartScheduledMatch = async (match, mode) => {
+  if (blockBeachForNonSubscriber(match.teamName)) return;
   if (!validateRosteredTeam()) return;
   
   try {
@@ -1175,6 +1160,7 @@ const handleScheduleMatch = async () => {
     alert("Select a team before scheduling a match.");
     return;
   }
+  if (blockBeachForNonSubscriber(selectedTeam)) return;
 
   if (!scheduleDate) {
     alert("Pick a match date.");
@@ -1225,10 +1211,11 @@ if (isDup) {
     eventName,
     location,
     currentSet: 1,
-    totalSets: maxSets,
-    playAllSets,
-    pointsNonDeciding,
-    pointsDeciding,
+    totalSets:         isCurrentTeamBeach ? 3 : maxSets,
+    playAllSets:       isCurrentTeamBeach ? false : playAllSets,
+    pointsNonDeciding: isCurrentTeamBeach ? 21 : pointsNonDeciding,
+    pointsDeciding:    isCurrentTeamBeach ? 15 : pointsDeciding,
+    beachMode: isCurrentTeamBeach,   // inherited from the team, like every other match
     ourScore: 0,
     opponentScore: 0,
     courtPlayers: [],
@@ -2332,20 +2319,20 @@ const nextScheduled = scheduledMatches
 
               {selectedTeam && (
                 <>
-                  {/* Beach team toggle */}
-                  <button
-                    onClick={handleToggleBeachTeam}
-                    title={isCurrentTeamBeach ? 'Mark as indoor team' : 'Mark as beach team — players don\'t need numbers'}
+                  {/* Team type indicator — set when the team was created, not changeable here */}
+                  <span
+                    title={isCurrentTeamBeach ? 'Beach team — set when the team was created' : 'Indoor team — set when the team was created'}
                     style={{
+                      display: 'inline-flex', alignItems: 'center',
                       padding: '9px 16px', fontSize: 14, fontWeight: 600,
                       background: isCurrentTeamBeach ? 'linear-gradient(135deg,#f5c842,#e8a020)' : '#f3f4f6',
                       color: isCurrentTeamBeach ? '#7a4800' : '#6b7280',
                       border: isCurrentTeamBeach ? '1.5px solid #e8a020' : '1.5px solid #e5e7eb',
-                      borderRadius: 10, cursor: 'pointer',
+                      borderRadius: 10, cursor: 'default', userSelect: 'none',
                     }}
                   >
                     {isCurrentTeamBeach ? '🏖️ Beach' : '🏐 Indoor'}
-                  </button>
+                  </span>
 
                   {/* Archive - low-key outline blue */}
                   <button
@@ -2523,7 +2510,7 @@ const nextScheduled = scheduledMatches
                 }}
               >
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center', marginBottom: 2 }}>
-                  {(isCurrentTeamBeach || isBeachMode) ? '🏖️ New Player' : 'New Player'}
+                  {isCurrentTeamBeach ? '🏖️ New Player' : 'New Player'}
                 </div>
                 <input
                   type="text"
@@ -2532,7 +2519,7 @@ const nextScheduled = scheduledMatches
                   onChange={(e) => setNewPlayerName(e.target.value)}
                   style={{ padding: '8px 10px', fontSize: 14, border: '1.5px solid #e5e7eb', borderRadius: 8, width: '100%', boxSizing: 'border-box' }}
                 />
-                {!(isCurrentTeamBeach || isBeachMode) && (
+                {!isCurrentTeamBeach && (
                   <input
                     type="number"
                     placeholder="#"
@@ -2541,7 +2528,7 @@ const nextScheduled = scheduledMatches
                     style={{ padding: '8px 10px', fontSize: 14, border: '1.5px solid #e5e7eb', borderRadius: 8, width: '100%', boxSizing: 'border-box' }}
                   />
                 )}
-                {!(isCurrentTeamBeach || isBeachMode) && (
+                {!isCurrentTeamBeach && (
                   <select
                     value={newPlayerPosition}
                     onChange={(e) => setNewPlayerPosition(e.target.value)}
@@ -2569,7 +2556,7 @@ const nextScheduled = scheduledMatches
                     width: '100%',
                   }}
                 >
-                  {(isCurrentTeamBeach || isBeachMode) ? 'Add Player' : (newPlayerNumber ? `Add #${newPlayerNumber}` : 'Add')}
+                  {isCurrentTeamBeach ? 'Add Player' : (newPlayerNumber ? `Add #${newPlayerNumber}` : 'Add')}
                 </button>
               </div>
 
@@ -2653,7 +2640,7 @@ const nextScheduled = scheduledMatches
         <div>
           <div style={styles.accordionTitle}>2. Match Settings</div>
           <div style={styles.accordionSummary}>
-            {isBeachMode ? '🏖️ Beach 2v2' : '🏐 Indoor 6v6'}
+            {isCurrentTeamBeach ? '🏖️ Beach 2v2' : '🏐 Indoor 6v6'}
             {opponentName ? ` · vs ${opponentName}` : ''}
             {eventName ? ` · ${eventName}` : ''}
           </div>
@@ -2664,33 +2651,22 @@ const nextScheduled = scheduledMatches
       {openSections.matchSettings && <>
       <div style={styles.card}>
 
-        {/* ── Format ── */}
+        {/* ── Format — follows the team type, not selectable per match ── */}
         <div style={{ marginBottom: 20 }}>
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Format</label>
-          <div style={{ display: 'inline-flex', borderRadius: 10, overflow: 'hidden', border: '1px solid #e5e7eb', background: '#f3f4f6' }}>
-            <button
-              onClick={() => setIsBeachMode(false)}
-              style={{
-                padding: '8px 18px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14,
-                background: !isBeachMode ? '#fff' : 'transparent',
-                color: !isBeachMode ? '#1d4ed8' : '#6b7280',
-                boxShadow: !isBeachMode ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
-                borderRadius: !isBeachMode ? 9 : 0,
-                transition: 'all 0.15s',
-              }}
-            >🏐 Indoor 6v6</button>
-            <button
-              onClick={() => setIsBeachMode(true)}
-              style={{
-                padding: '8px 18px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14,
-                background: isBeachMode ? 'linear-gradient(135deg,#f5c842,#e8a020)' : 'transparent',
-                color: isBeachMode ? '#7a4800' : '#6b7280',
-                boxShadow: isBeachMode ? '0 1px 4px rgba(200,148,10,0.20)' : 'none',
-                borderRadius: isBeachMode ? 9 : 0,
-                transition: 'all 0.15s',
-              }}
-            >🏖️ Beach 2v2</button>
-          </div>
+          <span
+            title="Set by the team type"
+            style={{
+              display: 'inline-block', padding: '8px 18px', fontWeight: 600, fontSize: 14, borderRadius: 10,
+              background: isCurrentTeamBeach ? 'linear-gradient(135deg,#f5c842,#e8a020)' : '#fff',
+              color: isCurrentTeamBeach ? '#7a4800' : '#1d4ed8',
+              border: isCurrentTeamBeach ? '1px solid #e8a020' : '1px solid #e5e7eb',
+              cursor: 'default', userSelect: 'none',
+            }}
+          >
+            {isCurrentTeamBeach ? '🏖️ Beach 2v2' : '🏐 Indoor 6v6'}
+          </span>
+          <span style={{ marginLeft: 10, fontSize: 13, color: '#6b7280' }}>Set by the team</span>
         </div>
 
         {/* ── Opponent / Event / Location ── */}
@@ -2737,7 +2713,7 @@ const nextScheduled = scheduledMatches
         </div>
 
         {/* ── Scoring rules — locked for beach, editable for indoor ── */}
-        {isBeachMode ? (
+        {isCurrentTeamBeach ? (
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: '10px 14px', background: '#fffbeb', border: '1px solid #f5c842', borderRadius: 10 }}>
             <span style={{ fontSize: 13, color: '#92400e', fontWeight: 500 }}>🏖️ Beach rules applied:</span>
             <span style={{ fontSize: 13, color: '#78350f' }}>Best of 3 sets</span>
@@ -2886,6 +2862,25 @@ const nextScheduled = scheduledMatches
         </div>
       )}
 
+      {beachLocked && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10,
+          marginBottom: 12, padding: '12px 14px', borderRadius: 10,
+          background: '#fffbeb', border: '1px solid #f5c842', color: '#78350f', fontSize: 14,
+        }}>
+          <span>🔒 🏖️ Beach is a subscriber benefit. Subscribe to log matches for this team.</span>
+          <button
+            onClick={() => navigate('/profile?section=subscription')}
+            style={{
+              padding: '8px 14px', border: 'none', borderRadius: 8, cursor: 'pointer', fontWeight: 700, fontSize: 14,
+              background: 'linear-gradient(135deg,#f5c842,#e8a020)', color: '#7a4800',
+            }}
+          >
+            Subscribe
+          </button>
+        </div>
+      )}
+
       <div style={{
         display: 'grid',
         gridTemplateColumns: '1fr 1fr',
@@ -2916,38 +2911,42 @@ const nextScheduled = scheduledMatches
           </span>
         </button>
 
-        {/* Stat Book - always available */}
+        {/* Stat Book - available to all teams; beach teams need premium */}
         <button
-          onClick={handleExpressMatch}
-          disabled={!selectedTeam || !benchPlayers || benchPlayers.length === 0}
+          onClick={beachLocked ? undefined : handleExpressMatch}
+          disabled={beachLocked || !selectedTeam || !benchPlayers || benchPlayers.length === 0}
+          title={beachLocked ? 'Beach is a subscriber benefit' : undefined}
           style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 6, padding: '18px 16px', border: '2px solid #2563eb', borderRadius: 14, cursor: 'pointer',
-            background: '#fff',
-            color: '#2563eb', fontWeight: 700, fontSize: 15, lineHeight: 1.25,
+            gap: 6, padding: '18px 16px', border: beachLocked ? '2px solid #d1d5db' : '2px solid #2563eb', borderRadius: 14,
+            cursor: beachLocked ? 'not-allowed' : 'pointer',
+            background: beachLocked ? '#f3f4f6' : '#fff',
+            color: beachLocked ? '#9ca3af' : '#2563eb', fontWeight: 700, fontSize: 15, lineHeight: 1.25,
             opacity: (!selectedTeam || !benchPlayers || benchPlayers.length === 0) ? 0.45 : 1,
             transition: 'opacity 0.15s',
           }}
         >
-          <span style={{ fontSize: 22 }}>&#128203;</span>
+          <span style={{ fontSize: 22 }}>&#128203;{beachLocked && ' 🔒'}</span>
           <span>{isCurrentTeamBeach ? 'Stat Book for Beach' : 'Stat Book'}</span>
           <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.7 }}>Full stat logging</span>
         </button>
 
-        {/* Classic - available for all teams including beach */}
+        {/* Classic - available for all teams; beach teams need premium */}
         <button
-          onClick={handleSaveAndStartMatch}
-          disabled={!selectedTeam || !benchPlayers || benchPlayers.length === 0}
+          onClick={beachLocked ? undefined : handleSaveAndStartMatch}
+          disabled={beachLocked || !selectedTeam || !benchPlayers || benchPlayers.length === 0}
+          title={beachLocked ? 'Beach is a subscriber benefit' : undefined}
           style={{
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 6, padding: '18px 16px', border: '1.5px solid #d1d5db', borderRadius: 14, cursor: 'pointer',
-            background: '#f9fafb',
-            color: '#374151', fontWeight: 600, fontSize: 15, lineHeight: 1.25,
+            gap: 6, padding: '18px 16px', border: '1.5px solid #d1d5db', borderRadius: 14,
+            cursor: beachLocked ? 'not-allowed' : 'pointer',
+            background: beachLocked ? '#f3f4f6' : '#f9fafb',
+            color: beachLocked ? '#9ca3af' : '#374151', fontWeight: 600, fontSize: 15, lineHeight: 1.25,
             opacity: (!selectedTeam || !benchPlayers || benchPlayers.length === 0) ? 0.45 : 1,
             transition: 'opacity 0.15s',
           }}
         >
-          <span style={{ fontSize: 22 }}>&#127952;</span>
+          <span style={{ fontSize: 22 }}>&#127952;{beachLocked && ' 🔒'}</span>
           <span>{isCurrentTeamBeach ? 'Classic Beach Stats' : 'Classic'}</span>
           <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.6 }}>Gameflow mode</span>
         </button>
