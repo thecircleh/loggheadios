@@ -667,7 +667,8 @@ const normalizePos = t => {
 
 const parseBulkPaste = (text) => {
   const isJerseyNum = t => /^\d{1,3}$/.test(t);
-  const isHeight = t => /^[3-7]['′'']\s*[-–]?\s*\d+["″"']?\s*$/.test(t);
+  // Height: starts with a digit, contains a foot/inch separator char (', ", -)
+  const isHeight = t => t.length <= 9 && /^\d/.test(t) && /['"\-]/.test(t) && /\d/.test(t.slice(1));
   const isGradYear = t => /^20[2-3]\d$/.test(t);
   const isPos = t => POSITION_TOKENS.has(t.toUpperCase().replace(/[^A-Z/]/g,''));
   const isHeaderWord = t => {
@@ -740,7 +741,12 @@ const parseBulkPaste = (text) => {
 
 const handleBulkPasteChange = (text) => {
   setBulkPasteText(text);
-  setBulkPreview(parseBulkPaste(text));
+  try {
+    setBulkPreview(parseBulkPaste(text));
+  } catch (e) {
+    console.error('Bulk paste parse error:', e);
+    setBulkPreview([]);
+  }
 };
 
 const handleBulkImport = async () => {
