@@ -177,6 +177,10 @@ const SettingsPanel = ({
   const [scheduleDate, setScheduleDate] = useState('');
   const [scheduleTime, setScheduleTime] = useState('');
   const [newPlayerPosition, setNewPlayerPosition] = useState('');
+  const [showBulkPaste, setShowBulkPaste] = useState(false);
+  const [bulkPasteText, setBulkPasteText] = useState('');
+  const [bulkPreview, setBulkPreview] = useState([]);
+  const [bulkImporting, setBulkImporting] = useState(false);
   const [selectedTeam, setSelectedTeam] = useState(() => matchSettings?.teamName || '');
   const [toastVisible, setToastVisible] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -647,6 +651,134 @@ const handleAddPlayer = async (e) => {
     console.error("Error adding player:", err);
     alert(err.response?.data?.error || "Failed to add player.");
   }
+};
+
+const POSITION_TOKENS = new Set(['OH','MB','S','OPP','DS','L','DS/L','OH/RS','RS/OPP','RS','PIN','LIBERO','SETTER','BEACH']);
+
+const normalizePos = t => {
+  const u = t.toUpperCase().replace(/[^A-Z/]/g,'');
+  if (u === 'LIBERO') return 'DS';
+  if (u === 'SETTER') return 'S';
+  if (u === 'PIN') return 'OH';
+  if (u === 'RS' || u === 'RS/OPP' || u === 'OPP/RS') return 'OPP';
+  if (u === 'OH/RS') return 'OH';
+  return u;
+};
+
+const parseBulkPaste = (text) => {
+  const isJerseyNum = t => /^\d{1,3}$/.test(t);
+  const isHeight = t => /^[3-7]['′'']\s*[-–]?\s*\d+["″"']?\s*$/.test(t);
+  const isGradYear = t => /^20[2-3]\d$/.test(t);
+  const isPos = t => POSITION_TOKENS.has(t.toUpperCase().replace(/[^A-Z/]/g,''));
+  const isHeaderWord = t => {
+    const u = t.toUpperCase().replace(/[\s#]/g,'');
+    return ['NAME','HEIGHT','POS','POSITION','CITY','GRADYR','HSGRADYR','NUMBER'].includes(u);
+  };
+
+  // Detect format: if any line is ONLY a jersey number → multi-line web table
+  const rawLines = text.split(/\r?\n/);
+  const hasStandaloneNums = rawLines.some(l => /^\s*\d{1,3}\s*$/.test(l));
+
+  if (hasStandaloneNums) {
+    // Multi-line web table: tokenize everything, group records by jersey number
+    const tokens = text
+      .split(/[\t\n\r]+/)
+      .map(t => t.trim())
+      .filter(Boolean)
+      .filter(t => !isHeaderWord(t));
+
+    const records = [];
+    let cur = null;
+    for (const t of tokens) {
+      if (isJerseyNum(t)) {
+        if (cur) records.push(cur);
+        cur = { number: t, nameParts: [], position: '' };
+      } else if (cur) {
+        if (isHeight(t) || isGradYear(t)) {
+          // ignore height and graduation year columns
+        } else if (isPos(t)) {
+          if (!cur.position) cur.position = normalizePos(t);
+        } else {
+          // Once we have a token containing a space (a full "First Last" token),
+          // stop collecting — subsequent single/multi-word tokens are city or other columns
+          const hasFullName = cur.nameParts.some(p => p.includes(' '));
+          if (!hasFullName) cur.nameParts.push(t);
+        }
+      }
+    }
+    if (cur) records.push(cur);
+
+    return records
+      .map(r => ({ name: r.nameParts.join(' ').trim(), number: r.number, position: r.position }))
+      .filter(r => r.name);
+
+  } else {
+    // Classic TSV / CSV: one player per line
+    return rawLines
+      .map(l => l.trim())
+      .filter(l => l && !isHeaderWord(l.split(/[\t,]/)[0].trim()))
+      .map(line => {
+        const raw = line.indexOf('\t') >= 0 ? line.split('\t') : line.split(',');
+        const parts = raw.map(p => p.trim().replace(/^"|"$/g, '')).filter(Boolean);
+        let name = '', number = '', position = '';
+        for (const p of parts) {
+          if (isJerseyNum(p) && !number) {
+            number = p;
+          } else if (isPos(p) && !position) {
+            position = normalizePos(p);
+          } else if (!name) {
+            name = p;
+          } else {
+            name = name + ' ' + p;
+          }
+        }
+        return { name: name.trim(), number, position };
+      })
+      .filter(r => r.name);
+  }
+};
+
+const handleBulkPasteChange = (text) => {
+  setBulkPasteText(text);
+  setBulkPreview(parseBulkPaste(text));
+};
+
+const handleBulkImport = async () => {
+  if (!bulkPreview.length || !selectedTeam) return;
+  setBulkImporting(true);
+  const isBeach = isCurrentTeamBeach;
+  const added = [];
+  const errors = [];
+  for (const row of bulkPreview) {
+    if (!row.name.trim()) continue;
+    if (!isBeach && !row.number) {
+      errors.push(`${row.name}: jersey number required`);
+      continue;
+    }
+    const playerNumber = row.number ? parseInt(row.number) : null;
+    try {
+      const res = await axios.post(
+        `${API_URL}/api/players`,
+        {
+          name: row.name.trim(),
+          number: playerNumber,
+          position: row.position || (isBeach ? 'Beach' : 'Unknown'),
+          isLibero: false,
+          team: selectedTeam,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      added.push(res.data);
+    } catch (err) {
+      errors.push(`${row.name}: ${err.response?.data?.error || 'failed'}`);
+    }
+  }
+  if (added.length) setBenchPlayers(prev => [...prev, ...added]);
+  setBulkImporting(false);
+  setBulkPasteText('');
+  setBulkPreview([]);
+  setShowBulkPaste(false);
+  if (errors.length) alert(`Imported ${added.length} player${added.length !== 1 ? 's' : ''}.\n\nErrors:\n${errors.join('\n')}`);
 };
 
   useEffect(() => {
@@ -1843,6 +1975,44 @@ const nextScheduled = scheduledMatches
       flexShrink: 0,
     },
 
+    sheetHdr: {
+      padding: '5px 8px',
+      textAlign: 'left',
+      fontWeight: 700,
+      fontSize: 11,
+      color: '#64748b',
+      textTransform: 'uppercase',
+      letterSpacing: '0.4px',
+      background: '#f1f5f9',
+      borderBottom: '2px solid #cbd5e1',
+      borderRight: '1px solid #e2e8f0',
+    },
+    sheetCell: {
+      padding: 0,
+      borderBottom: '1px solid #e2e8f0',
+      borderRight: '1px solid #e2e8f0',
+    },
+    sheetRowNum: {
+      padding: '0 6px',
+      textAlign: 'center',
+      fontSize: 11,
+      borderBottom: '1px solid #e2e8f0',
+      borderRight: '1px solid #e2e8f0',
+      background: '#f8fafc',
+      userSelect: 'none',
+    },
+    sheetInput: {
+      display: 'block',
+      width: '100%',
+      padding: '6px 8px',
+      fontSize: 13,
+      border: 'none',
+      background: 'transparent',
+      outline: 'none',
+      boxSizing: 'border-box',
+      fontFamily: 'inherit',
+    },
+
     deleteButton: {
       background: 'rgba(220,38,38,0.07)',
       color: '#dc2626',
@@ -2562,6 +2732,134 @@ const nextScheduled = scheduledMatches
 
             )}
           </div>{/* end grid */}
+
+          {/* Bulk paste roster */}
+          {selectedTeam && (
+            <div style={{ marginTop: 12 }}>
+              <button
+                onClick={() => { setShowBulkPaste(v => !v); setBulkPasteText(''); setBulkPreview([]); }}
+                style={{ background: 'none', border: '1.5px dashed #d1d5db', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 600, color: '#6b7280', cursor: 'pointer', width: '100%' }}
+              >
+                {showBulkPaste ? '✕ Cancel paste import' : '📋 Paste roster from spreadsheet'}
+              </button>
+
+              {showBulkPaste && (
+                <div style={{ marginTop: 10, padding: '14px 14px 10px', background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 10 }}>
+                  <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>
+                    Copy rows from Google Sheets, Excel, or any table and paste below. Columns are auto-detected — order doesn't matter.
+                  </div>
+                  <textarea
+                    placeholder={'Name\tNumber\tPosition\nJane Smith\t10\tOH\nAlex Lee\t4\tMB'}
+                    value={bulkPasteText}
+                    onChange={e => handleBulkPasteChange(e.target.value)}
+                    style={{ width: '100%', minHeight: 90, padding: '8px 10px', fontSize: 13, fontFamily: 'monospace', border: '1.5px solid #e2e8f0', borderRadius: 8, boxSizing: 'border-box', resize: 'vertical', background: '#fff' }}
+                  />
+
+                  {bulkPreview.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                      {!isCurrentTeamBeach && bulkPreview.some(r => !r.number) && (
+                        <div style={{ fontSize: 12, color: '#dc2626', marginBottom: 6 }}>⚠ Rows without # will be skipped — fill them in below</div>
+                      )}
+                      {/* Spreadsheet grid */}
+                      <div style={{ overflowX: 'auto', border: '1.5px solid #cbd5e1', borderRadius: 8, fontSize: 13 }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                          <colgroup>
+                            <col style={{ width: 32 }} />
+                            <col />
+                            {!isCurrentTeamBeach && <col style={{ width: 56 }} />}
+                            {!isCurrentTeamBeach && <col style={{ width: 96 }} />}
+                            <col style={{ width: 32 }} />
+                          </colgroup>
+                          <thead>
+                            <tr style={{ background: '#f1f5f9', userSelect: 'none' }}>
+                              <th style={styles.sheetHdr}></th>
+                              <th style={styles.sheetHdr}>Name</th>
+                              {!isCurrentTeamBeach && <th style={styles.sheetHdr}>#</th>}
+                              {!isCurrentTeamBeach && <th style={styles.sheetHdr}>Position</th>}
+                              <th style={styles.sheetHdr}></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {bulkPreview.map((row, i) => {
+                              const missing = !isCurrentTeamBeach && !row.number;
+                              return (
+                                <tr key={i} style={{ background: missing ? '#fff1f2' : '#fff' }}>
+                                  {/* row number */}
+                                  <td style={{ ...styles.sheetRowNum, color: missing ? '#f43f5e' : '#94a3b8' }}>{i + 1}</td>
+                                  {/* name */}
+                                  <td style={styles.sheetCell}>
+                                    <input
+                                      value={row.name}
+                                      onChange={e => setBulkPreview(prev => prev.map((r, j) => j === i ? { ...r, name: e.target.value } : r))}
+                                      style={styles.sheetInput}
+                                    />
+                                  </td>
+                                  {/* number */}
+                                  {!isCurrentTeamBeach && (
+                                    <td style={styles.sheetCell}>
+                                      <input
+                                        value={row.number}
+                                        onChange={e => setBulkPreview(prev => prev.map((r, j) => j === i ? { ...r, number: e.target.value } : r))}
+                                        style={{ ...styles.sheetInput, textAlign: 'center' }}
+                                      />
+                                    </td>
+                                  )}
+                                  {/* position */}
+                                  {!isCurrentTeamBeach && (
+                                    <td style={styles.sheetCell}>
+                                      <select
+                                        value={row.position}
+                                        onChange={e => setBulkPreview(prev => prev.map((r, j) => j === i ? { ...r, position: e.target.value } : r))}
+                                        style={{ ...styles.sheetInput, cursor: 'pointer' }}
+                                      >
+                                        <option value="">—</option>
+                                        <option value="OH">OH</option>
+                                        <option value="MB">MB</option>
+                                        <option value="S">S</option>
+                                        <option value="OPP">OPP</option>
+                                        <option value="DS">DS</option>
+                                      </select>
+                                    </td>
+                                  )}
+                                  {/* delete row */}
+                                  <td style={{ ...styles.sheetRowNum, cursor: 'pointer', color: '#cbd5e1' }}
+                                    onClick={() => setBulkPreview(prev => prev.filter((_, j) => j !== i))}
+                                    title="Remove row"
+                                  >×</td>
+                                </tr>
+                              );
+                            })}
+                            {/* blank add row */}
+                            <tr style={{ background: '#f8fafc' }}>
+                              <td style={styles.sheetRowNum}></td>
+                              <td style={styles.sheetCell}>
+                                <input
+                                  placeholder="Add row…"
+                                  value=""
+                                  onChange={e => { if (e.target.value) setBulkPreview(prev => [...prev, { name: e.target.value, number: '', position: '' }]); }}
+                                  style={{ ...styles.sheetInput, color: '#9ca3af' }}
+                                />
+                              </td>
+                              {!isCurrentTeamBeach && <td style={styles.sheetCell}></td>}
+                              {!isCurrentTeamBeach && <td style={styles.sheetCell}></td>}
+                              <td style={styles.sheetRowNum}></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                      <button
+                        onClick={handleBulkImport}
+                        disabled={bulkImporting}
+                        style={{ marginTop: 10, width: '100%', padding: '9px 12px', fontSize: 13, fontWeight: 700, background: bulkImporting ? '#9ca3af' : 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#fff', border: 'none', borderRadius: 8, cursor: bulkImporting ? 'not-allowed' : 'pointer' }}
+                      >
+                        {bulkImporting ? 'Importing…' : `Import ${bulkPreview.filter(r => isCurrentTeamBeach || r.number).length} Player${bulkPreview.filter(r => isCurrentTeamBeach || r.number).length !== 1 ? 's' : ''}`}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Copy Roster — only when roster is empty */}
           {(!benchPlayers || benchPlayers.length === 0) && selectedTeam && (

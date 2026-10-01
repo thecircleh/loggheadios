@@ -353,19 +353,26 @@ const fmtPct = (n) =>
   n != null ? (n * 100).toFixed(1) + '%' : '—';
 
 // ─── Image compression helper ─────────────────────────────────────────────────
+// Uses FileReader instead of createObjectURL — blob URLs are unreliable in
+// Capacitor WKWebView and can be GC'd before the Image loads.
 const compressImage = (file, maxW, maxH, quality = 0.82) =>
   new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(maxW / img.width, maxH / img.height, 1);
-      const canvas = document.createElement('canvas');
-      canvas.width  = Math.round(img.width  * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL('image/jpeg', quality));
-      URL.revokeObjectURL(img.src);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+        const canvas = document.createElement('canvas');
+        canvas.width  = Math.round(img.width  * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => resolve(null);
+      img.src = ev.target.result;
     };
-    img.src = URL.createObjectURL(file);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
   });
 
 // ─── PhotoUpload component ────────────────────────────────────────────────────
@@ -2751,15 +2758,40 @@ const RecruitingProfilePage = ({ isNative }) => {
                     alt="Share graphic"
                     style={{ width: '100%', borderRadius: 12, display: 'block' }}
                   />
-                  <a
-                    href={graphicUrl}
-                    download={`${(player?.name || 'player').replace(/[^a-z0-9]/gi,'-').toLowerCase()}-graphic.png`}
-                    style={{ ...s.downloadBtn, display: 'flex', marginTop: 8, textDecoration: 'none' }}
+                  <button
+                    style={{ ...s.downloadBtn, marginTop: 8 }}
+                    onClick={async () => {
+                      const filename = `${(player?.name || 'player').replace(/[^a-z0-9]/gi,'-').toLowerCase()}-graphic.png`;
+                      try {
+                        const res = await fetch(graphicUrl);
+                        const blob = await res.blob();
+                        const file = new File([blob], filename, { type: 'image/png' });
+                        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                          await navigator.share({ files: [file], title: 'Recruiting Graphic' });
+                          return;
+                        }
+                      } catch (e) {
+                        if (e?.name === 'AbortError') return;
+                      }
+                      // Fallback: blob URL download (works on desktop/Android)
+                      try {
+                        const res2 = await fetch(graphicUrl);
+                        const blob2 = await res2.blob();
+                        const url = URL.createObjectURL(blob2);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                      } catch (_) {}
+                    }}
                   >
                     ⬇ Save Graphic
-                  </a>
+                  </button>
                   <p style={{ textAlign: 'center', fontSize: 12, color: '#C7C7CC', marginTop: 6 }}>
-                    On mobile, press and hold the image above to save to your photos.
+                    On iOS, press and hold the image above to save to your photos.
                   </p>
                 </div>
               )}
