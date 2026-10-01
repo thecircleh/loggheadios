@@ -715,27 +715,48 @@ const parseBulkPaste = (text) => {
 
   } else {
     // Classic TSV / CSV: one player per line
-    return rawLines
-      .map(l => l.trim())
-      .filter(l => l && !isHeaderWord(l.split(/[\t,]/)[0].trim()))
+    const nonEmpty = rawLines.map(l => l.trim()).filter(Boolean);
+    if (!nonEmpty.length) return [];
+
+    // Detect and parse header row
+    const splitRow = l => l.indexOf('\t') >= 0 ? l.split('\t') : l.split(',');
+    const firstCells = splitRow(nonEmpty[0]).map(c => c.trim().toLowerCase().replace(/[#.]/g, '').trim());
+    const HEADER_WORDS = ['name','number','pos','position','jersey','age','grad','city','height','ht','class','player','yr','year'];
+    const looksLikeHeader = firstCells.some(c => HEADER_WORDS.includes(c));
+
+    let nameIdx = -1, numIdx = -1, posIdx = -1;
+    let dataLines = nonEmpty;
+
+    if (looksLikeHeader) {
+      firstCells.forEach((c, i) => {
+        if (['name','player','player name'].includes(c) && nameIdx < 0) nameIdx = i;
+        if (['number','jersey','no','num'].includes(c) && numIdx < 0) numIdx = i;
+        if (['pos','position'].includes(c) && posIdx < 0) posIdx = i;
+      });
+      dataLines = nonEmpty.slice(1);
+    }
+
+    return dataLines
       .map(line => {
-        const raw = line.indexOf('\t') >= 0 ? line.split('\t') : line.split(',');
-        const parts = raw.map(p => p.trim().replace(/^"|"$/g, '')).filter(Boolean);
+        const cells = splitRow(line).map(p => p.trim().replace(/^"|"$/g, ''));
+        if (nameIdx >= 0 || numIdx >= 0) {
+          // Header-guided mapping
+          const name  = nameIdx  >= 0 ? (cells[nameIdx]  || '') : '';
+          const number= numIdx   >= 0 ? (cells[numIdx]   || '') : '';
+          const pos   = posIdx   >= 0 ? (cells[posIdx]   || '') : '';
+          return { name: name.trim(), number: number.trim(), position: pos ? normalizePos(pos) : '' };
+        }
+        // No header — heuristic
         let name = '', number = '', position = '';
-        for (const p of parts) {
-          if (isJerseyNum(p) && !number) {
-            number = p;
-          } else if (isPos(p) && !position) {
-            position = normalizePos(p);
-          } else if (!name) {
-            name = p;
-          } else {
-            name = name + ' ' + p;
-          }
+        for (const p of cells.filter(Boolean)) {
+          if (isJerseyNum(p) && !number)    number = p;
+          else if (isPos(p) && !position)   position = normalizePos(p);
+          else if (!name)                   name = p;
+          else                              name += ' ' + p;
         }
         return { name: name.trim(), number, position };
       })
-      .filter(r => r.name);
+      .filter(r => r.name.trim());
   }
 };
 
