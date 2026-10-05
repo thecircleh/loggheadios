@@ -68,6 +68,7 @@ import PracticeLivePage from "./components/PracticeLivePage";
 import PracticeRecapPage from "./components/PracticeRecapPage";
 import BottomTabBar from "./components/BottomTabBar";
 import RecruitingProfilePage from "./components/RecruitingProfilePage";
+import FlowPuzzleGame from "./components/FlowPuzzleGame";
 
 
 // Constants
@@ -5014,6 +5015,7 @@ if (location.pathname === "/match-tracking") {
 {location.pathname !== "/login" && location.pathname !== "/register" && (
   <nav className={`ios-nav-links ${showMobileMenu ? "visible" : ""}`}>
     <Link to="/profile" onClick={closeAllDropdowns} className="ios-nav-link">Profile</Link>
+    <Link to="/puzzle" onClick={closeAllDropdowns} className="ios-nav-link">🔵 Brain Break</Link>
     <Link to="/settings" onClick={closeAllDropdowns} className="ios-nav-link">Rosters & Matches</Link>
     <LoggingModeDropdown
       isOpen={activeDropdown === 'modes'}
@@ -5281,6 +5283,12 @@ if (location.pathname === "/match-tracking") {
             <Route
               path="/recruiting"
               element={<PrivateRoute><RecruitingProfilePage isNative={isNativeApp} /></PrivateRoute>}
+            />
+
+            {/* Flow Puzzles (Brain Break) */}
+            <Route
+              path="/puzzle"
+              element={<PrivateRoute><FlowPuzzleGame isMobile={isMobile} isNative={isNativeApp} /></PrivateRoute>}
             />
 
             {/* Profile Page */}
