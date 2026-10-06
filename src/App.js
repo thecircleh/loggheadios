@@ -69,6 +69,10 @@ import PracticeRecapPage from "./components/PracticeRecapPage";
 import BottomTabBar from "./components/BottomTabBar";
 import RecruitingProfilePage from "./components/RecruitingProfilePage";
 import FlowPuzzleGame from "./components/FlowPuzzleGame";
+import TurtleHuntGame from "./components/TurtleHuntGame";
+import LineupSudokuGame from "./components/LineupSudokuGame";
+import ShellSlideGame from "./components/ShellSlideGame";
+import BrainBreakHub, { SubscriberGame } from "./components/BrainBreakHub";
 
 
 // Constants
@@ -5285,10 +5289,26 @@ if (location.pathname === "/match-tracking") {
               element={<PrivateRoute><RecruitingProfilePage isNative={isNativeApp} /></PrivateRoute>}
             />
 
-            {/* Flow Puzzles (Brain Break) */}
+            {/* Brain Break: game menu for subscribers, straight to Flow for everyone else */}
             <Route
               path="/puzzle"
+              element={<PrivateRoute><BrainBreakHub isMobile={isMobile} isNative={isNativeApp} /></PrivateRoute>}
+            />
+            <Route
+              path="/puzzle/flow"
               element={<PrivateRoute><FlowPuzzleGame isMobile={isMobile} isNative={isNativeApp} /></PrivateRoute>}
+            />
+            <Route
+              path="/puzzle/turtles"
+              element={<PrivateRoute><SubscriberGame><TurtleHuntGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
+            />
+            <Route
+              path="/puzzle/lineup"
+              element={<PrivateRoute><SubscriberGame><LineupSudokuGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
+            />
+            <Route
+              path="/puzzle/shell-slide"
+              element={<PrivateRoute><SubscriberGame><ShellSlideGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
             />
 
             {/* Profile Page */}

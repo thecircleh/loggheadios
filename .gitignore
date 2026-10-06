@@ -6,3 +6,6 @@ build/
 *.bak
 .env
 .env.*
+
+# Shell Slide level generator resume file
+scripts/.shellslide-checkpoint.json

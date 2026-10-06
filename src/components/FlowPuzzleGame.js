@@ -1,5 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from './AuthContext';
+import {
+  loadLocalProgress, saveLocalProgress, mergeProgress,
+  syncGameProgress, recordLevelResult, saveGameSettings,
+} from '../utils/gameProgress';
 
 // ── Seeded RNG ──────────────────────────────────────────────────────────────
 function mulberry32(seed) {
@@ -16,16 +21,18 @@ function mulberry32(seed) {
 const COLORS = [
   '#EF4444', '#3B82F6', '#22C55E', '#F59E0B',
   '#A855F7', '#F97316', '#EC4899', '#06B6D4',
-  '#84CC16', '#6366F1',
+  '#84CC16', '#6366F1', '#14B8A6', '#F43F5E',
+  '#FBBF24', '#8B5CF6',
 ];
 
 // ── Difficulty ───────────────────────────────────────────────────────────────
 function getDiff(n) {
-  if (n <= 150)  return { size: 5, nc: 4,  label: 'Easy' };
-  if (n <= 400)  return { size: 6, nc: 5,  label: 'Medium' };
-  if (n <= 750)  return { size: 7, nc: 6,  label: 'Hard' };
-  if (n <= 1500) return { size: 8, nc: 7,  label: 'Expert' };
-  return { size: 9, nc: 8, label: 'Master' };
+  if (n <= 150)  return { size: 5,  nc: 4,  label: 'Easy' };
+  if (n <= 400)  return { size: 6,  nc: 5,  label: 'Medium' };
+  if (n <= 750)  return { size: 7,  nc: 6,  label: 'Hard' };
+  if (n <= 1500) return { size: 8,  nc: 7,  label: 'Expert' };
+  if (n <= 2000) return { size: 9,  nc: 8,  label: 'Master' };
+  return           { size: 15, nc: 14, label: 'Max' };
 }
 
 // ── Grid helpers ────────────────────────────────────────────────────────────
@@ -48,12 +55,13 @@ const isAdj = (a, b, size) => nbrs(a, size).includes(b);
 function generatePuzzle(levelNum) {
   const { size, nc } = getDiff(levelNum);
   const base = levelNum * 1000003 + 7;
-  for (let att = 0; att < 400; att++) {
+  const tries = size >= 12 ? 1200 : 400;
+  for (let att = 0; att < tries; att++) {
     const rand = mulberry32(base + att * 997);
     const p = tryGen(size, nc, rand);
     if (p) return p;
   }
-  return snakeFallback(size, nc);
+  return snakeFallback(size, nc, base);
 }
 
 function tryGen(size, nc, rand) {
@@ -62,10 +70,11 @@ function tryGen(size, nc, rand) {
   const paths = Array.from({ length: nc }, () => []);
 
   // Place start endpoints spread across grid
+  const spreadAttempts = nc > 10 ? 120 : 60;
   const starts = [];
   for (let c = 0; c < nc; c++) {
     let best = -1, bestScore = -1;
-    for (let a = 0; a < 60; a++) {
+    for (let a = 0; a < spreadAttempts; a++) {
       const cell = Math.floor(rand() * total);
       if (starts.includes(cell)) continue;
       const r0 = rowOf(cell, size), c0 = colOf(cell, size);
@@ -82,7 +91,8 @@ function tryGen(size, nc, rand) {
   }
 
   // Grow paths to fill all cells; prefer most-constrained heads
-  for (let step = 0; step < total * 80 && sol.includes(-1); step++) {
+  const stepCap = total * (nc > 10 ? 160 : 80);
+  for (let step = 0; step < stepCap && sol.includes(-1); step++) {
     const ext = [];
     for (let c = 0; c < nc; c++) {
       const head = paths[c][paths[c].length - 1];
@@ -108,12 +118,37 @@ function tryGen(size, nc, rand) {
   };
 }
 
-function snakeFallback(size, nc) {
+function snakeFallback(size, nc, seed) {
+  const rand = mulberry32(seed ^ 0xDEADBEEF);
   const total = size * size;
+  // Vary starting corner so different levels get different snake orientations
+  const flipRows = rand() > 0.5;
+  const flipCols = rand() > 0.5;
+  // Boustrophedon order from the chosen corner
+  const order = [];
+  for (let ri = 0; ri < size; ri++) {
+    const r = flipRows ? size - 1 - ri : ri;
+    const row = Array.from({ length: size }, (_, ci) => {
+      const c = flipCols ? size - 1 - ci : ci;
+      return r * size + c;
+    });
+    if (ri % 2 === 1) row.reverse();
+    order.push(...row);
+  }
+  // Shuffle which color gets which segment so endpoints differ per level
+  const colorPerm = Array.from({ length: nc }, (_, i) => i);
+  for (let i = nc - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [colorPerm[i], colorPerm[j]] = [colorPerm[j], colorPerm[i]];
+  }
   const chunk = Math.ceil(total / nc);
-  const sol = Array.from({ length: total }, (_, i) => Math.min(Math.floor(i / chunk), nc - 1));
+  const sol = new Array(total).fill(0);
   const paths = Array.from({ length: nc }, () => []);
-  sol.forEach((c, i) => paths[c].push(i));
+  order.forEach((cell, i) => {
+    const c = colorPerm[Math.min(Math.floor(i / chunk), nc - 1)];
+    sol[cell] = c;
+    paths[c].push(cell);
+  });
   return {
     size, nc,
     endpoints: paths.map((p, i) => ({ c: i, s: p[0], e: p[p.length - 1] })),
@@ -235,13 +270,23 @@ function HowToPlayModal({ onClose }) {
 }
 
 // ── Persistence ──────────────────────────────────────────────────────────────
+const GAME_ID = 'flow';
 const STORE_KEY = 'loggerhead_flow_progress';
-const loadProg = () => { try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}'); } catch { return {}; } };
-const saveProg = (d) => { try { localStorage.setItem(STORE_KEY, JSON.stringify(d)); } catch {} };
+// Older builds stored { [level]: { time } }; normalize to { bestTime }.
+const loadProg = () => {
+  const raw = loadLocalProgress(STORE_KEY);
+  const out = {};
+  for (const [lv, r] of Object.entries(raw)) {
+    out[lv] = r && r.bestTime == null && r.time != null ? { bestTime: r.time, solves: 1 } : r;
+  }
+  return out;
+};
+const saveProg = (d) => saveLocalProgress(STORE_KEY, d);
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function FlowPuzzleGame({ isMobile = false, isNative = false }) {
   const navigate = useNavigate();
+  const { token } = useAuth();
 
   const [screen, setScreen] = useState('levels');
   const [levelPage, setLevelPage] = useState(0);
@@ -255,6 +300,30 @@ export default function FlowPuzzleGame({ isMobile = false, isNative = false }) {
   const [elapsed, setElapsed] = useState(0);
   const [progress, setProgress] = useState(loadProg);
   const [showHowTo, setShowHowTo] = useState(false);
+  const [numberMode, setNumberMode] = useState(() => {
+    try { return localStorage.getItem('lh_flow_nummode') === '1'; } catch { return false; }
+  });
+
+  // Merge local progress with the account's server copy (also uploads offline solves).
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    syncGameProgress(GAME_ID, token, loadProg())
+      .then(({ levels, settings }) => {
+        if (cancelled) return;
+        setProgress(prev => {
+          const merged = mergeProgress(prev, levels);
+          saveProg(merged);
+          return merged;
+        });
+        if (typeof settings?.numberMode === 'boolean') {
+          setNumberMode(settings.numberMode);
+          try { localStorage.setItem('lh_flow_nummode', settings.numberMode ? '1' : '0'); } catch {}
+        }
+      })
+      .catch(err => console.warn('Flow progress sync failed:', err?.message));
+    return () => { cancelled = true; };
+  }, [token]);
 
   // Refs to avoid stale closures in pointer handlers
   const drawingRef    = useRef(null);
@@ -326,10 +395,23 @@ export default function FlowPuzzleGame({ isMobile = false, isNative = false }) {
     if (filled.size !== puzzle.size * puzzle.size) return;
     setSolved(true);
     clearInterval(timerRef.current);
-    const newProg = { ...progress, [currentLevel]: { time: elapsed } };
+    const prev = progress[currentLevel] || {};
+    const newProg = {
+      ...progress,
+      [currentLevel]: {
+        ...prev,
+        bestTime: prev.bestTime == null ? elapsed : Math.min(prev.bestTime, elapsed),
+        solves: (prev.solves || 0) + 1,
+      },
+    };
     setProgress(newProg);
     saveProg(newProg);
-  }, [userPaths, completeFlags, puzzle, solved, elapsed, currentLevel, progress]);
+    // Local copy is kept either way; the next sync uploads it if this fails.
+    if (token) {
+      recordLevelResult(GAME_ID, token, currentLevel, { time: elapsed })
+        .catch(err => console.warn('Flow result save failed:', err?.message));
+    }
+  }, [userPaths, completeFlags, puzzle, solved, elapsed, currentLevel, progress, token]);
 
   // ── Pointer handlers
   const getCellAt = (x, y) => {
@@ -455,7 +537,7 @@ export default function FlowPuzzleGame({ isMobile = false, isNative = false }) {
   if (screen === 'levels') {
     const PER_PAGE = 100;
     const startLv = levelPage * PER_PAGE + 1;
-    const TOTAL_LEVELS = 2000;
+    const TOTAL_LEVELS = 2100;
     const totalPages = Math.ceil(TOTAL_LEVELS / PER_PAGE);
     const DIFF_RANGES = [
       { label: 'Easy',   lo: 1,    hi: 150,  color: '#22C55E', bg: '#DCFCE7' },
@@ -463,10 +545,11 @@ export default function FlowPuzzleGame({ isMobile = false, isNative = false }) {
       { label: 'Hard',   lo: 401,  hi: 750,  color: '#F59E0B', bg: '#FEF3C7' },
       { label: 'Expert', lo: 751,  hi: 1500, color: '#EF4444', bg: '#FEE2E2' },
       { label: 'Master', lo: 1501, hi: 2000, color: '#A855F7', bg: '#F3E8FF' },
+      { label: '💀 Max', lo: 2001, hi: 2100, color: '#DC2626', bg: '#1C0000' },
     ];
 
     return (
-      <div style={{ padding: isNative ? 'max(env(safe-area-inset-top),16px) 16px 20px' : '16px', maxWidth: 560, margin: '0 auto' }}>
+      <div style={{ padding: isNative ? 'max(env(safe-area-inset-top),16px) 16px calc(90px + env(safe-area-inset-bottom))' : '16px', maxWidth: 560, margin: '0 auto' }}>
         {showHowTo && <HowToPlayModal onClose={() => setShowHowTo(false)} />}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
           <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#555', padding: '4px 8px 4px 0' }}>←</button>
@@ -487,8 +570,8 @@ export default function FlowPuzzleGame({ isMobile = false, isNative = false }) {
                 onClick={() => { const pg = Math.floor((lo - 1) / PER_PAGE); setLevelPage(pg); }}
                 style={{ flex: '1 0 80px', padding: '8px 10px', borderRadius: 8, background: bg, textAlign: 'center', cursor: 'pointer', border: `1px solid ${color}44` }}
               >
-                <div style={{ fontSize: 11, color: '#555', fontWeight: 600 }}>{label}</div>
-                <div style={{ fontSize: 15, fontWeight: 800, color }}>{done}<span style={{ fontSize: 10, color: '#999', fontWeight: 400 }}>/{hi - lo + 1}</span></div>
+                <div style={{ fontSize: 11, color: label === '💀 Max' ? '#ff9999' : '#555', fontWeight: 600 }}>{label}</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color }}>{done}<span style={{ fontSize: 10, color: label === '💀 Max' ? '#cc6666' : '#999', fontWeight: 400 }}>/{hi - lo + 1}</span></div>
               </div>
             );
           })}
@@ -498,7 +581,7 @@ export default function FlowPuzzleGame({ isMobile = false, isNative = false }) {
         <div style={{ display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap' }}>
           {Array.from({ length: totalPages }, (_, i) => {
             const diff = getDiff(i * PER_PAGE + 1);
-            const diffColor = { Easy: '#22C55E', Medium: '#3B82F6', Hard: '#F59E0B', Expert: '#EF4444', Master: '#A855F7' }[diff.label];
+            const diffColor = { Easy: '#22C55E', Medium: '#3B82F6', Hard: '#F59E0B', Expert: '#EF4444', Master: '#A855F7', Max: '#DC2626' }[diff.label];
             return (
               <button key={i} onClick={() => setLevelPage(i)} style={{
                 padding: '3px 8px', borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: 'none',
@@ -517,15 +600,19 @@ export default function FlowPuzzleGame({ isMobile = false, isNative = false }) {
             const lv = startLv + i;
             const done = !!progress[lv];
             const diff = getDiff(lv);
-            const dc = { Easy: '#22C55E', Medium: '#3B82F6', Hard: '#F59E0B', Expert: '#EF4444', Master: '#A855F7' }[diff.label];
+            const dc = { Easy: '#22C55E', Medium: '#3B82F6', Hard: '#F59E0B', Expert: '#EF4444', Master: '#A855F7', Max: '#DC2626' }[diff.label];
+            const isMax = diff.label === 'Max';
             return (
               <button key={lv} onClick={() => { setCurrentLevel(lv); setScreen('game'); }} style={{
-                aspectRatio: '1', borderRadius: 5, border: done ? `2px solid ${dc}` : '1px solid #e0e0e0',
-                background: done ? '#e8f5e9' : '#fafafa', cursor: 'pointer',
-                fontSize: 9, fontWeight: done ? 700 : 400, color: done ? '#166534' : '#777',
+                aspectRatio: '1', borderRadius: 5,
+                border: done ? `2px solid ${dc}` : isMax ? '1px solid #7f1d1d' : '1px solid #e0e0e0',
+                background: done ? (isMax ? '#3b0a0a' : '#e8f5e9') : isMax ? '#1C0000' : '#fafafa',
+                cursor: 'pointer',
+                fontSize: 9, fontWeight: done ? 700 : 400,
+                color: done ? (isMax ? '#fca5a5' : '#166534') : isMax ? '#7f1d1d' : '#777',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                {done ? '✓' : lv}
+                {done ? <img src="/favicon-96x96.png" alt="done" style={{ width: '65%', height: '65%', objectFit: 'contain' }} /> : lv}
               </button>
             );
           })}
@@ -564,10 +651,10 @@ export default function FlowPuzzleGame({ isMobile = false, isNative = false }) {
   }
 
   const diff = getDiff(currentLevel);
-  const diffColor = { Easy: '#22C55E', Medium: '#3B82F6', Hard: '#F59E0B', Expert: '#EF4444', Master: '#A855F7' }[diff.label];
+  const diffColor = { Easy: '#22C55E', Medium: '#3B82F6', Hard: '#F59E0B', Expert: '#EF4444', Master: '#A855F7', Max: '#DC2626' }[diff.label];
 
   return (
-    <div style={{ padding: isNative ? 'max(env(safe-area-inset-top),10px) 12px 20px' : '10px 12px 20px', maxWidth: 520, margin: '0 auto', userSelect: 'none', WebkitUserSelect: 'none' }}>
+    <div style={{ padding: isNative ? 'max(env(safe-area-inset-top),10px) 12px calc(90px + env(safe-area-inset-bottom))' : '10px 12px 20px', maxWidth: 520, margin: '0 auto', userSelect: 'none', WebkitUserSelect: 'none' }}>
       {showHowTo && <HowToPlayModal onClose={() => setShowHowTo(false)} />}
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -677,14 +764,17 @@ export default function FlowPuzzleGame({ isMobile = false, isNative = false }) {
           if (c === undefined || c === null || c < 0) return null;
           if (endpointSet.has(i)) return null; // endpoints rendered separately
           const r = rowOf(i, size), cl = colOf(i, size);
+          const numFS = Math.max(7, Math.min(12, Math.floor(FILL * 0.5)));
           return (
             <div key={`dot-${i}`} style={{
               position: 'absolute',
               left: cl * CS + (CS - FILL) / 2, top: r * CS + (CS - FILL) / 2,
               width: FILL, height: FILL, borderRadius: '50%',
-              background: COLORS[c],
-              pointerEvents: 'none',
-            }} />
+              background: COLORS[c], pointerEvents: 'none',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {numberMode && <span style={{ fontSize: numFS, fontWeight: 900, color: '#fff', lineHeight: 1, textShadow: '0 1px 2px rgba(0,0,0,0.6)', pointerEvents: 'none' }}>{c + 1}</span>}
+            </div>
           );
         })}
 
@@ -693,6 +783,7 @@ export default function FlowPuzzleGame({ isMobile = false, isNative = false }) {
           [s, e].map(cell => {
             const r = rowOf(cell, size), cl = colOf(cell, size);
             const isConn = completeFlags[ci];
+            const numFS = Math.max(8, Math.min(14, Math.floor(DOT * 0.52)));
             return (
               <div key={`ep-${cell}`} style={{
                 position: 'absolute',
@@ -701,10 +792,12 @@ export default function FlowPuzzleGame({ isMobile = false, isNative = false }) {
                 background: COLORS[ci],
                 border: `2px solid ${isConn ? '#fff' : 'rgba(255,255,255,0.25)'}`,
                 boxShadow: isConn ? `0 0 10px ${COLORS[ci]}` : 'none',
-                zIndex: 2,
-                pointerEvents: 'none',
+                zIndex: 2, pointerEvents: 'none',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
                 transition: 'box-shadow 0.2s, border-color 0.2s',
-              }} />
+              }}>
+                {numberMode && <span style={{ fontSize: numFS, fontWeight: 900, color: '#fff', lineHeight: 1, textShadow: '0 1px 2px rgba(0,0,0,0.6)', pointerEvents: 'none' }}>{ci + 1}</span>}
+              </div>
             );
           })
         ))}
@@ -733,6 +826,18 @@ export default function FlowPuzzleGame({ isMobile = false, isNative = false }) {
           fontSize: 13, cursor: 'pointer', fontWeight: 600, color: '#333',
         }}>
           💡 {showSolution ? 'Hide' : 'Hint'}
+        </button>
+        <button onClick={() => {
+          const next = !numberMode;
+          setNumberMode(next);
+          try { localStorage.setItem('lh_flow_nummode', next ? '1' : '0'); } catch {}
+          if (token) saveGameSettings(GAME_ID, token, { numberMode: next }).catch(() => {});
+        }} style={{
+          padding: '9px 14px', borderRadius: 8, border: '1px solid #ddd',
+          background: numberMode ? '#EFF6FF' : '#fff',
+          fontSize: 13, cursor: 'pointer', fontWeight: 600, color: numberMode ? '#1D4ED8' : '#333',
+        }}>
+          #123 {numberMode ? 'On' : 'Off'}
         </button>
         {solved ? (
           <button onClick={() => setCurrentLevel(l => l + 1)} style={{
