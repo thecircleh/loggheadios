@@ -225,6 +225,14 @@ workflows:
           npx cap add android
           npx cap sync android
 
+      - name: Generate app icons and splash screen
+        script: |
+          # Sources live in assets/ (icon-only, icon-foreground/background, splash, splash-dark).
+          # android/ is recreated every build, so the generated resources must be too.
+          cd $CM_BUILD_DIR
+          npx -y @capacitor/assets@3 generate --android
+          echo "✅ Android icons and splash generated"
+
       - name: Add Android permissions to AndroidManifest.xml
         script: |
           MANIFEST=$CM_BUILD_DIR/android/app/src/main/AndroidManifest.xml

@@ -10,6 +10,7 @@
       "launchShowDuration": 2500,
       "launchAutoHide": true,
       "backgroundColor": "#ffffff",
+      "androidScaleType": "CENTER_CROP",
       "iosSpinnerStyle": "small",
       "showSpinner": false,
       "splashFullScreen": true,
