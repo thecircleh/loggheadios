@@ -73,6 +73,7 @@ import TurtleHuntGame from "./components/TurtleHuntGame";
 import LineupSudokuGame from "./components/LineupSudokuGame";
 import ShellSlideGame from "./components/ShellSlideGame";
 import GemTrayGame from "./components/GemTrayGame";
+import RotationTrainerGame from "./components/RotationTrainerGame";
 import BrainBreakHub, { SubscriberGame } from "./components/BrainBreakHub";
 
 
@@ -5290,30 +5291,34 @@ if (location.pathname === "/match-tracking") {
               element={<PrivateRoute><RecruitingProfilePage isNative={isNativeApp} /></PrivateRoute>}
             />
 
-            {/* Brain Break: game menu for subscribers, straight to Flow for everyone else */}
+            {/* Brain Break: all games for subscribers; one free game a day for everyone else */}
             <Route
               path="/puzzle"
               element={<PrivateRoute><BrainBreakHub isMobile={isMobile} isNative={isNativeApp} /></PrivateRoute>}
             />
             <Route
               path="/puzzle/flow"
-              element={<PrivateRoute><FlowPuzzleGame isMobile={isMobile} isNative={isNativeApp} /></PrivateRoute>}
+              element={<PrivateRoute><SubscriberGame gameId="flow"><FlowPuzzleGame isMobile={isMobile} isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
             />
             <Route
               path="/puzzle/turtles"
-              element={<PrivateRoute><SubscriberGame><TurtleHuntGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
+              element={<PrivateRoute><SubscriberGame gameId="turtles"><TurtleHuntGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
             />
             <Route
               path="/puzzle/lineup"
-              element={<PrivateRoute><SubscriberGame><LineupSudokuGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
+              element={<PrivateRoute><SubscriberGame gameId="lineup"><LineupSudokuGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
             />
             <Route
               path="/puzzle/shell-slide"
-              element={<PrivateRoute><SubscriberGame><ShellSlideGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
+              element={<PrivateRoute><SubscriberGame gameId="shellslide"><ShellSlideGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
             />
             <Route
               path="/puzzle/gem-tray"
-              element={<PrivateRoute><SubscriberGame><GemTrayGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
+              element={<PrivateRoute><SubscriberGame gameId="gemtray"><GemTrayGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
+            />
+            <Route
+              path="/puzzle/rotation-trainer"
+              element={<PrivateRoute><SubscriberGame gameId="rotation"><RotationTrainerGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
             />
 
             {/* Profile Page */}
