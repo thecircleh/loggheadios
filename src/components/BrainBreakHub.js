@@ -10,6 +10,7 @@ const GAMES = [
   { id: 'turtles', path: '/puzzle/turtles', storeKey: 'loggerhead_turtles_progress', icon: '🐢', name: 'Turtle Hunt',  blurb: 'Find the turtles · Read the nests', total: 1000, accent: '#0E7490' },
   { id: 'lineup',  path: '/puzzle/lineup',  storeKey: 'loggerhead_lineup_progress',  icon: '🏐', name: 'Lineup Sudoku', blurb: 'Every player once · Read the rotation courts', total: 1000, accent: '#B45309' },
   { id: 'shellslide', path: '/puzzle/shell-slide', storeKey: 'loggerhead_shellslide_progress', icon: '🌊', name: 'Shell Slide', blurb: 'Clear a path to the ocean', total: 1000, accent: '#0369A1' },
+  { id: 'gemtray', path: '/puzzle/gem-tray', storeKey: 'loggerhead_gemtray_progress', icon: '💎', name: 'Gem Tray', blurb: 'Plan your picks · Three of a kind clear', total: 1000, accent: '#7C3AED' },
 ];
 
 // Wrap subscriber-only games; non-subscribers land back on /puzzle (Flow).

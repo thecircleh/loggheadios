@@ -72,6 +72,7 @@ import FlowPuzzleGame from "./components/FlowPuzzleGame";
 import TurtleHuntGame from "./components/TurtleHuntGame";
 import LineupSudokuGame from "./components/LineupSudokuGame";
 import ShellSlideGame from "./components/ShellSlideGame";
+import GemTrayGame from "./components/GemTrayGame";
 import BrainBreakHub, { SubscriberGame } from "./components/BrainBreakHub";
 
 
@@ -5309,6 +5310,10 @@ if (location.pathname === "/match-tracking") {
             <Route
               path="/puzzle/shell-slide"
               element={<PrivateRoute><SubscriberGame><ShellSlideGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
+            />
+            <Route
+              path="/puzzle/gem-tray"
+              element={<PrivateRoute><SubscriberGame><GemTrayGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
             />
 
             {/* Profile Page */}
