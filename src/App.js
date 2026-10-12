@@ -88,7 +88,8 @@ const getApiUrl = () => {
 };
 
 const API_URL = getApiUrl(); 
-const APP_VERSION = "vers8 prod3.0";
+// Shown next to the logo; keep in step with APP_VERSION in codemagic.yaml.
+const APP_VERSION = "2.2";
 const AUTO_SAVE_DELAY = 5000;
 const PERIODIC_SAVE_INTERVAL = 300000;
 
@@ -4930,7 +4931,7 @@ if (location.pathname === "/match-tracking") {
                         verticalAlign: "sub",
                       }}
                     >
-                      v3.0
+                      v{APP_VERSION}
                     </sub>
                   </span>
 			<NotificationBell 
