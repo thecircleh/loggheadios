@@ -6,6 +6,7 @@ import { Country, State } from "country-state-city";
 import "./Profile.css";
 import SubscriptionButtons from "./SubscriptionButtons";
 import TeamNameBuilder from "./TeamNameBuilder";
+import PushNotificationSettings from "./PushNotificationSettings";
 
 const getApiUrl = () => {
   const h = window.location.hostname;
@@ -920,6 +921,9 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
           </>
         )}
       </div>
+
+      {/* ── Notifications (native apps only) ── */}
+      <PushNotificationSettings />
 
       {/* ── Subscription ── */}
       <div className="card" style={{ marginTop: 14 }} ref={subscriptionRef}>

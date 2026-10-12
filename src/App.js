@@ -74,6 +74,7 @@ import LineupSudokuGame from "./components/LineupSudokuGame";
 import ShellSlideGame from "./components/ShellSlideGame";
 import GemTrayGame from "./components/GemTrayGame";
 import RotationTrainerGame from "./components/RotationTrainerGame";
+import { initPush } from "./utils/pushNotifications";
 import BrainBreakHub, { SubscriberGame } from "./components/BrainBreakHub";
 
 
@@ -711,7 +712,16 @@ function AppContent({ matchSettings, setMatchSettings }) {
   const { enqueue: enqueueOffline, pendingCount: offlinePending, isOnline } =
     useOfflineActionQueue({ token, enabled: !!hasPremium });
   const navigate = useNavigate();
-  
+
+  // Push notifications: refresh this device's registration if the user opted in,
+  // and open the right screen when a notification is tapped.
+  useEffect(() => {
+    if (!token) return;
+    let cleanup = () => {};
+    initPush(token, navigate).then(fn => { cleanup = fn; }).catch(err => console.warn('Push init failed:', err?.message));
+    return () => cleanup();
+  }, [token]);
+
   // State variables
   const [loadingMatch, setLoadingMatch] = useState(true);
   const [showHeader, setShowHeader] = useState(true);

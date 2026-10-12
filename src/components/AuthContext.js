@@ -10,6 +10,7 @@ import React, {
 import Cookies from "js-cookie";
 import axios from "axios";
 import { io } from "socket.io-client";
+import { disablePush } from "../utils/pushNotifications";
 
 const getApiUrl = () => {
   const h = window.location.hostname;
@@ -133,6 +134,8 @@ export const AuthProvider = ({ children }) => {
   }, [token]);
 
   const clearAllUserData = useCallback(async () => {
+    // Stop push notifications for this account on this device (shared family phones).
+    disablePush(token).catch(() => {});
     if (token) {
       try {
         await axios.post(

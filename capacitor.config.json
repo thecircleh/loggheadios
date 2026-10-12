@@ -15,7 +15,24 @@
       "showSpinner": false,
       "splashFullScreen": true,
       "splashImmersive": false
+    },
+    "FirebaseMessaging": {
+      "presentationOptions": [
+        "alert",
+        "badge",
+        "sound"
+      ]
+    }
+  },
+  "experimental": {
+    "ios": {
+      "spm": {
+        "packageOptions": {
+          "@capacitor-firebase/messaging": {
+            "symlink": true
+          }
+        }
+      }
     }
   }
 }
-

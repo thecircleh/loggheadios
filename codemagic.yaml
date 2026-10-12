@@ -23,7 +23,7 @@ workflows:
         XCODE_SCHEME: "App"
         BUNDLE_ID: "com.loggerheadstat.app"
         REACT_APP_API_URL: "https://api.loggerhead.app"
-        APP_VERSION: "2.1.2"
+        APP_VERSION: "2.2"
       node: v22.0.0
 
     scripts:
@@ -69,6 +69,72 @@ workflows:
           sed -i '' 's|CODE_SIGN_ENTITLEMENTS = .*|CODE_SIGN_ENTITLEMENTS = App/App.entitlements;|g' "$PROJ" 2>/dev/null || true
 
           echo "✅ In-App Purchase capability enabled"
+
+      - name: Enable push notifications (iOS)
+        script: |
+          # ios/ is recreated every build, so push setup has to be re-applied here.
+          # Needs firebase/GoogleService-Info.plist in the repo and Push Notifications
+          # enabled on the App ID in the Apple Developer portal.
+          APP_DIR=$CM_BUILD_DIR/ios/App/App
+          PROJ=$CM_BUILD_DIR/ios/App/App.xcodeproj
+          ENTITLEMENTS=$APP_DIR/App.entitlements
+          PLIST=$APP_DIR/Info.plist
+
+          # Push entitlement — "production" for TestFlight / App Store builds.
+          /usr/libexec/PlistBuddy -c "Add :aps-environment string production" "$ENTITLEMENTS" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Set :aps-environment production" "$ENTITLEMENTS"
+
+          # Allow notification delivery while the app is in the background.
+          if ! /usr/libexec/PlistBuddy -c "Print :UIBackgroundModes" "$PLIST" 2>/dev/null | grep -q remote-notification; then
+            /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string remote-notification" "$PLIST"
+          fi
+
+          # Firebase config, added to the App target's bundle resources.
+          if [ -f "$CM_BUILD_DIR/firebase/GoogleService-Info.plist" ]; then
+            cp "$CM_BUILD_DIR/firebase/GoogleService-Info.plist" "$APP_DIR/"
+            gem list -i xcodeproj >/dev/null 2>&1 || gem install xcodeproj --no-document
+            ruby -e '
+              require "xcodeproj"
+              proj = Xcodeproj::Project.open(ARGV[0])
+              target = proj.targets.find { |t| t.name == "App" }
+              group = proj.main_group.find_subpath("App", false)
+              unless group.files.any? { |f| f.path == "GoogleService-Info.plist" }
+                ref = group.new_reference("GoogleService-Info.plist")
+                target.resources_build_phase.add_file_reference(ref, true)
+              end
+              proj.save
+            ' "$PROJ"
+            echo "✅ GoogleService-Info.plist added"
+          else
+            echo "⚠️ firebase/GoogleService-Info.plist not found — push notifications will not work in this build"
+          fi
+
+          # AppDelegate hooks the Firebase messaging plugin needs.
+          python3 - "$APP_DIR/AppDelegate.swift" << 'PY'
+          import sys
+          path = sys.argv[1]
+          src = open(path).read()
+          if "capacitorDidRegisterForRemoteNotifications" not in src:
+              hooks = '''
+              func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+                  NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
+              }
+
+              func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+                  NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
+              }
+
+              func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+                  NotificationCenter.default.post(name: Notification.Name.init("didReceiveRemoteNotification"), object: completionHandler, userInfo: userInfo)
+              }
+          '''
+              end = src.rstrip().rfind("}")
+              src = src[:end] + hooks + "\n}\n"
+              open(path, "w").write(src)
+          PY
+          grep -q capacitorDidRegisterForRemoteNotifications "$APP_DIR/AppDelegate.swift" && echo "✅ AppDelegate push hooks added"
+          echo "✅ Push notifications enabled (iOS)"
 
       - name: Add iOS permissions to Info.plist
         script: |
@@ -203,7 +269,7 @@ workflows:
       vars:
         PACKAGE_NAME: "com.loggerheadstat.app"
         REACT_APP_API_URL: "https://api.loggerhead.app"
-        APP_VERSION: "2.1.2"
+        APP_VERSION: "2.2"
       node: v22.0.0
       java: 21
 
@@ -232,6 +298,44 @@ workflows:
           cd $CM_BUILD_DIR
           npx -y @capacitor/assets@3 generate --android
           echo "✅ Android icons and splash generated"
+
+      - name: Enable push notifications (Android)
+        script: |
+          # android/ is recreated every build. Capacitor's template applies the Google
+          # Services plugin automatically when app/google-services.json is present.
+          cd $CM_BUILD_DIR
+          if [ -f firebase/google-services.json ]; then
+            cp firebase/google-services.json android/app/google-services.json
+            echo "✅ google-services.json added"
+          else
+            echo "⚠️ firebase/google-services.json not found — push notifications will not work in this build"
+          fi
+
+          # White status-bar icon + brand color (Android tints notification icons).
+          RES=android/app/src/main/res
+          cp -R android-assets/notification-icon/. "$RES/"
+          mkdir -p "$RES/values"
+          cat > "$RES/values/push_colors.xml" << 'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="push_notification_color">#15803D</color>
+          </resources>
+          XML
+
+          python3 - android/app/src/main/AndroidManifest.xml << 'PY'
+          import sys
+          path = sys.argv[1]
+          src = open(path).read()
+          if "default_notification_icon" not in src:
+              meta = '''
+                  <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_loggerhead" />
+                  <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/push_notification_color" />
+                  <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="default" />
+              '''
+              src = src.replace("</application>", meta + "</application>", 1)
+              open(path, "w").write(src)
+          PY
+          grep -q default_notification_icon android/app/src/main/AndroidManifest.xml && echo "✅ Push notifications enabled (Android)"
 
       - name: Add Android permissions to AndroidManifest.xml
         script: |
