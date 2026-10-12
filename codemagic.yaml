@@ -107,7 +107,9 @@ workflows:
             ' "$PROJ"
             echo "✅ GoogleService-Info.plist added"
           else
-            echo "⚠️ firebase/GoogleService-Info.plist not found — push notifications will not work in this build"
+            # The Firebase plugin configures Firebase at launch; without this file the app crashes.
+            echo "❌ firebase/GoogleService-Info.plist is missing — add it before building (see firebase/README.md)"
+            exit 1
           fi
 
           # AppDelegate hooks the Firebase messaging plugin needs.
@@ -308,7 +310,8 @@ workflows:
             cp firebase/google-services.json android/app/google-services.json
             echo "✅ google-services.json added"
           else
-            echo "⚠️ firebase/google-services.json not found — push notifications will not work in this build"
+            echo "❌ firebase/google-services.json is missing — add it before building (see firebase/README.md)"
+            exit 1
           fi
 
           # White status-bar icon + brand color (Android tints notification icons).
