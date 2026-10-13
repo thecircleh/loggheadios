@@ -19,8 +19,7 @@ export const ANDROID_SUBSCRIPTION_PLANS = [
     fallbackPrice: '$2.49',
     perWeek: '= $2.49/week',
     subText: 'Best for club weekends.',
-    badge: 'Most popular',
-    featured: true,
+    badge: 'Flexible',
   },
   {
     key: 'monthly',
@@ -29,7 +28,8 @@ export const ANDROID_SUBSCRIPTION_PLANS = [
     fallbackPrice: '$7.99',
     perWeek: '≈ $1.99/week',
     subText: 'Regular monthly access.',
-    badge: 'Flexible',
+    badge: 'Most popular',
+    featured: true,
   },
   {
     key: 'sixMonth',
