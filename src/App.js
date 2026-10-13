@@ -75,6 +75,7 @@ import ShellSlideGame from "./components/ShellSlideGame";
 import GemTrayGame from "./components/GemTrayGame";
 import RotationTrainerGame from "./components/RotationTrainerGame";
 import { initPush } from "./utils/pushNotifications";
+import { noteAppOpened, noteHappyMoment } from "./utils/appReview";
 import BrainBreakHub, { SubscriberGame } from "./components/BrainBreakHub";
 
 
@@ -716,6 +717,8 @@ function AppContent({ matchSettings, setMatchSettings }) {
 
   // Push notifications: refresh this device's registration if the user opted in,
   // and open the right screen when a notification is tapped.
+  useEffect(() => { noteAppOpened(); }, []);
+
   useEffect(() => {
     if (!token) return;
     let cleanup = () => {};
@@ -2113,6 +2116,7 @@ const isMatchOwner = useCallback(() => {
             withCredentials: true,
           });
           console.log("✅ Completed Match marked as Final in database");
+          noteHappyMoment();
 		  console.log("✅ Final creditedPlayersThisSet persisted to database"); 
           setCurrentMatchId(null); 
         } catch (err) {
@@ -2971,6 +2975,7 @@ console.log("CALLING end-match");
           withCredentials: true
         }
       );
+      noteHappyMoment();
       console.log("✅ Match table updated with Final status");
       skipStatusOverrideRef.current = true; // ⚠️ PREVENT AUTO-SAVE FROM OVERWRITING
     } catch (statusError) {
@@ -3058,6 +3063,7 @@ const ensureMatchIsFinalAndNavigate = useCallback(async (finalSetsWon) => {
         withCredentials: true,
       }
     );
+    noteHappyMoment();
 
     console.log("✅ Match status set to Final in database");
 

@@ -5,6 +5,7 @@ import {
   loadLocalProgress, saveLocalProgress, mergeProgress,
   syncGameProgress, recordLevelResult, saveGameSettings,
 } from './gameProgress';
+import { noteHappyMoment } from './appReview';
 
 export function useGameProgress(gameId, storeKey, { onSettings } = {}) {
   const { token } = useAuth();
@@ -46,6 +47,7 @@ export function useGameProgress(gameId, storeKey, { onSettings } = {}) {
       saveLocalProgress(storeKey, next);
       return next;
     });
+    noteHappyMoment();
     // Local copy is kept either way; the next sync uploads it if this fails.
     if (token) {
       recordLevelResult(gameId, token, level, { time, score })

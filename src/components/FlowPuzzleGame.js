@@ -5,6 +5,7 @@ import {
   loadLocalProgress, saveLocalProgress, mergeProgress,
   syncGameProgress, recordLevelResult, saveGameSettings,
 } from '../utils/gameProgress';
+import { noteHappyMoment } from '../utils/appReview';
 
 // ── Seeded RNG ──────────────────────────────────────────────────────────────
 function mulberry32(seed) {
@@ -406,6 +407,7 @@ export default function FlowPuzzleGame({ isMobile = false, isNative = false }) {
     };
     setProgress(newProg);
     saveProg(newProg);
+    noteHappyMoment();
     // Local copy is kept either way; the next sync uploads it if this fails.
     if (token) {
       recordLevelResult(GAME_ID, token, currentLevel, { time: elapsed })
