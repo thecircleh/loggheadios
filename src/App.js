@@ -777,6 +777,14 @@ const [pendingMatchPayload, setPendingMatchPayload] = useState(null);
 const [pendingMatchMode, setPendingMatchMode] = useState(null);
 
   const matchFinalizedRef = useRef(false);
+  // A new match starts un-finalized. Without this the flag stayed true for the rest of the
+  // session, so a second Match Tracking match never finalized or saved its analytics.
+  const finalizedMatchIdRef = useRef(null);
+  // Reset during render (not in an effect): Match Tracking reads this flag in its own effects,
+  // which run before App's, so an effect-based reset would come too late for a new match.
+  if (matchFinalizedRef.current && currentMatchId && currentMatchId !== finalizedMatchIdRef.current) {
+    matchFinalizedRef.current = false;
+  }
   const skipStatusOverrideRef = useRef(false);
   const [positionMapping, setPositionMapping] = useState({
     0: '4', 1: '3', 2: '2', 3: '5', 4: '6', 5: '1'
@@ -2928,8 +2936,9 @@ const endMatch = useCallback(async (finalSetsWon) => {
     return null;
   }
   
-  if (matchFinalizedRef.current) return;
+  if (matchFinalizedRef.current && finalizedMatchIdRef.current === currentMatchId) return;
 matchFinalizedRef.current = true;
+finalizedMatchIdRef.current = currentMatchId;
 
   try {
     console.log("🏆 FINALIZING COACH MATCH...", {
@@ -4451,8 +4460,13 @@ useEffect(() => {
     timestamp: new Date().toISOString()
   });
 
-  // Early exit conditions
-  if (!currentMatchId || !matchSettings?.totalSets || isRestoringMatchRef.current || location.pathname === '/settings') {
+  // Early exit conditions. Only check for set endings on the scoring screens, and never once
+  // the match is finalized: after Match Tracking's endMatch() navigates to the summary page the
+  // final score is still in memory, and this effect used to treat it as a Classic set ending and
+  // jump on to /stats.
+  const SCORING_PATHS = ["/classic", "/stat-book", "/express", "/match-tracking"];
+  if (!currentMatchId || !matchSettings?.totalSets || isRestoringMatchRef.current ||
+      !SCORING_PATHS.includes(location.pathname) || matchFinalizedRef.current) {
     return;
   }
 
