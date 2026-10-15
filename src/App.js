@@ -3275,7 +3275,7 @@ const handleDeletePlayer = useCallback(async (id) => {
       return;
     }
     const confirmReset = window.confirm(
-      `Are you sure you want to delete ALL players associated with team "${matchSettings.teamName}" from the database? This cannot be undone.`
+      `Remove all players from the "${matchSettings.teamName}" roster? Their past match stats are kept.`
     );
     if (confirmReset) {
       try {
@@ -3284,10 +3284,10 @@ const handleDeletePlayer = useCallback(async (id) => {
         });
         setBenchPlayers([]);
         clearCourt();
-        alert(`All players for team "${matchSettings.teamName}" deleted.`);
+        alert(`Roster for "${matchSettings.teamName}" cleared.`);
       } catch (error) {
         console.error("Error resetting bench:", error);
-        alert("Failed to reset bench.");
+        alert(error?.response?.data?.error || "Failed to reset roster.");
       }
     }
   }, [matchSettings?.teamName, user?.id, clearCourt]);
@@ -3529,7 +3529,9 @@ useEffect(() => {
   }, [location.pathname, currentMatchId, saveMatchData]);
 
  useEffect(() => {
-  if (!currentMatchId || location.pathname !== "/") return;
+  // Classic lives at /classic ("/" is the home page now); checking only "/" meant Classic
+  // never autosaved mid-set.
+  if (!currentMatchId || !["/", "/classic"].includes(location.pathname)) return;
 
   const actionCount = actionLog?.length || 0;
 
@@ -3615,7 +3617,7 @@ const handleLogout = useCallback(async () => {
 }, [token, removeToken, setUser, navigate]);
 
   useEffect(() => {
-    if (!currentMatchId || location.pathname !== '/') return;
+    if (!currentMatchId || !["/", "/classic"].includes(location.pathname)) return;
 
     const intervalId = setInterval(async () => {
       try {

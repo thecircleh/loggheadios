@@ -4,6 +4,7 @@ import axios from "axios";
 import { useDrag, useDrop } from "react-dnd";
 import { useAuth } from "./AuthContext";
 import { useNavigate } from "react-router-dom";
+import RallyInsights from "./RallyInsights";
 
 // Retry a PUT/POST on 5xx or network error, up to maxRetries times.
 // Does NOT retry 4xx (client errors). Never writes to the offline queue —
@@ -307,10 +308,24 @@ export default function CoachCourt({
   isPortrait = false,
 }) {
   // Get auth token directly from useAuth hook
-  const { token } = useAuth();
+  const { token, isSubscriber } = useAuth();
   const navigate = useNavigate();
-  // Local-only analytics (no DB, no action log)
   const [servingSide, setServingSide] = useState("our"); // "our" | "their"
+  // Rally-by-rally record for this set (saved with coach analytics) and earlier sets.
+  // { us, them, srv, won, rot, reason, t } — us/them is the score after the rally.
+  const [rallyLog, setRallyLog] = useState([]);
+  const [pastRallies, setPastRallies] = useState([]);
+  // Move rallies from sets before `newSet` into the match history. Only rallies tagged with an
+  // earlier set move, so a spurious set-change (e.g. settings loading after a reload) can never
+  // clear the current set's rallies.
+  const archiveRallies = useCallback((newSet) => {
+    setRallyLog((cur) => {
+      const done = cur.filter((r) => Number(r.set) < Number(newSet));
+      if (!done.length) return cur;
+      setPastRallies((past) => [...past, ...done]);
+      return cur.filter((r) => !(Number(r.set) < Number(newSet)));
+    });
+  }, []);
   const [rotationIndex, setRotationIndex] = useState(0); // 0..5
   // Initialize subCount from localStorage for this match
   const [subLog, setSubLog] = useState([]);
@@ -573,6 +588,7 @@ useEffect(() => {
     setOurPointsByTheirErrors(0);
     setTheirPointsEarned(0);
     setTheirPointsByOurErrors(0);
+    archiveRallies(currentSet);
     
     // Reset player +/-
     setPlayerPM({});
@@ -672,6 +688,14 @@ useEffect(() => {
             setPlayerPM(playerPMObj);
           }
 
+          // Restore rally history: this set's rallies plus every completed set's.
+          if (Array.isArray(analytics.currentSet?.rallyLog)) {
+            setRallyLog(analytics.currentSet.rallyLog);
+          }
+          if (Array.isArray(analytics.completedSets)) {
+            setPastRallies(analytics.completedSets.flatMap((cs) => cs.rallyLog || []));
+          }
+
           // ✅ NEW: Restore libero partner assignments
           if (analytics.currentSet?.liberoPartners) {
             console.log("🔵 Restored liberoPartners from database:", analytics.currentSet.liberoPartners);
@@ -686,7 +710,8 @@ useEffect(() => {
             }
             // ✅ Restore servingSide from currentSet
             if (analytics.currentSet.servingSide !== undefined) {
-              setServingSide(analytics.currentSet.servingSide);
+              // Older server versions wrote "opponent" for a new set.
+              setServingSide(analytics.currentSet.servingSide === "our" ? "our" : "their");
               console.log(`🏐 Restored servingSide: ${analytics.currentSet.servingSide}`);
             }
             // ✅ Restore isSetLive from currentSet
@@ -859,6 +884,7 @@ const saveCoachAnalytics = useCallback(async (isFinal = false) => {
         }),
         substitutionLog: subLog,
         liberoPartners: liberoPartners,
+        rallyLog,
         courtPlayers: courtPlayers.map(p => ({
           _id: p._id,
           name: p.name,
@@ -903,6 +929,7 @@ console.log("playAllSets:", matchSettings?.playAllSets);
   playerPM,
   isSetEndingInProgress,
   subLog,
+  rallyLog,
   setNumber,
   servingSide,
   isSetLive,
@@ -993,6 +1020,7 @@ useEffect(() => {
   rotationPM,
   playerPM,
   subLog,
+  rallyLog,
   setNumber, 
   servingSide,
   isSetLive,
@@ -1047,6 +1075,7 @@ const handleSetEnd = async (winner) => {
     setOurPointsByTheirErrors(0);
     setTheirPointsEarned(0);
     setTheirPointsByOurErrors(0);
+    archiveRallies((Number(setNumber) || 1) + 1);
     setLiberoPartners({}); // Clear LP1/LP2 designations
     
     // App.js's processCoachSetEnding() will handle /end-set backend call
@@ -1182,6 +1211,18 @@ useEffect(() => {
   // Buttons (four)
 const awardPoint = async (winner, reason) => {
   const delta = winner === "our" ? +1 : -1;
+
+  // Record the rally with the serve and rotation it was played in (before they change).
+  setRallyLog((log) => [...log, {
+    set: Number(setNumber) || 1,
+    us: (Number(ourScore) || 0) + (winner === "our" ? 1 : 0),
+    them: (Number(opponentScore) || 0) + (winner === "our" ? 0 : 1),
+    srv: servingSide === "our" ? "our" : "their",
+    won: winner === "our" ? "our" : "their",
+    rot: rotationIndex,
+    reason,
+    t: new Date().toISOString(),
+  }]);
 
   // 
   onAddPoint(winner === "our" ? "our" : "opponent", 1);
@@ -2957,6 +2998,20 @@ const SubTrackerCompact = ({ subCount, maxSubs, setMaxSubs }) => {
               setOpponentTeamColor={setOpponentTeamColor}
               setOurScore={setOurScore}
               setOpponentScore={setOpponentScore}
+            />
+            <RallyInsights
+              rallies={rallyLog}
+              pastRallies={pastRallies}
+              ourScore={Number(ourScore) || 0}
+              opponentScore={Number(opponentScore) || 0}
+              servingSide={servingSide}
+              setsUs={ourSetsWon}
+              setsThem={opponentSetsWon}
+              setNumber={setNumber}
+              matchSettings={matchSettings}
+              isSubscriber={isSubscriber}
+              teamName={teamName}
+              opponentName={opponentName}
             />
 			</div>
           <div

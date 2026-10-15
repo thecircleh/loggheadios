@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from './AuthContext';
+import MatchRallyReport from './MatchRallyReport';
 // Added Recharts components for the illustration
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine, Legend } from 'recharts';
 
@@ -39,7 +40,7 @@ const slotStyles = {
 };
 
 const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName, isMobile = false }) => {
-  const { user, token } = useAuth();
+  const { user, token, isSubscriber } = useAuth();
   const [selectedTeam, setSelectedTeam] = useState(propTeamName || "");
   const [selectedMatchId, setSelectedMatchId] = useState(propMatchId || "all");
   const [teams, setTeams] = useState([]);
@@ -314,6 +315,14 @@ const CoachStats = ({ currentMatchId: propMatchId, teamName: propTeamName, isMob
           </select>
         </div>
       </div>
+
+      {/* Rally-by-rally win probability, side-out and momentum (Premium) */}
+      <MatchRallyReport
+        sets={coachAnalytics?.sets || []}
+        singleMatch={selectedMatchId !== "all"}
+        isSubscriber={isSubscriber}
+        isMobile={isMobile}
+      />
 
       {/* Team Insights strip — portrait only, shown above tabs */}
       {isMobile && (
