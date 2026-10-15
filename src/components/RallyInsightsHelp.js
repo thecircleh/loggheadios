@@ -19,6 +19,11 @@ const SECTIONS = [
     body: 'Some rallies matter far more than others. At 5–5 a rally moves your set chances about 13%; at 23–23 it moves them about 45%; down 20–24 only about 3%. A pressure point means the next rally swings the set by 20% or more. At 30% or more it suggests a timeout — that\'s when one rally decides the most.',
   },
   {
+    icon: '💡',
+    title: 'Coach tips',
+    body: 'One suggestion at a time, most important first. Timeout: when the other team has won 3 or more rallies in a row, or right after you lose a point when the next rally swings the set by 30% or more. Sub: when a player on court is −4 or worse for the set and well behind teammates, or when a rotation sides out 35% or less over at least 5 chances. Tap the timeout dots when you call one — with none left, timeout tips switch off, and they pause for a couple of rallies after a timeout. Sub tips stop when you are out of subs. Tap ✕ to dismiss a tip. They are suggestions; you know your team.',
+  },
+  {
     icon: '🌊',
     title: 'Momentum check',
     body: 'When a team scores 4 or more in a row, Rally Insights asks: how often would a run this long happen by pure chance, given how both teams side out? A 5-point run happens by chance in about half of all sets — usually a normal swing. If chance alone would do it less than 10% of the time, it flags the run as rare: something real is happening (a serving streak, a rotation problem) worth acting on.',

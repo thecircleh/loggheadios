@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import RallyInsightsHelp from './RallyInsightsHelp';
+import { coachTip } from '../utils/coachTips';
 import {
   setWinProb, matchWinProb, rallyLeverage, sideOutStats, sideOutEdgeTable, runProbability,
 } from '../utils/winProbability';
@@ -13,10 +14,31 @@ export default function RallyInsights({
   rallies = [], pastRallies = [], ourScore = 0, opponentScore = 0, servingSide = 'our',
   setsUs = 0, setsThem = 0, setNumber = 1, matchSettings = {}, isSubscriber = false,
   opponentName = 'Opponent', teamName = 'Us',
+  // Coach Tips inputs (optional — modes pass what they track):
+  matchId = null,       // keys the timeouts counter so it survives a reload
+  players = [],         // on-court [{ id, name, number, pm }] (pm = +/- this set)
+  subsLeft = null,      // null when the mode doesn't track subs
+  currentRot = null,    // our rotation 0–5; derived from the rallies if not given
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [dismissedTip, setDismissedTip] = useState(null);
+
+  // Timeouts this set: { used, atRally } — atRally is the rally count when the last one was called.
+  const timeoutsPerSet = Number(matchSettings?.timeoutsPerSet) || 2;
+  const toKey = matchId ? `lh_timeouts_${matchId}_${setNumber}` : null;
+  const readTimeouts = () => {
+    try { return (toKey && JSON.parse(localStorage.getItem(toKey))) || { used: 0, atRally: null }; } catch { return { used: 0, atRally: null }; }
+  };
+  const [timeouts, setTimeouts] = useState(readTimeouts);
+  // Re-read when the set (or match) changes; each set starts with a full count.
+  useEffect(() => { setTimeouts(readTimeouts()); }, [toKey]);
+  const saveTimeouts = (next) => {
+    setTimeouts(next);
+    try { if (toKey) localStorage.setItem(toKey, JSON.stringify(next)); } catch {}
+  };
+  const timeoutsLeft = Math.max(0, timeoutsPerSet - timeouts.used);
 
   const bestOf = Number(matchSettings?.totalSets) || 3;
   const playAllSets = !!matchSettings?.playAllSets;
@@ -67,6 +89,24 @@ export default function RallyInsights({
     return rows;
   }, [all]);
 
+  const tip = useMemo(() => {
+    const rot = currentRot != null
+      ? currentRot
+      : rallies.filter(r => r.srv === 'their' && r.won === 'our').length % 6;
+    return coachTip({
+      rallies,
+      matchRallies: [...pastRallies, ...rallies],
+      leverage: live.leverage,
+      runChance,
+      timeoutsLeft,
+      ralliesSinceTimeout: timeouts.atRally == null ? Infinity : rallies.length - timeouts.atRally,
+      subsLeft,
+      players,
+      currentRot: rot,
+    });
+  }, [rallies, pastRallies, live.leverage, runChance, timeoutsLeft, timeouts.atRally, subsLeft, players, currentRot]);
+  const showTip = tip && tip.key !== dismissedTip;
+
   const edge = useMemo(() => sideOutEdgeTable(so.soThem, [0, 0.02, 0.05], playAllSets ? 3 : bestOf), [so.soThem, bestOf, playAllSets]);
 
   const pct = (v) => `${Math.round(v * 100)}%`;
@@ -84,6 +124,35 @@ export default function RallyInsights({
         <button type="button" onClick={() => setShowHelp(true)} style={st.help} aria-label="How Rally Insights works">?</button>
       </div>
       {showHelp && <RallyInsightsHelp onClose={() => setShowHelp(false)} />}
+
+      {showTip && (
+        <div style={st.tip}>
+          <span style={st.tipText}>
+            <strong>💡 Coach tip:</strong>{' '}
+            {isSubscriber ? <>{tip.icon} {tip.text}</> : <>a {tip.kind === 'timeout' ? 'timeout' : 'lineup'} suggestion is ready {lock}</>}
+          </span>
+          <button type="button" onClick={() => setDismissedTip(tip.key)} style={st.tipClose} aria-label="Dismiss tip">✕</button>
+        </div>
+      )}
+
+      <div style={st.timeouts}>
+        <span style={st.timeoutsLabel}>Timeouts</span>
+        {Array.from({ length: timeoutsPerSet }, (_, i) => {
+          const used = i < timeouts.used;
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => saveTimeouts(used
+                ? { used: timeouts.used - 1, atRally: timeouts.used - 1 > 0 ? timeouts.atRally : null }
+                : { used: timeouts.used + 1, atRally: rallies.length })}
+              style={{ ...st.toDot, ...(used ? st.toDotUsed : {}) }}
+              aria-label={used ? 'Timeout used — tap to undo' : 'Mark a timeout used'}
+            />
+          );
+        })}
+        <span style={st.timeoutsHint}>{timeoutsLeft === 0 ? 'None left — timeout tips off' : 'Tap when you call one'}</span>
+      </div>
 
       <div style={st.row}>
         <div style={st.stat}>
@@ -105,7 +174,7 @@ export default function RallyInsights({
       {bigPoint && (
         <div style={st.pressure}>
           🔥 Pressure point{isSubscriber
-            ? <> — this rally swings the set by <strong>{pct(live.leverage)}</strong>{live.leverage >= 0.3 ? '. Good moment for a timeout.' : '.'}</>
+            ? <> — this rally swings the set by <strong>{pct(live.leverage)}</strong>{'.'}</>
             : <> — how much this rally matters is {lock}</>}
         </div>
       )}
@@ -174,6 +243,14 @@ const st = {
   statValue: { fontSize: 22, fontWeight: 900, lineHeight: 1.2 },
   statSmall: { fontSize: 13, fontWeight: 800, color: '#0F172A', marginTop: 4 },
   lock: { fontSize: 15, filter: 'grayscale(0.2)' },
+  tip: { display: 'flex', alignItems: 'flex-start', gap: 8, margin: '2px 0 8px', padding: '8px 10px', borderRadius: 8, background: '#FEF9C3', border: '1px solid #FACC15' },
+  tipText: { flex: 1, fontSize: 13, color: '#713F12', lineHeight: 1.4 },
+  tipClose: { background: 'none', border: 'none', color: '#854D0E', fontSize: 14, cursor: 'pointer', padding: 0, lineHeight: 1 },
+  timeouts: { display: 'flex', alignItems: 'center', gap: 6, margin: '0 0 8px' },
+  timeoutsLabel: { fontSize: 11, fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' },
+  toDot: { width: 18, height: 18, borderRadius: '50%', border: '2px solid #0F766E', background: '#14B8A6', cursor: 'pointer', padding: 0 },
+  toDotUsed: { background: '#fff', borderColor: '#CBD5E1' },
+  timeoutsHint: { fontSize: 11, color: '#94A3B8', marginLeft: 4 },
   pressure: { marginTop: 8, padding: '7px 10px', borderRadius: 8, background: '#FFF7ED', border: '1px solid #FDBA74', fontSize: 13, color: '#7C2D12' },
   run: { marginTop: 8, padding: '7px 10px', borderRadius: 8, background: '#F1F5F9', fontSize: 13, color: '#1E293B' },
   runRare: { background: '#FEF2F2', border: '1px solid #FCA5A5' },

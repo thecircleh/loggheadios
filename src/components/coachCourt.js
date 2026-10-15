@@ -3012,6 +3012,12 @@ const SubTrackerCompact = ({ subCount, maxSubs, setMaxSubs }) => {
               isSubscriber={isSubscriber}
               teamName={teamName}
               opponentName={opponentName}
+              matchId={currentMatchId}
+              players={safeCourt
+                .filter((p) => p && p._id && p.name !== "?")
+                .map((p) => ({ id: p._id, name: p.name, number: p.number, pm: playerPM?.[p._id] ?? 0 }))}
+              subsLeft={Math.max(0, (Number(maxSubs) || 0) - (Number(subCount) || 0))}
+              currentRot={rotationIndex}
             />
 			</div>
           <div

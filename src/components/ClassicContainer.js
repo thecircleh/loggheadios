@@ -354,6 +354,7 @@ const isCompatibleMatch =
           isSubscriber={isSubscriber}
           teamName={matchSettings?.teamName || "Us"}
           opponentName={matchSettings?.opponentName || "Opponent"}
+          matchId={currentMatchId}
         />
       )}
     </>
