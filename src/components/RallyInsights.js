@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import RallyInsightsHelp from './RallyInsightsHelp';
 import {
   setWinProb, matchWinProb, rallyLeverage, sideOutStats, sideOutEdgeTable, runProbability,
 } from '../utils/winProbability';
@@ -15,6 +16,7 @@ export default function RallyInsights({
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   const bestOf = Number(matchSettings?.totalSets) || 3;
   const playAllSets = !!matchSettings?.playAllSets;
@@ -79,7 +81,9 @@ export default function RallyInsights({
         <span style={st.title}>📈 Rally Insights</span>
         {!isSubscriber && <span style={st.premiumTag}>Premium</span>}
         <button type="button" onClick={() => setOpen(o => !o)} style={st.toggle}>{open ? 'Less ▲' : 'Side-out ▼'}</button>
+        <button type="button" onClick={() => setShowHelp(true)} style={st.help} aria-label="How Rally Insights works">?</button>
       </div>
+      {showHelp && <RallyInsightsHelp onClose={() => setShowHelp(false)} />}
 
       <div style={st.row}>
         <div style={st.stat}>
@@ -163,6 +167,7 @@ const st = {
   title: { fontWeight: 800, fontSize: 14, color: '#0F172A', flex: 1 },
   premiumTag: { fontSize: 10, fontWeight: 900, color: '#fff', background: '#7C3AED', borderRadius: 4, padding: '2px 6px' },
   toggle: { background: 'none', border: 'none', color: '#2563EB', fontWeight: 700, fontSize: 12, cursor: 'pointer', padding: 0 },
+  help: { width: 22, height: 22, borderRadius: '50%', border: '1.5px solid #94A3B8', background: '#fff', color: '#475569', fontWeight: 900, fontSize: 12, cursor: 'pointer', padding: 0, lineHeight: '18px' },
   row: { display: 'flex', gap: 8 },
   stat: { flex: 1, textAlign: 'center', background: '#F8FAFC', borderRadius: 8, padding: '6px 4px' },
   statLabel: { fontSize: 10, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' },

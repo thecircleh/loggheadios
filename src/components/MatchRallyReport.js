@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import RallyInsightsHelp from './RallyInsightsHelp';
 import { matchWinProb, sideOutStats, sideOutEdgeTable, longestRun, runProbability } from '../utils/winProbability';
 
 // After-match rally analysis for Match Tracking (coach stats page).
@@ -7,6 +8,7 @@ import { matchWinProb, sideOutStats, sideOutEdgeTable, longestRun, runProbabilit
 // match or a whole season. Biggest swings need a single match; side-out works for both.
 export default function MatchRallyReport({ sets = [], singleMatch = false, isSubscriber = false, isMobile = false }) {
   const navigate = useNavigate();
+  const [showHelp, setShowHelp] = useState(false);
 
   const ordered = useMemo(
     () => [...sets].filter(s => Array.isArray(s.rallyLog) && s.rallyLog.length)
@@ -69,7 +71,11 @@ export default function MatchRallyReport({ sets = [], singleMatch = false, isSub
   if (!rallies.length) {
     return (
       <div style={st.card}>
-        <div style={st.title}>📈 Rally Report</div>
+        <div style={st.header}>
+          <span style={st.title}>📈 Rally Report</span>
+          <button type="button" onClick={() => setShowHelp(true)} style={{ ...st.help, marginLeft: 'auto' }} aria-label="How the Rally Report works">?</button>
+        </div>
+        {showHelp && <RallyInsightsHelp onClose={() => setShowHelp(false)} />}
         <div style={st.note}>Rally-by-rally data is saved for matches tracked from this update on. Track a match in Match Tracking to see win-probability swings, momentum and side-out by rotation here.</div>
       </div>
     );
@@ -81,7 +87,9 @@ export default function MatchRallyReport({ sets = [], singleMatch = false, isSub
         <span style={st.title}>📈 Rally Report</span>
         {!isSubscriber && <span style={st.premiumTag}>Premium</span>}
         <span style={st.count}>{rallies.length} rallies</span>
+        <button type="button" onClick={() => setShowHelp(true)} style={st.help} aria-label="How the Rally Report works">?</button>
       </div>
+      {showHelp && <RallyInsightsHelp onClose={() => setShowHelp(false)} />}
 
       <div style={{ ...st.row, flexDirection: isMobile ? 'column' : 'row' }}>
         <div style={st.box}>
@@ -149,6 +157,7 @@ const st = {
   title: { fontWeight: 800, fontSize: 16, color: '#0F172A' },
   premiumTag: { fontSize: 10, fontWeight: 900, color: '#fff', background: '#7C3AED', borderRadius: 4, padding: '2px 6px' },
   count: { marginLeft: 'auto', fontSize: 12, color: '#64748B' },
+  help: { width: 24, height: 24, borderRadius: '50%', border: '1.5px solid #94A3B8', background: '#fff', color: '#475569', fontWeight: 900, fontSize: 13, cursor: 'pointer', padding: 0 },
   row: { display: 'flex', gap: 12, marginBottom: 12 },
   box: { flex: 1, background: '#F8FAFC', borderRadius: 10, padding: 12 },
   boxTitle: { fontSize: 11, fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em', margin: '8px 0 6px' },
