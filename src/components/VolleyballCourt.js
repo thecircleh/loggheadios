@@ -1316,6 +1316,7 @@ const handleVoiceCommand = (command) => {
               {
                 action: `${errorContext.playerName} referee blown error`,
                 timestamp: new Date().toISOString(),
+                meta: { awardedPointTo: "opponent" },
               },
             ]);
             
@@ -4628,6 +4629,7 @@ setActionLog((prev) => [
   {
     action: formatPlayerAction({ name: playerName, number: getJerseyNumber(playerName) }, `${type}`),
     timestamp: new Date().toISOString(),
+    meta: { awardedPointTo: "opponent" },
   },
 ]);
 
@@ -6282,7 +6284,7 @@ return (
 
                 setActionLog(prev => [
                   ...prev,
-                  { action: actionText, timestamp: new Date().toISOString() },
+                  { action: actionText, timestamp: new Date().toISOString(), meta: { awardedPointTo: "opponent" } },
                 ]);
 
                 onOpponentPoint && onOpponentPoint();
@@ -6712,6 +6714,7 @@ return (
       {
         action: `${errorContext.playerName} referee blown error`,
         timestamp: new Date().toISOString(),
+        meta: { awardedPointTo: "opponent" },
       },
     ]);
 
@@ -6787,6 +6790,7 @@ if (pendingErrorType === "Serving") {
       {
         action: `${errorContext.playerName} ${label}`,
         timestamp: new Date().toISOString(),
+        meta: { awardedPointTo: "opponent" },
       },
     ]);
 

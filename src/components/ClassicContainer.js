@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import RallyInsights from "./RallyInsights";
 import axios from 'axios';
 import { useAuth } from './AuthContext';
 import MatchModeSelector from './MatchModeSelector';
@@ -48,6 +49,7 @@ export default function ClassicContainer({
   opponentScore,
   ourSetsWon,
   opponentSetsWon,
+  rallyLog = [],
   
   // Action and substitution logs
   actionLog,
@@ -102,7 +104,7 @@ export default function ClassicContainer({
   onOpponentPoint,
   updatePlayersOnCourt,
 }) {
-  const { user, token } = useAuth();
+  const { user, token, isSubscriber } = useAuth();
   const [currentMatchAge, setCurrentMatchAge] = useState(0);
   
   const compatibleModes = ["Classic", "Gameflow"];
@@ -334,6 +336,24 @@ const isCompatibleMatch =
           creditInitialCourtPlayers={creditInitialCourtPlayers}
           cardDisplayMode={cardDisplayMode}
           setCardDisplayMode={setCardDisplayMode}
+        />
+      )}
+
+      {/* Live win probability, pressure points and momentum (Premium; locked preview otherwise) */}
+      {currentMatchId && matchSettings && isCompatibleMatch && (
+        <RallyInsights
+          rallies={rallyLog.filter((r) => r.set === (Number(matchSettings?.currentSet) || 1))}
+          pastRallies={rallyLog.filter((r) => r.set !== (Number(matchSettings?.currentSet) || 1))}
+          ourScore={Number(ourScore) || 0}
+          opponentScore={Number(opponentScore) || 0}
+          servingSide={currentServeSide === "our" ? "our" : "their"}
+          setsUs={ourSetsWon || 0}
+          setsThem={opponentSetsWon || 0}
+          setNumber={Number(matchSettings?.currentSet) || 1}
+          matchSettings={matchSettings}
+          isSubscriber={isSubscriber}
+          teamName={matchSettings?.teamName || "Us"}
+          opponentName={matchSettings?.opponentName || "Opponent"}
         />
       )}
     </>

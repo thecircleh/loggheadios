@@ -750,6 +750,9 @@ function AppContent({ matchSettings, setMatchSettings }) {
   const [opponentSetsWon, setOpponentSetsWon] = useState(0);
   const [substitutionLog, setSubstitutionLog] = useState([]);
   const [actionLog, setActionLog] = useState([]);
+  // Classic: one entry per rally { set, us, them, srv, won, rot, t } for win probability,
+  // side-out and momentum. Kept apart from actionLog so undo's "last entry" logic is untouched.
+  const [rallyLog, setRallyLog] = useState([]);
   const [allowedLiberoSubTarget, setAllowedLiberoSubTarget] = useState(null);
   const [slot5TargetId, setSlot5TargetId] = useState(null);
   const [currentSet, setCurrentSet] = useState(1);
@@ -941,6 +944,7 @@ const resetMatchStateOnly = useCallback(() => {
   setCourtPlayers(Array.from({ length: courtSize }, () => ({ name: "?", number: "?" })));
   setSubstitutionLog([]);
   setActionLog([]);
+  setRallyLog([]);
 
   // libero / misc rally state
   setAllowedLiberoSubTarget(null);
@@ -1116,6 +1120,7 @@ const saveMatchData = useCallback(async (showAlert = false) => {
       courtPlayers: positionOrderedCourtPlayers,
       benchPlayers: (benchPlayers ?? []).filter(Boolean).map(normalizePlayer),
       actionLog: actionLog || [],
+      rallyLog: rallyLog || [],
       substitutionLog: substitutionLog || [],
       deactivatedPlayers: deactivatedPlayers || [],
       liberoSubTargets: {
@@ -1210,6 +1215,7 @@ const saveMatchData = useCallback(async (showAlert = false) => {
   serveSide,
   benchPlayers,
   actionLog,
+  rallyLog,
   substitutionLog,
   deactivatedPlayers,
   allowedLiberoSubTarget,
@@ -1743,6 +1749,7 @@ const rotateCourtPositions = useCallback(async () => {
     setOpponentSetsWon(0);
     setSetScores([]);
     setActionLog([]);
+    setRallyLog([]);
     setSubstitutionLog([]);
     setDeactivatedPlayers([]);
     setCreditedPlayersThisSet([]);
@@ -2576,6 +2583,44 @@ const saveScoreImmediately = useCallback(async (newOurScore, newOpponentScore, r
   }
 }, [currentMatchId, token]);
 
+// Classic: record the rally (who served, who won, rotation) for Rally Insights. Rotation is
+// derived from the log itself — each rally we win on their serve is a side-out rotation — so it
+// stays right after undos. Collaborative matches are skipped: several devices score the same match.
+const recordRally = useCallback((winner) => {
+  if (location.pathname !== "/classic" || collaborativeMode) return;
+  const set = Number(matchSettings?.currentSet) || 1;
+  const won = winner === "our" ? "our" : "their";
+  const entry = {
+    set,
+    us: (Number(ourScore) || 0) + (won === "our" ? 1 : 0),
+    them: (Number(opponentScore) || 0) + (won === "our" ? 0 : 1),
+    srv: currentServeSide === "our" ? "our" : "their",
+    won,
+    t: new Date().toISOString(),
+  };
+  setRallyLog((prev) => {
+    const sideOuts = prev.filter((r) => r.set === set && r.srv === "their" && r.won === "our").length;
+    return [...prev, { ...entry, rot: sideOuts % 6 }];
+  });
+}, [location.pathname, collaborativeMode, matchSettings?.currentSet, ourScore, opponentScore, currentServeSide]);
+
+// Undo / minus-tap: when a score drops by exactly one, drop rallies recorded above it.
+// (A new set resets the score by many points at once, which must not touch the log.)
+const prevScoresRef = useRef({ us: 0, them: 0 });
+useEffect(() => {
+  const prev = prevScoresRef.current;
+  const us = Number(ourScore) || 0, them = Number(opponentScore) || 0;
+  prevScoresRef.current = { us, them };
+  const singleUndo = (prev.us - us === 1 && prev.them === them) || (prev.them - them === 1 && prev.us === us);
+  if (!singleUndo) return;
+  const set = Number(matchSettings?.currentSet) || 1;
+  setRallyLog((log) => {
+    let end = log.length;
+    while (end > 0 && log[end - 1].set === set && (log[end - 1].us > us || log[end - 1].them > them)) end--;
+    return end === log.length ? log : log.slice(0, end);
+  });
+}, [ourScore, opponentScore, matchSettings?.currentSet]);
+
 const onOurPoint = useCallback(async (skipCollaborative = false, reason = 'manual') => {
   console.trace('🎯 onOurPoint called'); // ✅ Clearer - shows it's a trace, not error
   console.log('onOurPoint params:', { oldScore: ourScore, skipCollaborative, reason });
@@ -2584,6 +2629,7 @@ const onOurPoint = useCallback(async (skipCollaborative = false, reason = 'manua
   const newScore = oldScore + 1;
 
   console.log('onOurPoint called:', { oldScore, newScore, skipCollaborative, reason });
+  recordRally("our");
 
   // In collaborative mode, emit to server and let the authoritative score_updated
   // event set the score. This prevents stale-closure race conditions where a local
@@ -2604,13 +2650,14 @@ const onOurPoint = useCallback(async (skipCollaborative = false, reason = 'manua
 
   // Non-collaborative: update locally immediately
   setOurScore(newScore);
-}, [ourScore, collaborativeMode, isConnected, updateScore]);
+}, [ourScore, collaborativeMode, isConnected, updateScore, recordRally]);
 
 const onOpponentPoint = useCallback(async (skipCollaborative = false, reason = 'manual') => {
   const oldScore = opponentScore;
   const newScore = oldScore + 1;
 
   console.log('onOpponentPoint called:', { oldScore, newScore, skipCollaborative, reason });
+  recordRally("opponent");
 
   // In collaborative mode, emit to server and let the authoritative score_updated
   // event set the score (see onOurPoint for explanation).
@@ -2626,7 +2673,7 @@ const onOpponentPoint = useCallback(async (skipCollaborative = false, reason = '
 
   // Non-collaborative: update locally immediately
   setOpponentScore(newScore);
-}, [opponentScore, collaborativeMode, isConnected, updateScore]);
+}, [opponentScore, collaborativeMode, isConnected, updateScore, recordRally]);
 
 
 
@@ -2822,6 +2869,7 @@ payload = {
     syncCreditedPlayersFromState([]);
     setSubstitutionLog([]);
     setActionLog([]);
+    setRallyLog([]);
     setAllowedLiberoSubTarget(null);
     setSlot5TargetId(null);
     setOurScore(0);
@@ -4190,6 +4238,7 @@ useEffect(() => {
 
 setSubstitutionLog(match.substitutionLog || []);
         setActionLog(match.actionLog || []);
+        setRallyLog(Array.isArray(match.rallyLog) ? match.rallyLog : []);
         setTeamStats(match.teamStats || {
           ourEarned: 0,
           ourError: 0,
@@ -5382,6 +5431,7 @@ if (location.pathname === "/match-tracking") {
         opponentScore={opponentScore}
         ourSetsWon={ourSetsWon}
         opponentSetsWon={opponentSetsWon}
+        rallyLog={rallyLog}
         
         // Action and substitution logs
         actionLog={actionLog}
