@@ -223,16 +223,32 @@ workflows:
       - name: Build and archive iOS app
         script: |
           cd $CM_BUILD_DIR/ios/App
+          # Signing goes on the App target only. Passing it on the xcodebuild command line applies
+          # it to every target, and the Swift package bundles Firebase brings in (FirebaseCore,
+          # GoogleUtilities, nanopb, ...) fail with "does not support provisioning profiles".
+          gem list -i xcodeproj >/dev/null 2>&1 || gem install xcodeproj --no-document
+          ruby -e '
+            require "xcodeproj"
+            proj = Xcodeproj::Project.open(ARGV[0])
+            app = proj.targets.find { |t| t.name == "App" } or abort("App target not found")
+            app.build_configurations.each do |c|
+              next unless c.name == "Release"
+              s = c.build_settings
+              s["CODE_SIGN_STYLE"] = "Manual"
+              s["CODE_SIGN_IDENTITY"] = "Apple Distribution"
+              s["CODE_SIGN_IDENTITY[sdk=iphoneos*]"] = "Apple Distribution"
+              s["DEVELOPMENT_TEAM"] = "46W6UT654D"
+              s["PRODUCT_BUNDLE_IDENTIFIER"] = "com.loggerheadstat.app"
+              s["PROVISIONING_PROFILE_SPECIFIER"] = "Loggerhead App Store"
+            end
+            proj.save
+            puts "✅ App target signing set (Release)"
+          ' "$XCODE_PROJECT"
           xcodebuild \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
             -configuration Release \
             -archivePath build/App.xcarchive \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            DEVELOPMENT_TEAM=46W6UT654D \
-            PRODUCT_BUNDLE_IDENTIFIER=com.loggerheadstat.app \
-            PROVISIONING_PROFILE_SPECIFIER="Loggerhead App Store" \
             MARKETING_VERSION=$APP_VERSION \
             CURRENT_PROJECT_VERSION=$BUILD_NUMBER \
             archive
