@@ -90,7 +90,7 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl(); 
 // Shown next to the logo; keep in step with APP_VERSION in codemagic.yaml.
-const APP_VERSION = "2.2";
+const APP_VERSION = "2.1.3";
 const AUTO_SAVE_DELAY = 5000;
 const PERIODIC_SAVE_INTERVAL = 300000;
 
