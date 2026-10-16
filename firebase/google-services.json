@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "315232046726",
+    "project_id": "loggerhead-f7ae0",
+    "storage_bucket": "loggerhead-f7ae0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:315232046726:android:e3dc8925f6787d07f60b07",
+        "android_client_info": {
+          "package_name": "com.loggerheadstat.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0NDonMqOlSSTqzv598PeMwb8SZ5eqDeU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
