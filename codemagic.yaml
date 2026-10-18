@@ -226,15 +226,16 @@ workflows:
           # Signing goes on the App target only. Passing it on the xcodebuild command line applies
           # it to every target, and the Swift package bundles Firebase brings in (FirebaseCore,
           # GoogleUtilities, nanopb, ...) fail with "does not support provisioning profiles".
+          # The Capacitor template has no CODE_SIGN_ENTITLEMENTS line, so the sed in the In-App
+          # Purchase step never linked App.entitlements: builds shipped without the push
+          # (aps-environment) entitlement and iOS never issued a push token. Set it here.
+          # (No apostrophes inside the single-quoted ruby script below; one ends the string.)
           gem list -i xcodeproj >/dev/null 2>&1 || gem install xcodeproj --no-document
           ruby -e '
             require "xcodeproj"
             proj = Xcodeproj::Project.open(ARGV[0])
             app = proj.targets.find { |t| t.name == "App" } or abort("App target not found")
             app.build_configurations.each do |c|
-              # Capacitor's template has no CODE_SIGN_ENTITLEMENTS line, so the sed in the In-App
-              # Purchase step never linked App.entitlements: builds shipped without the push
-              # (aps-environment) entitlement and iOS never issued a push token.
               c.build_settings["CODE_SIGN_ENTITLEMENTS"] = "App/App.entitlements"
               next unless c.name == "Release"
               s = c.build_settings
