@@ -62,8 +62,8 @@ workflows:
 
           # StoreKit (In-App Purchase) does not require a special entitlement key —
           # it is enabled automatically for App Store distribution profiles.
-          # However we wire up the entitlements file so Xcode picks it up for dev signing.
-          /usr/libexec/PlistBuddy -c "Add :com.apple.developer.in-app-payments array" "$ENTITLEMENTS" 2>/dev/null || true
+          # (Do not add com.apple.developer.in-app-payments: that is Apple Pay's entitlement,
+          # and now that App.entitlements is actually linked it would fail signing.)
 
           # Point the Xcode target at our entitlements file
           sed -i '' 's|CODE_SIGN_ENTITLEMENTS = .*|CODE_SIGN_ENTITLEMENTS = App/App.entitlements;|g' "$PROJ" 2>/dev/null || true
@@ -232,6 +232,10 @@ workflows:
             proj = Xcodeproj::Project.open(ARGV[0])
             app = proj.targets.find { |t| t.name == "App" } or abort("App target not found")
             app.build_configurations.each do |c|
+              # Capacitor's template has no CODE_SIGN_ENTITLEMENTS line, so the sed in the In-App
+              # Purchase step never linked App.entitlements: builds shipped without the push
+              # (aps-environment) entitlement and iOS never issued a push token.
+              c.build_settings["CODE_SIGN_ENTITLEMENTS"] = "App/App.entitlements"
               next unless c.name == "Release"
               s = c.build_settings
               s["CODE_SIGN_STYLE"] = "Manual"

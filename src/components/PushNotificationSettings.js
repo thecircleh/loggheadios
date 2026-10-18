@@ -53,7 +53,7 @@ export default function PushNotificationSettings() {
         }
       }
     } catch (err) {
-      setMsg('Something went wrong turning notifications on. Please try again.');
+      setMsg(err?.message || 'Something went wrong turning notifications on. Please try again.');
       console.warn('Push toggle failed:', err?.message);
     } finally {
       setBusy(false);

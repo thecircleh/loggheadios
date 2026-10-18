@@ -5,7 +5,13 @@ import { getApiUrl } from './getApiUrl';
 
 const API_URL = getApiUrl();
 const TOKEN_KEY = 'lh_push_token';
-const auth = (token) => ({ headers: { Authorization: `Bearer ${token}` } });
+const auth = (token) => ({ headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+
+// Never leave the button spinning: fail with a message the settings card can show.
+const withTimeout = (promise, ms, message) => Promise.race([
+  promise,
+  new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+]);
 
 export const isPushSupported = () => !!window.Capacitor?.isNativePlatform?.();
 const platform = () => window.Capacitor?.getPlatform?.(); // 'ios' | 'android'
@@ -43,8 +49,17 @@ export async function enablePush(authToken) {
   let { receive } = await fm.checkPermissions();
   if (receive !== 'granted' && receive !== 'denied') ({ receive } = await fm.requestPermissions());
   if (receive !== 'granted') return receive === 'denied' ? 'denied' : 'prompt';
-  const { token } = await fm.getToken();
-  await registerToken(authToken, token);
+  // On iPhone this waits for Apple to issue a push token; if the build lacks push permission
+  // Apple never does, so give up after 20s instead of hanging.
+  const { token } = await withTimeout(fm.getToken(), 20000,
+    "Couldn't get a push token from Apple/Google. Please update the app and try again.");
+  try {
+    await registerToken(authToken, token);
+  } catch (err) {
+    throw new Error(err?.response?.status === 404 || err?.response?.status === 503
+      ? 'Notifications are not available on the server yet. Please try again later.'
+      : "Couldn't reach Loggerhead to finish turning on notifications. Check your connection and try again.");
+  }
   return 'granted';
 }
 
