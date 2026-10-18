@@ -1,6 +1,7 @@
 // Push notifications (iOS + Android via Firebase Cloud Messaging). Native apps only.
 // Opt-in: nothing is requested until the user turns notifications on in Profile.
 import axios from 'axios';
+import { FirebaseMessaging as fm } from '@capacitor-firebase/messaging';
 import { getApiUrl } from './getApiUrl';
 
 const API_URL = getApiUrl();
@@ -16,12 +17,10 @@ const withTimeout = (promise, ms, message) => Promise.race([
 export const isPushSupported = () => !!window.Capacitor?.isNativePlatform?.();
 const platform = () => window.Capacitor?.getPlatform?.(); // 'ios' | 'android'
 
-// Loaded on demand so the web bundle never pulls in Firebase.
-let pluginPromise = null;
-const plugin = () => {
-  if (!pluginPromise) pluginPromise = import('@capacitor-firebase/messaging').then(m => m.FirebaseMessaging);
-  return pluginPromise;
-};
+// `fm` is a Capacitor plugin proxy: never return it from an async function or resolve a
+// promise with it. Promises treat it as a "thenable" and call fm.then(), which goes to native,
+// doesn't exist, and never settles, so the await hangs forever. (Firebase's web SDK still
+// loads only on the web, on first use.)
 
 const timezone = () => {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return undefined; }
@@ -32,7 +31,7 @@ const saveToken = (t) => { try { t ? localStorage.setItem(TOKEN_KEY, t) : localS
 // 'granted' | 'denied' | 'prompt' (or 'unsupported' on web).
 export async function getPushPermission() {
   if (!isPushSupported()) return 'unsupported';
-  const { receive } = await (await plugin()).checkPermissions();
+  const { receive } = await fm.checkPermissions();
   return receive === 'granted' ? 'granted' : receive === 'denied' ? 'denied' : 'prompt';
 }
 
@@ -45,7 +44,6 @@ async function registerToken(authToken, fcmToken) {
 // Returns the resulting permission state.
 export async function enablePush(authToken) {
   if (!isPushSupported()) return 'unsupported';
-  const fm = await plugin();
   let { receive } = await fm.checkPermissions();
   if (receive !== 'granted' && receive !== 'denied') ({ receive } = await fm.requestPermissions());
   if (receive !== 'granted') return receive === 'denied' ? 'denied' : 'prompt';
@@ -69,7 +67,7 @@ export async function disablePush(authToken) {
   saveToken(null);
   if (!isPushSupported()) return;
   try { if (t && authToken) await axios.delete(`${API_URL}/api/push/devices`, { ...auth(authToken), data: { token: t } }); } catch {}
-  try { await (await plugin()).deleteToken(); } catch {}
+  try { await fm.deleteToken(); } catch {}
 }
 
 // Push is "on" for this device if permission is granted and we've registered a token.
@@ -79,7 +77,6 @@ export const isPushEnabledHere = async () => (await getPushPermission()) === 'gr
 // token current, and opens the right screen when a notification is tapped.
 export async function initPush(authToken, navigate) {
   if (!isPushSupported() || !authToken) return () => {};
-  const fm = await plugin();
   const handles = [];
 
   if (platform() === 'android') {
