@@ -7,6 +7,8 @@ export default function MatchSummaryPage() {
   const { matchId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  // In the iOS/Android app the bottom tab bar covers the bottom 70px, so the action bar sits above it.
+  const isNativeApp = !!window.Capacitor?.isNativePlatform?.();
   const [expandedSet, setExpandedSet] = useState(0); // Expand first set by default
 
   // Get data from navigation state
@@ -67,7 +69,7 @@ export default function MatchSummaryPage() {
   };
 
   return (
-    <div className="match-summary-page">
+    <div className={`match-summary-page${isNativeApp ? " native" : ""}`}>
       {/* HEADER: Match Result */}
       <div
         className={`match-result-header ${winner === "our" ? "our-win" : "their-win"}`}
@@ -229,7 +231,7 @@ export default function MatchSummaryPage() {
       </div>
 
       {/* ACTION BUTTONS */}
-      <div className="action-buttons">
+      <div className={`action-buttons${isNativeApp ? " native" : ""}`}>
         <button
           className="btn btn-primary"
           onClick={() =>

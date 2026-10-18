@@ -506,6 +506,14 @@ section h2 {
 
 /* ========== ACTION BUTTONS ========== */
 
+/* Native app: keep the buttons above the bottom tab bar, and let the page scroll clear of both. */
+.match-summary-page.native {
+  padding-bottom: calc(220px + env(safe-area-inset-bottom, 0px));
+}
+.action-buttons.native {
+  bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+}
+
 .action-buttons {
   position: fixed;
   bottom: 0;
