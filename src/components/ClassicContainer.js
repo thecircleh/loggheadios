@@ -204,8 +204,11 @@ const isCompatibleMatch =
       // Update match state with explicit mode from config
       setCurrentMatchId(config.matchId);
       const isBeachMatch = matchData.beachMode === true || (matchData.courtPlayers && matchData.courtPlayers.length === 2);
+      // Leave _id out: App's match loader only runs for a match whose settings aren't
+      // loaded yet, and it's what restores sets won, set scores and the current set.
+      const { _id, ...resumedSettings } = matchData;
       setMatchSettings({
-        ...matchData,
+        ...resumedSettings,
         mode: config.mode, // Explicitly set mode from config
         beachMode: isBeachMatch,
       });

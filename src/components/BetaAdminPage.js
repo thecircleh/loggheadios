@@ -146,6 +146,15 @@ const BetaAdminPage = ({ isMobile = false, isNative = false }) => {
   const [sendingNotif, setSendingNotif] = useState(false);
   const [notifOnlyNoEmailConsent, setNotifOnlyNoEmailConsent] = useState(true);
 
+  // Push announcement (phones). Only reaches users who turned on "News & tips".
+  const [showPushSection, setShowPushSection] = useState(false);
+  const [pushTitle, setPushTitle] = useState("");
+  const [pushBody, setPushBody] = useState("");
+  const [pushUrl, setPushUrl] = useState("/");
+  const [pushAudience, setPushAudience] = useState("all");
+  const [pushPreview, setPushPreview] = useState(null); // recipient count for the current inputs
+  const [pushBusy, setPushBusy] = useState(false);
+
   // Filters
   const [filters, setFilters] = useState({
     subscriptionStatus: "all",
@@ -607,6 +616,70 @@ const handleSendEmails = async () => {
       alert("Failed to send notification: " + (err.response?.data?.message || err.message));
     } finally {
       setSendingNotif(false);
+    }
+  };
+
+  const pushPayload = (dryRun) => ({
+    title: pushTitle.trim(),
+    body: pushBody.trim(),
+    url: pushUrl.trim() || "/",
+    audience: pushAudience,
+    userIds: pushAudience === "selected" ? [...selectedUsers] : undefined,
+    dryRun,
+  });
+
+  // Any change to the message or audience means the count must be checked again.
+  const editPush = (setter) => (e) => {
+    setter(e.target.value);
+    setPushPreview(null);
+  };
+
+  const pushAudienceLabel = {
+    selected: "the selected users",
+    all: "everyone who opted in",
+    premium: "Premium users",
+    free: "free users",
+  };
+
+  const handlePushPreview = async () => {
+    if (!pushTitle.trim() || !pushBody.trim()) {
+      alert("Please fill in both title and message.");
+      return;
+    }
+    if (pushAudience === "selected" && selectedUsers.size === 0) {
+      alert("No users selected.");
+      return;
+    }
+    setPushBusy(true);
+    try {
+      const res = await axios.post(`${API_URL}/api/push/announce`, pushPayload(true), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setPushPreview(res.data.recipients);
+    } catch (err) {
+      alert("Couldn't check recipients: " + (err.response?.data?.message || err.message));
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const handleSendPush = async () => {
+    if (!pushPreview) return;
+    if (!window.confirm(`Send "${pushTitle.trim()}" to ${pushPreview} user(s)' phones (${pushAudienceLabel[pushAudience]})? This can't be undone.`)) {
+      return;
+    }
+    setPushBusy(true);
+    try {
+      const res = await axios.post(`${API_URL}/api/push/announce`, pushPayload(false), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const d = res.data;
+      alert(`Sent to ${d.recipients || 0} user(s): ${d.sent || 0} device(s) delivered, ${d.failed || 0} failed${d.removed ? `, ${d.removed} dead token(s) removed` : ""}.`);
+      setPushPreview(null);
+    } catch (err) {
+      alert("Failed to send push: " + (err.response?.data?.message || err.message));
+    } finally {
+      setPushBusy(false);
     }
   };
 
@@ -1200,6 +1273,12 @@ const handleSendEmails = async () => {
         >
           {showNotifSection ? "Hide Notification Section" : "Send Notification to Selected"}
         </button>
+        <button
+          onClick={() => setShowPushSection(!showPushSection)}
+          style={primaryBtn("#7C3AED")}
+        >
+          {showPushSection ? "Hide Push Section" : "📣 Send Push Notification"}
+        </button>
       </div>
 
       {/* Email Section */}
@@ -1438,6 +1517,101 @@ const handleSendEmails = async () => {
           >
             {sendingNotif ? "Sending..." : "Send Notification"}
           </button>
+        </div>
+      )}
+
+      {/* Push Announcement Section */}
+      {showPushSection && (
+        <div
+          style={{
+            marginBottom: 30,
+            padding: 20,
+            backgroundColor: "#f5f3ff",
+            borderRadius: 8,
+          }}
+        >
+          <h3>📣 Push Notification</h3>
+          <p style={{ fontSize: 13, color: "#555", marginTop: 0 }}>
+            Goes to phones. Only users who turned on <b>News &amp; tips</b> in the app (and have
+            notifications on) receive it.
+          </p>
+
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ display: "block", fontWeight: "bold", marginBottom: 4 }}>
+              Audience:
+            </label>
+            <select value={pushAudience} onChange={editPush(setPushAudience)} style={selectStyle}>
+              <option value="all">Everyone who opted in</option>
+              <option value="premium">Premium only</option>
+              <option value="free">Free only</option>
+              <option value="selected">Selected users ({selectedUsers.size})</option>
+            </select>
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ display: "block", fontWeight: "bold", marginBottom: 4 }}>
+              Title ({pushTitle.length}/80):
+            </label>
+            <input
+              type="text"
+              value={pushTitle}
+              onChange={editPush(setPushTitle)}
+              maxLength={80}
+              style={{ ...inputStyle, width: "100%" }}
+              placeholder="e.g. New: Rally Insights 🏐"
+            />
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ display: "block", fontWeight: "bold", marginBottom: 4 }}>
+              Message ({pushBody.length}/300):
+            </label>
+            <textarea
+              value={pushBody}
+              onChange={editPush(setPushBody)}
+              maxLength={300}
+              rows={3}
+              style={{ ...inputStyle, width: "100%" }}
+              placeholder="Keep it short; phones show about two lines."
+            />
+          </div>
+
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontWeight: "bold", marginBottom: 4 }}>
+              Opens (in-app path):
+            </label>
+            <input
+              type="text"
+              value={pushUrl}
+              onChange={editPush(setPushUrl)}
+              style={{ ...inputStyle, width: 260 }}
+              placeholder="/"
+            />
+          </div>
+
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <button
+              onClick={handlePushPreview}
+              disabled={pushBusy}
+              style={pushBusy ? disabledBtn : primaryBtn("#6B7280")}
+            >
+              {pushBusy && pushPreview === null ? "Checking..." : "1. Check recipients"}
+            </button>
+            <button
+              onClick={handleSendPush}
+              disabled={pushBusy || !pushPreview}
+              style={pushBusy || !pushPreview ? disabledBtn : primaryBtn("#7C3AED")}
+            >
+              {pushBusy && pushPreview !== null ? "Sending..." : "2. Send push"}
+            </button>
+            {pushPreview !== null && (
+              <span style={{ fontWeight: "bold", color: pushPreview ? "#5B21B6" : "#B45309" }}>
+                {pushPreview
+                  ? `Will reach ${pushPreview} user(s) (${pushAudienceLabel[pushAudience]})`
+                  : "Nobody in this audience has opted in yet"}
+              </span>
+            )}
+          </div>
         </div>
       )}
 

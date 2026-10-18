@@ -2090,7 +2090,7 @@ const ScoreboardOverlay = ({
             </div>
 
             <div style={{ fontSize: 13, fontWeight: 700, color: "#999", marginBottom: 30 }}>
-				Sets won — {teamName}: {setEndingDecision?.newOurSets ?? ourSetsWon} | {opponentName}: {setEndingDecision?.newOpponentSetsWon ?? opponentSetsWon}
+				Sets won — {teamName}: {setEndingDecision?.newOurSets ?? ourSetsWon} | {opponentName}: {setEndingDecision?.newOpponentSets ?? opponentSetsWon}
 			</div>
 
             <button

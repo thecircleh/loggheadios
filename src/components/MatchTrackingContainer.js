@@ -160,62 +160,19 @@ const isCompatibleMatch =
   /**
    * Handle resuming an existing Match Tracking match
    */
-  const handleResumeMatch = useCallback(async (config) => {
+  const handleResumeMatch = useCallback((config) => {
     console.log('🔄 MatchTracking: Resuming match with config:', config);
-    
-    try {
-      // Fetch the full match data including all saved state
-      const response = await axios.get(`${API_URL}/api/matches/${config.matchId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        withCredentials: true,
-      });
 
-      const matchData = response.data;
-      console.log('📥 MatchTracking: Loaded resumed match data:', matchData);
-
-      // Update match state - use delay for iOS compatibility
-      setTimeout(() => {
-        setCurrentMatchId(config.matchId);
-      }, 100);
-      
-      const isBeachMatch = matchData.beachMode === true || (matchData.courtPlayers && matchData.courtPlayers.length === 2);
-      setMatchSettings((prev) => ({
-        ...prev,
-        ...matchData,
-        mode: config.mode,
-        beachMode: isBeachMatch,
-      }));
-
-      // Restore scores
-      if (setOurScore && matchData.ourScore !== undefined) {
-        setOurScore(matchData.ourScore);
-      }
-      if (setOpponentScore && matchData.opponentScore !== undefined) {
-        setOpponentScore(matchData.opponentScore);
-      }
-
-      // Restore Coach-specific state if available
-      if (setSlot5TargetId && matchData.liberoSubTargets?.slot5TargetId) {
-        setSlot5TargetId(matchData.liberoSubTargets.slot5TargetId);
-      }
-      if (setAllowedLiberoSubTarget && matchData.liberoSubTargets?.allowedLiberoSubTarget) {
-        setAllowedLiberoSubTarget(matchData.liberoSubTargets.allowedLiberoSubTarget);
-      }
-
-      console.log('✅ MatchTracking: Match resumed successfully');
-    } catch (error) {
-      console.error('❌ MatchTracking: Failed to resume match:', error);
-      alert('Failed to load match data. Please try again.');
-    }
-  }, [
-    token, 
-    setCurrentMatchId, 
-    setMatchSettings, 
-    setOurScore, 
-    setOpponentScore,
-    setSlot5TargetId,
-    setAllowedLiberoSubTarget
-  ]);
+    // App's match loader restores everything (sets won, set scores, current set, court,
+    // logs, libero targets). It skips matches whose settings are already loaded, so don't
+    // pre-fill matchSettings with this match's data here — only switch the id.
+    if (setIsSetComplete) setIsSetComplete(false);
+    setMatchSettings((prev) => ({ ...prev, mode: config.mode }));
+    // Delay for iOS state batching (same as new-match flow)
+    setTimeout(() => {
+      setCurrentMatchId(config.matchId);
+    }, 100);
+  }, [setCurrentMatchId, setMatchSettings, setIsSetComplete]);
 
   return (
     <>
@@ -231,7 +188,8 @@ const isCompatibleMatch =
       />
 
       {/* CoachCourt - only render when we have a match */}
-      {currentMatchId && matchSettings && isCompatibleMatch && (
+      {/* Wait until App has loaded this match, so the court never runs on another match's sets/score */}
+      {currentMatchId && matchSettings && isCompatibleMatch && String(matchSettings._id) === String(currentMatchId) && (
         <CoachCourt
           key={coachCourtKey}
           matchSettings={matchSettings}

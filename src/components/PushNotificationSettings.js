@@ -11,7 +11,7 @@ export default function PushNotificationSettings() {
   const { token, hasPremium } = useAuth();
   const [enabled, setEnabled] = useState(false);
   const [permission, setPermission] = useState('prompt');
-  const [prefs, setPrefs] = useState({ matchSummaries: true, dailyGame: false });
+  const [prefs, setPrefs] = useState({ matchSummaries: true, dailyGame: false, news: false });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -119,6 +119,8 @@ export default function PushNotificationSettings() {
             hasPremium ? null : 'Claimed players are a Premium feature.')}
           {row('dailyGame', '🎰 Today\'s free Brain Break game',
             'One reminder at 9 AM with the day\'s free game.')}
+          {row('news', '📣 News & tips from Loggerhead',
+            'Occasional announcements about new features. Off unless you turn it on.')}
           <button type="button" onClick={test} style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: 'var(--blue, #2563eb)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
             Send a test notification
           </button>

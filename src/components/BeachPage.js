@@ -138,7 +138,9 @@ export default function BeachPage({
         const matchData = res.data;
 
         if (setCurrentMatchId) setCurrentMatchId(config.matchId);
-        setMatchSettings({ ...matchData, mode: config.mode });
+        // Leave _id out so App's match loader still runs and restores sets won and set scores.
+        const { _id, ...resumedSettings } = matchData;
+        setMatchSettings({ ...resumedSettings, mode: config.mode });
         if (setActionLog && matchData.actionLog) setActionLog(matchData.actionLog);
         if (setCourtPlayers && matchData.courtPlayers) {
           setCourtPlayers(matchData.courtPlayers);
