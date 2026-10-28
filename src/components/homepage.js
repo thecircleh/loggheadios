@@ -61,6 +61,14 @@ const HomePage = ({ matchSettings, isMobile }) => {
       route: '/coaches-corner',
       tag: 'Premium'
     },
+    // App only: needs the phone's videos and native video tools.
+    ...(window.Capacitor?.isNativePlatform?.() ? [{
+      title: 'Stitch Game Clips',
+      icon: '🎬',
+      description: 'Filmed only the rallies? Join your clips back into one game video, in the order you filmed them.',
+      route: '/stitch',
+      tag: 'New'
+    }] : []),
     {
       title: 'FAQ & How-To',
       icon: '❓',
@@ -93,6 +101,21 @@ const HomePage = ({ matchSettings, isMobile }) => {
       fontWeight: 'bold',
       marginBottom: isMobile ? '8px' : '10px',
       textShadow: '0 2px 4px rgba(0,0,0,0.2)'
+    },
+    wordmarkPanel: {
+      display: 'inline-block',
+      maxWidth: '100%',
+      background: 'rgba(255, 255, 255, 0.95)',
+      borderRadius: isMobile ? '12px' : '16px',
+      padding: isMobile ? '10px 14px' : '12px 20px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+      boxSizing: 'border-box'
+    },
+    wordmark: {
+      display: 'block',
+      width: isMobile ? '260px' : '360px',
+      maxWidth: '100%',
+      height: 'auto'
     },
     subtitle: {
       fontSize: isMobile ? '14px' : '16px',
@@ -341,7 +364,17 @@ const HomePage = ({ matchSettings, isMobile }) => {
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Loggerhead</h1>
+        {/* App only: the new wordmark. The website keeps the text title. */}
+        {window.Capacitor?.isNativePlatform?.() ? (
+          <h1 style={styles.title}>
+            {/* The navy wordmark needs a light backing on the purple gradient. */}
+            <span style={styles.wordmarkPanel}>
+              <img src="/loggerhead-wordmark.png" alt="Loggerhead.app" style={styles.wordmark} />
+            </span>
+          </h1>
+        ) : (
+          <h1 style={styles.title}>Loggerhead</h1>
+        )}
         <p style={styles.subtitle}>Complete Volleyball Analytics Platform</p>
       </div>
 

@@ -126,13 +126,14 @@ const BottomTabBar = ({ isNative, offlinePending = 0, isOnline = true }) => {
     {
       key: "profile",
       label: "Profile",
-      paths: ["/profile", "/roi-calendar", "/recruiting", "/puzzle"],
+      paths: ["/profile", "/roi-calendar", "/recruiting", "/stitch", "/puzzle"],
       hasMenu: true,
       onPress: () => toggleMenu("profile"),
       menuItems: [
         { label: "My Profile", path: "/profile" },
         { label: "Expenses", path: "/roi-calendar" },
         { label: "Recruiting Card", path: "/recruiting" },
+        { label: "Stitch Game Clips", path: "/stitch" },
         { label: "Brain Break", path: "/puzzle" },
       ],
       icon: (active) => (

@@ -23,7 +23,7 @@ workflows:
         XCODE_SCHEME: "App"
         BUNDLE_ID: "com.loggerheadstat.app"
         REACT_APP_API_URL: "https://api.loggerhead.app"
-        APP_VERSION: "2.1.3"
+        APP_VERSION: "3.0"
       node: v22.0.0
 
     scripts:
@@ -144,6 +144,8 @@ workflows:
           /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'Loggerhead uses your microphone for voice-activated stat logging'" "$PLIST" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Add :NSSpeechRecognitionUsageDescription string 'Loggerhead uses speech recognition to log volleyball stats hands-free'" "$PLIST" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" 2>/dev/null || true
+          # Stitch Game Clips saves the joined video to Photos (picking clips needs no permission).
+          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryAddUsageDescription string 'Loggerhead saves your stitched game videos to Photos.'" "$PLIST" 2>/dev/null || true
           echo "✅ iOS permissions added to Info.plist"
 
       - name: Inject app icons and splash screen
@@ -292,7 +294,7 @@ workflows:
       vars:
         PACKAGE_NAME: "com.loggerheadstat.app"
         REACT_APP_API_URL: "https://api.loggerhead.app"
-        APP_VERSION: "2.1.3.a"
+        APP_VERSION: "3.0"
       node: v22.0.0
       java: 21
 

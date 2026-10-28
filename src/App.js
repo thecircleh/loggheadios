@@ -77,6 +77,7 @@ import RotationTrainerGame from "./components/RotationTrainerGame";
 import { initPush } from "./utils/pushNotifications";
 import { noteAppOpened, noteHappyMoment } from "./utils/appReview";
 import BrainBreakHub, { SubscriberGame } from "./components/BrainBreakHub";
+import ClipStitcherPage from "./components/ClipStitcherPage";
 
 
 // Constants
@@ -90,7 +91,7 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl(); 
 // Shown next to the logo; keep in step with APP_VERSION in codemagic.yaml.
-const APP_VERSION = "2.1.3";
+const APP_VERSION = "3.0";
 const AUTO_SAVE_DELAY = 5000;
 const PERIODIC_SAVE_INTERVAL = 300000;
 
@@ -630,10 +631,10 @@ function AppWrapper() {
 }   
   
 
-function BlogDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
+function BlogDropdown({ isOpen, onOpen, onClose, onHoverClose, onTrigger, onDismiss }) {
   return (
-    <div className="ios-nav-dropdown-wrapper dropdown-left" onMouseEnter={() => onOpen('blog')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}>
-      <a href="#" onClick={(e) => { e.preventDefault(); isOpen ? onClose() : onOpen('blog'); }} onFocus={() => onOpen('blog')} className="ios-nav-link">
+    <div className="ios-nav-dropdown-wrapper dropdown-left" onMouseEnter={() => onOpen('blog')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onDismiss(); }}>
+      <a href="#" onClick={(e) => { e.preventDefault(); onTrigger('blog'); }} onFocus={() => onOpen('blog')} className="ios-nav-link">
         Blog<span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
       </a>
       {isOpen && (
@@ -646,10 +647,10 @@ function BlogDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
   );
 }
 
-function StatDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
+function StatDropdown({ isOpen, onOpen, onClose, onHoverClose, onTrigger, onDismiss }) {
   return (
-    <div className="ios-nav-dropdown-wrapper" onMouseEnter={() => onOpen('stats')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}>
-      <a href="#" onClick={(e) => { e.preventDefault(); isOpen ? onClose() : onOpen('stats'); }} onFocus={() => onOpen('stats')} className="ios-nav-link">
+    <div className="ios-nav-dropdown-wrapper" onMouseEnter={() => onOpen('stats')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onDismiss(); }}>
+      <a href="#" onClick={(e) => { e.preventDefault(); onTrigger('stats'); }} onFocus={() => onOpen('stats')} className="ios-nav-link">
         Stats<span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
       </a>
       {isOpen && (
@@ -662,10 +663,10 @@ function StatDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
   );
 }
 
-function LoggingModeDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
+function LoggingModeDropdown({ isOpen, onOpen, onClose, onHoverClose, onTrigger, onDismiss }) {
   return (
-    <div className="ios-nav-dropdown-wrapper" onMouseEnter={() => onOpen('modes')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}>
-      <a href="#" onClick={(e) => { e.preventDefault(); isOpen ? onClose() : onOpen('modes'); }} onFocus={() => onOpen('modes')} className="ios-nav-link">
+    <div className="ios-nav-dropdown-wrapper" onMouseEnter={() => onOpen('modes')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onDismiss(); }}>
+      <a href="#" onClick={(e) => { e.preventDefault(); onTrigger('modes'); }} onFocus={() => onOpen('modes')} className="ios-nav-link">
         Logging Modes<span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
       </a>
       {isOpen && (
@@ -679,10 +680,10 @@ function LoggingModeDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
   );
 }
 
-function CoachesCornerDropdown({ isOpen, onOpen, onClose, onHoverClose }) {
+function CoachesCornerDropdown({ isOpen, onOpen, onClose, onHoverClose, onTrigger, onDismiss }) {
   return (
-    <div className="ios-nav-dropdown-wrapper dropdown-left" onMouseEnter={() => onOpen('coaches')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onClose(); }}>
-      <a href="#" onClick={(e) => { e.preventDefault(); isOpen ? onClose() : onOpen('coaches'); }} onFocus={() => onOpen('coaches')} className="ios-nav-link">
+    <div className="ios-nav-dropdown-wrapper dropdown-left" onMouseEnter={() => onOpen('coaches')} onMouseLeave={onHoverClose} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) onDismiss(); }}>
+      <a href="#" onClick={(e) => { e.preventDefault(); onTrigger('coaches'); }} onFocus={() => onOpen('coaches')} className="ios-nav-link">
         Coaches' Corner<span className={`dropdown-arrow ${isOpen ? 'open' : ''}`}>›</span>
       </a>
       {isOpen && (
@@ -808,8 +809,32 @@ const handleToggleDropdown = (name) => {
 };
 
 const handleOpenDropdown = (name) => {
+  // Phone menu opens sections on tap only (see handleTriggerDropdown);
+  // hover/focus opening there shifts the list under the finger.
+  if (showMobileMenu) return;
   clearTimeout(dropdownCloseTimer.current);
+  if (activeDropdown !== name) dropdownOpenedAt.current = Date.now();
   setActiveDropdown(name);
+};
+
+// Tapping a menu heading fires hover/focus (which open it) right before the
+// click, so ignore a "close" click that lands just after it opened.
+const dropdownOpenedAt = useRef(0);
+const handleTriggerDropdown = (name) => {
+  clearTimeout(dropdownCloseTimer.current);
+  if (activeDropdown === name && Date.now() - dropdownOpenedAt.current > 400) {
+    setActiveDropdown(null);
+  } else {
+    if (activeDropdown !== name) dropdownOpenedAt.current = Date.now();
+    setActiveDropdown(name);
+  }
+};
+
+// Close just the open sub-menu, leaving the mobile menu open.
+const dismissDropdown = () => {
+  // In the phone menu, collapsing on blur shifts the list mid-tap.
+  if (showMobileMenu) return;
+  setActiveDropdown(null);
 };
 
 const closeAllDropdowns = () => {
@@ -818,6 +843,7 @@ const closeAllDropdowns = () => {
 };
 
 const scheduleCloseDropdowns = () => {
+  if (showMobileMenu) return; // hover doesn't apply in the tap-to-open phone menu
   dropdownCloseTimer.current = setTimeout(() => setActiveDropdown(null), 150);
 };
 
@@ -4992,9 +5018,14 @@ if (location.pathname === "/match-tracking") {
                     alt="Loggerhead Logo"
                     className="ios-logo-icon"
                   />
-                  <span className="ios-app-title">
-                    Loggerhead
+                  <span className="ios-app-title" style={{ display: "flex", alignItems: "flex-end" }}>
+                    <img
+                      src="/loggerhead-wordmark.png"
+                      alt="Loggerhead.app"
+                      className="ios-wordmark"
+                    />
                     <sub
+                      className="ios-app-version-sub"
                       style={{
                         fontSize: "0.6em",
                         marginLeft: "4px",
@@ -5059,6 +5090,17 @@ if (location.pathname === "/match-tracking") {
                     }
                   `}</style>
                 </div>
+                {location.pathname !== "/login" && location.pathname !== "/register" && (
+                  <button
+                    type="button"
+                    className={`ios-menu-toggle${showMobileMenu ? " open" : ""}`}
+                    onClick={() => { setActiveDropdown(null); setShowMobileMenu((v) => !v); }}
+                    aria-label={showMobileMenu ? "Close menu" : "Open menu"}
+                    aria-expanded={showMobileMenu}
+                  >
+                    <span /><span /><span />
+                  </button>
+                )}
                 {user && location.pathname !== "/login" && location.pathname !== "/register" && (
                   <button
                     onClick={handleLogout}
@@ -5110,24 +5152,32 @@ if (location.pathname === "/match-tracking") {
       onOpen={handleOpenDropdown}
       onClose={closeAllDropdowns}
       onHoverClose={scheduleCloseDropdowns}
+      onTrigger={handleTriggerDropdown}
+      onDismiss={dismissDropdown}
     />
     <StatDropdown
       isOpen={activeDropdown === 'stats'}
       onOpen={handleOpenDropdown}
       onClose={closeAllDropdowns}
       onHoverClose={scheduleCloseDropdowns}
+      onTrigger={handleTriggerDropdown}
+      onDismiss={dismissDropdown}
     />
     <CoachesCornerDropdown
       isOpen={activeDropdown === 'coaches'}
       onOpen={handleOpenDropdown}
       onClose={closeAllDropdowns}
       onHoverClose={scheduleCloseDropdowns}
+      onTrigger={handleTriggerDropdown}
+      onDismiss={dismissDropdown}
     />
     <BlogDropdown
       isOpen={activeDropdown === 'blog'}
       onOpen={handleOpenDropdown}
       onClose={closeAllDropdowns}
       onHoverClose={scheduleCloseDropdowns}
+      onTrigger={handleTriggerDropdown}
+      onDismiss={dismissDropdown}
     />
 	<Link to="/roi-calendar" onClick={closeAllDropdowns} className="ios-nav-link">VB Expense Tracker</Link>
   </nav>
@@ -5373,6 +5423,11 @@ if (location.pathname === "/match-tracking") {
               element={<PrivateRoute><RecruitingProfilePage isNative={isNativeApp} /></PrivateRoute>}
             />
 
+            {/* Stitch Game Clips: join rally-by-rally phone videos into one (app only) */}
+            <Route
+              path="/stitch"
+              element={<PrivateRoute><ClipStitcherPage /></PrivateRoute>}
+            />
             {/* Brain Break: all games for subscribers; one free game a day for everyone else */}
             <Route
               path="/puzzle"

@@ -33,6 +33,20 @@ body {
   color: #111111;
 }
 
+.ios-wordmark {
+  height: 36px;
+  width: auto;
+  display: block;
+}
+@media (max-width: 640px) {
+  /* Fixed-ratio wordmark that can shrink on very narrow phones */
+  .ios-wordmark {
+    width: 190px;
+    max-width: 100%;
+    height: auto;
+  }
+}
+
 .ios-app-version {
   font-size: 14px;
   font-weight: 600;
@@ -291,15 +305,15 @@ body {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 1px;
-    padding: 4px 4px;
+    gap: 2px;
+    padding: 6px 8px;
     border-top: 1px solid rgba(0,0,0,0.06);
   }
 
   .ios-nav-link, .ios-nav-links a,
   .ios-nav-dropdown-wrapper button {
     font-size: 13px !important;
-    padding: 5px 7px !important;
+    padding: 6px 10px !important;
   }
 
   .ios-dropdown-menu {
@@ -307,49 +321,123 @@ body {
     right: 0;
   }
 
-  /* Row-2 dropdowns open rightward so they don't fly off the left edge */
-  .dropdown-left .ios-dropdown-menu {
-    left: 0;
-    right: auto;
-  }
-}
-
-/* Portrait mobile: compact header so game content actually fits */
-@media (max-width: 640px) and (orientation: portrait) {
+  /* --- Phone header: compact brand row + hamburger menu --- */
   .ios-header-content {
-    height: 44px;
-    padding: 0 12px;
+    height: 56px;
+    padding: 0 10px;
+    justify-content: flex-start;
+    gap: 6px;
   }
-
-  .ios-logo-icon {
-    width: 28px;
-    height: 28px;
-  }
-
-  .ios-app-title {
-    font-size: 15px;
-  }
-
-  .ios-nav-links {
-    flex-wrap: wrap;
-    gap: 1px;
-    padding: 2px 4px;
-  }
-
-  .ios-nav-link, .ios-nav-links a,
-  .ios-nav-dropdown-wrapper button {
-    font-size: 11px !important;
-    padding: 4px 6px !important;
-    white-space: nowrap;
-  }
-
-  .ios-logout-btn {
-    padding: 4px 6px !important;
-    font-size: 11px !important;
-  }
-
   .ios-logo-title {
     gap: 6px;
+    margin-right: auto;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .ios-logo-title > * {
+    flex-shrink: 0;
+  }
+  .ios-logo-title > .ios-app-title {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .ios-logo-icon {
+    width: 36px;
+    height: 36px;
+  }
+  .ios-header-content .ios-logout-btn {
+    padding: 6px 8px !important;
+    flex-shrink: 0;
+  }
+  .ios-app-version-sub {
+    display: none;
+  }
+  .ios-logout-btn { order: 1; }
+
+  .ios-menu-toggle {
+    order: 2;
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    width: 38px;
+    height: 34px;
+    padding: 0 9px;
+    background: transparent;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 8px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .ios-menu-toggle span {
+    display: block;
+    height: 2px;
+    width: 100%;
+    background: #374151;
+    border-radius: 2px;
+    transition: transform 0.2s, opacity 0.2s;
+  }
+  .ios-menu-toggle.open span:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+  .ios-menu-toggle.open span:nth-child(2) { opacity: 0; }
+  .ios-menu-toggle.open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+
+  /* Menu is hidden until the hamburger opens it */
+  .ios-nav-links {
+    display: none;
+  }
+  .ios-nav-links.visible {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 0;
+    padding: 4px 12px 10px;
+    max-height: calc(100dvh - 70px);
+    overflow-y: auto;
+  }
+  .ios-nav-links.visible > .ios-nav-link,
+  .ios-nav-links.visible > .ios-nav-dropdown-wrapper > .ios-nav-link {
+    display: flex !important;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 16px !important;
+    padding: 13px 8px !important;
+    border-radius: 0 !important;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
+  }
+  .ios-nav-links.visible .ios-nav-dropdown-wrapper {
+    display: block;
+  }
+  /* Sub-menus open inline (accordion) instead of floating off-screen */
+  .ios-nav-links.visible .ios-dropdown-menu {
+    position: static;
+    min-width: 0;
+    box-shadow: none;
+    border: none;
+    border-radius: 0;
+    background: rgba(52, 199, 89, 0.05);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    padding: 2px 0;
+  }
+  .ios-nav-links.visible .ios-dropdown-item {
+    font-size: 15px !important;
+    font-weight: 500 !important;
+    color: #1C1C1E !important;
+    padding: 11px 8px 11px 24px !important;
+    border-radius: 0 !important;
+    white-space: normal;
+  }
+  .ios-nav-links.visible .ios-dropdown-item.primary-green {
+    color: #28A745 !important;
+    font-weight: 600 !important;
+  }
+
+  /* The hide-header arrow isn't needed with the compact header */
+  .header-collapse-btn {
+    display: none;
   }
 }
 

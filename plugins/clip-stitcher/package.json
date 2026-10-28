@@ -1,0 +1,28 @@
+{
+  "name": "loggerhead-clip-stitcher",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Loggerhead's native plugin for joining video clips into one video (iOS AVFoundation, Android Media3).",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "android/src/main/",
+    "android/build.gradle",
+    "dist/",
+    "ios/Sources",
+    "Package.swift"
+  ],
+  "license": "UNLICENSED",
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  },
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    },
+    "android": {
+      "src": "android"
+    }
+  }
+}

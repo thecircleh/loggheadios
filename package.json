@@ -36,6 +36,7 @@
     "js-cookie": "^3.0.5",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
+    "loggerhead-clip-stitcher": "file:plugins/clip-stitcher",
     "react": "^18.2.0",
     "react-device-detect": "^2.2.3",
     "react-dnd": "^16.0.1",
