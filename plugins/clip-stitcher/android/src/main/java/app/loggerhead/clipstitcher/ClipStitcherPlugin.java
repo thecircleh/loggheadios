@@ -235,8 +235,9 @@ public class ClipStitcherPlugin extends Plugin {
             return;
         }
         try {
-            // Output size: the first clip's upright size, rounded down to even numbers.
-            int[] size = uprightSize(Uri.parse(ids.get(0)));
+            // Output size: the upright size most clips share (ties: the earliest), rounded down to
+            // even numbers, so moving one odd clip to the front doesn't reshape the whole game.
+            int[] size = commonSize(ids);
             ImmutableList<androidx.media3.common.Effect> videoEffects = size == null
                 ? ImmutableList.of()
                 : ImmutableList.of(Presentation.createForWidthAndHeight(size[0], size[1], Presentation.LAYOUT_SCALE_TO_FIT));
@@ -249,7 +250,12 @@ public class ClipStitcherPlugin extends Plugin {
                         .build()
                 );
             }
-            Composition composition = new Composition.Builder(new EditedMediaItemSequence(items)).build();
+            // Clips from other sources (texted, downloaded, screen recordings) may have no audio
+            // track; Transformer rejects a sequence mixing audio and no-audio items unless it
+            // can fill the gaps with silence.
+            Composition composition = new Composition.Builder(new EditedMediaItemSequence(items))
+                .experimentalSetForceAudioTrack(true)
+                .build();
 
             File output = new File(workDir(), "loggerhead-" + System.currentTimeMillis() + ".mp4");
             stitchCall = call;
@@ -275,7 +281,7 @@ public class ClipStitcherPlugin extends Plugin {
                             finishStitch();
                             //noinspection ResultOfMethodCallIgnored
                             output.delete();
-                            call.reject("Couldn't make the video: " + exception.getMessage());
+                            call.reject("Couldn't make the video (" + exception.getErrorCodeName() + "): " + exception.getMessage());
                         }
                     }
                 )
@@ -286,6 +292,28 @@ public class ClipStitcherPlugin extends Plugin {
             finishStitch();
             call.reject("Couldn't make the video: " + e.getMessage());
         }
+    }
+
+    private int[] commonSize(List<String> ids) {
+        java.util.Map<String, Integer> counts = new java.util.HashMap<>();
+        java.util.Map<String, int[]> sizes = new java.util.LinkedHashMap<>();
+        for (String id : ids) {
+            int[] size = uprightSize(Uri.parse(id));
+            if (size == null) continue;
+            String key = size[0] + "x" + size[1];
+            counts.merge(key, 1, Integer::sum);
+            sizes.putIfAbsent(key, size);
+        }
+        int[] best = null;
+        int bestCount = 0;
+        for (java.util.Map.Entry<String, int[]> e : sizes.entrySet()) { // insertion order = earliest first
+            int count = counts.get(e.getKey());
+            if (count > bestCount) {
+                best = e.getValue();
+                bestCount = count;
+            }
+        }
+        return best;
     }
 
     private int[] uprightSize(Uri uri) {

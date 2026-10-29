@@ -186,7 +186,8 @@ public class ClipStitcherPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewContro
 
         let reencode = {
             videoTrack.preferredTransform = .identity
-            let videoComposition = self.makeVideoComposition(videoTrack: videoTrack, segments: segments)
+            let videoComposition = self.makeVideoComposition(videoTrack: videoTrack, segments: segments,
+                                                             total: composition.duration)
             self.export(composition, preset: AVAssetExportPresetHighestQuality, videoComposition: videoComposition,
                         call: call, reencoded: true, onFailure: nil)
         }
@@ -212,17 +213,26 @@ public class ClipStitcherPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewContro
         return CGSize(width: abs(rect.width), height: abs(rect.height))
     }
 
-    private func makeVideoComposition(videoTrack: AVMutableCompositionTrack, segments: [Segment]) -> AVMutableVideoComposition {
-        let size = orientedSize(segments[0].track)
+    private func makeVideoComposition(videoTrack: AVMutableCompositionTrack, segments: [Segment],
+                                      total: CMTime) -> AVMutableVideoComposition {
+        let size = commonSize(segments)
         // Encoders want even dimensions.
         let render = CGSize(width: floor(size.width / 2) * 2, height: floor(size.height / 2) * 2)
-        let fps = segments[0].track.nominalFrameRate
+        // Highest clip frame rate (capped at 60), not the first clip's, so order doesn't matter.
+        let fps = segments.map { $0.track.nominalFrameRate }.max() ?? 30
         let videoComposition = AVMutableVideoComposition()
         videoComposition.renderSize = render
         videoComposition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps > 0 ? min(fps.rounded(), 60) : 30))
-        videoComposition.instructions = segments.map { segment in
+        // AVFoundation rejects the export (AVErrorInvalidVideoComposition) unless the
+        // instructions tile the WHOLE timeline exactly. Clips from different sources use
+        // different timescales, so summed durations can be a few ticks off the composition's
+        // real length; anchor the first at zero and stretch the last to the true end.
+        let last = segments.count - 1
+        videoComposition.instructions = segments.enumerated().map { index, segment in
             let instruction = AVMutableVideoCompositionInstruction()
-            instruction.timeRange = CMTimeRange(start: segment.start, duration: segment.duration)
+            let start = index == 0 ? CMTime.zero : segment.start
+            let end = index == last ? max(total, segment.start + segment.duration) : segments[index + 1].start
+            instruction.timeRange = CMTimeRange(start: start, end: end)
             let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: videoTrack)
             layer.setTransform(fitTransform(segment.track, into: render), at: segment.start)
             instruction.layerInstructions = [layer]
@@ -232,6 +242,20 @@ public class ClipStitcherPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewContro
     }
 
     /// Rotates the clip upright, scales it to fit `render`, and centres it.
+    /// The upright size most clips share (ties: the earliest), so moving one odd clip (a
+    /// screen recording, a texted video) to the front doesn't reshape the whole game.
+    private func commonSize(_ segments: [Segment]) -> CGSize {
+        var counts: [String: (size: CGSize, count: Int, first: Int)] = [:]
+        for (index, segment) in segments.enumerated() {
+            let size = orientedSize(segment.track)
+            let key = "\(Int(size.width))x\(Int(size.height))"
+            let entry = counts[key] ?? (size, 0, index)
+            counts[key] = (entry.size, entry.count + 1, entry.first)
+        }
+        let best = counts.values.max { a, b in a.count != b.count ? a.count < b.count : a.first > b.first }
+        return best?.size ?? orientedSize(segments[0].track)
+    }
+
     private func fitTransform(_ track: AVAssetTrack, into render: CGSize) -> CGAffineTransform {
         let preferred = track.preferredTransform
         let rect = CGRect(origin: .zero, size: track.naturalSize).applying(preferred)
@@ -281,10 +305,21 @@ public class ClipStitcherPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewContro
                 if let onFailure = onFailure {
                     onFailure()
                 } else {
-                    call.reject("Couldn't make the video: \(session.error?.localizedDescription ?? "unknown error")")
+                    call.reject("Couldn't make the video: \(self.describeError(session.error))")
                 }
             }
         }
+    }
+
+    /// Readable error with codes, e.g. "Operation Stopped (AVFoundationErrorDomain -11841;
+    /// underlying -12780)", so a failure report from a parent says what went wrong.
+    private func describeError(_ error: Error?) -> String {
+        guard let error = error as NSError? else { return "unknown error" }
+        var text = "\(error.localizedDescription) (\(error.domain) \(error.code)"
+        if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError {
+            text += "; underlying \(underlying.domain) \(underlying.code)"
+        }
+        return text + ")"
     }
 
     private func startProgress(_ session: AVAssetExportSession) {

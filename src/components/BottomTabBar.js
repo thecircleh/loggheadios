@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 
+const MENU_WIDTH = 230;
+
 const BottomTabBar = ({ isNative, offlinePending = 0, isOnline = true }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -201,27 +203,32 @@ const BottomTabBar = ({ isNative, offlinePending = 0, isOnline = true }) => {
         alignItems: "stretch",
         zIndex: 9000,
       }}>
-        {tabs.map((tab) => {
+        {tabs.map((tab, index) => {
           const active = isActive(tab.paths, tab.exclude);
           const menuOpen = openMenu === tab.key;
+          // Menus are positioned against the whole bar (not the tab), centred over the tab
+          // but clamped 8px inside the screen, so the right-hand tabs' menus (Profile,
+          // Coaches) don't run off the edge in portrait.
+          const tabCenter = ((index + 0.5) / tabs.length) * 100;
 
           return (
-            <div key={tab.key} style={{ flex: 1, position: "relative", display: "flex" }}>
+            <div key={tab.key} style={{ flex: 1, display: "flex" }}>
 
               {/* Popup menu — slides up above the tab */}
               {tab.hasMenu && menuOpen && (
                 <div style={{
                   position: "absolute",
                   bottom: "100%",
-                  left: "50%",
-                  transform: "translateX(-50%)",
+                  left: `clamp(8px, calc(${tabCenter}% - ${MENU_WIDTH / 2}px), calc(100% - ${MENU_WIDTH + 8}px))`,
+                  width: MENU_WIDTH,
+                  maxWidth: "calc(100% - 16px)",
+                  boxSizing: "border-box",
                   backgroundColor: "rgba(255,255,255,0.97)",
                   backdropFilter: "blur(20px)",
                   WebkitBackdropFilter: "blur(20px)",
                   borderRadius: 14,
                   boxShadow: "0 4px 24px rgba(0,0,0,0.15)",
                   border: "1px solid rgba(0,0,0,0.08)",
-                  minWidth: 190,
                   overflow: "hidden",
                   marginBottom: 8,
                   zIndex: 9001,

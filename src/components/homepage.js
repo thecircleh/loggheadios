@@ -67,7 +67,7 @@ const HomePage = ({ matchSettings, isMobile }) => {
       icon: '🎬',
       description: 'Filmed only the rallies? Join your clips back into one game video, in the order you filmed them.',
       route: '/stitch',
-      tag: 'New'
+      tag: 'Premium'
     }] : []),
     {
       title: 'FAQ & How-To',

@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Capacitor } from '@capacitor/core';
 import { Share } from '@capacitor/share';
 import { ClipStitcher } from 'loggerhead-clip-stitcher';
+import { useAuth } from './AuthContext';
 
 // Stitch Game Clips: parents film only the rallies (or only when their player is in), then
 // join the clips back into one game video here. Everything happens on the phone.
+// Premium only. There's no server call to guard, so this page check is the whole lock.
 const isNative = () => !!window.Capacitor?.isNativePlatform?.();
 const isAndroid = () => window.Capacitor?.getPlatform?.() === 'android';
 
@@ -35,6 +38,8 @@ const sortByFilmed = (list) => {
 };
 
 export default function ClipStitcherPage() {
+  const navigate = useNavigate();
+  const { isSubscriber } = useAuth();
   const [clips, setClips] = useState([]);
   const [sorted, setSorted] = useState(true); // false once the user reorders by hand
   const [loading, setLoading] = useState(false);
@@ -55,6 +60,25 @@ export default function ClipStitcherPage() {
             Joining clips works in the Loggerhead app for iPhone and Android, where your videos are.
             Open the app and find it under Profile → Stitch Game Clips.
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isSubscriber) {
+    return (
+      <div style={styles.page}>
+        <h2 style={styles.h2}>🎬 Stitch Game Clips <span style={styles.premiumTag}>Premium</span></h2>
+        <div className="card">
+          <p style={{ margin: 0, fontWeight: 700 }}>Filmed only the rallies, or only when your player was in?</p>
+          <p style={{ ...styles.lead, margin: '8px 0 0' }}>
+            Pick the clips and Loggerhead joins them back into one game video, in the order you
+            filmed them, right on your phone. Save it to Photos or share it with family.
+          </p>
+          <button type="button" className="primary-button" style={{ marginTop: 14 }}
+            onClick={() => navigate('/profile?section=subscription')}>
+            Go Premium to stitch your clips →
+          </button>
         </div>
       </div>
     );
@@ -260,6 +284,7 @@ const styles = {
     margin: '0 auto',
   },
   h2: { margin: '4px 0 6px' },
+  premiumTag: { marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#fff', background: '#7C3AED', borderRadius: 4, padding: '2px 6px', verticalAlign: 'middle' },
   lead: { margin: '0 0 14px', fontSize: 14, color: 'var(--text-muted, #6b7280)' },
   muted: { margin: '6px 0 0', fontSize: 12, color: 'var(--text-muted, #6b7280)' },
   warn: { margin: '8px 0 0', fontSize: 12, color: '#B45309' },

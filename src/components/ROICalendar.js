@@ -354,7 +354,7 @@ export default function ROICalendar() {
               <div key={line} style={{ fontSize: 14, padding: '5px 0', color: 'var(--text)' }}>{line}</div>
             ))}
           </div>
-          <button className="primary-button" onClick={() => navigate('/profile')}>Subscribe to Unlock</button>
+          <button className="primary-button" onClick={() => navigate('/profile?section=subscription')}>Subscribe to Unlock</button>
           <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 12 }}>Upgrade on your Profile page</p>
         </div>
       </div>

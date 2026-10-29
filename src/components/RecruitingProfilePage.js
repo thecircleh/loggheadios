@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useAuth } from './AuthContext';
@@ -1521,9 +1522,11 @@ const _deadCode_start = null; const _deadCode_start2 = null; if (false) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const RecruitingProfilePage = ({ isNative }) => {
-  const { token, user } = useAuth();
+  const { token, user, hasPremium } = useAuth();
+  const navigate = useNavigate();
 
-  // Feature gate lifted — Recruiting Card is now live.
+  // Premium only (claiming a player is Premium too). The server enforces the same
+  // check on every /api/roi recruiting route, so lapsed subscribers are locked out as well.
 
   const [claimedPlayers, setClaimedPlayers] = useState([]);
   const [selectedIdx, setSelectedIdx]       = useState(0);
@@ -1686,6 +1689,30 @@ const RecruitingProfilePage = ({ isNative }) => {
       setSwotLoading(false);
     }
   };
+
+  // ── Not a subscriber ────────────────────────────────────────────────────────
+  if (!hasPremium) {
+    return (
+      <div style={s.page}>
+        <div style={s.header}>
+          <h1 style={s.title}>🏐 Recruiting Card</h1>
+        </div>
+        <div style={{ ...s.card, textAlign: 'center', padding: '32px 16px' }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🎓</div>
+          <p style={{ fontSize: 16, fontWeight: 600, color: '#1C1C1E', margin: '0 0 8px' }}>
+            Recruiting Card is a Premium feature
+          </p>
+          <p style={{ fontSize: 14, color: '#8E8E93', margin: '0 0 18px', lineHeight: 1.5 }}>
+            Build a recruiting profile from your player's real match stats, with photos, a
+            shareable graphic, an AI strengths report and a PDF for college coaches.
+          </p>
+          <button className="primary-button" onClick={() => navigate('/profile?section=subscription')}>
+            Subscribe to Unlock
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // ── No claimed players ───────────────────────────────────────────────────────
   if (!loading && claimedPlayers.length === 0) {
