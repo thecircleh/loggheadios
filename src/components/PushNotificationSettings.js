@@ -74,8 +74,9 @@ export default function PushNotificationSettings() {
   const test = async () => {
     setMsg('');
     try {
-      await sendTestPush(token);
-      setMsg('Test sent — it should arrive in a few seconds.');
+      const { sent = 0, failed = 0 } = (await sendTestPush(token)) || {};
+      // Shows how many of this account's devices are signed up, e.g. a phone and a tablet.
+      setMsg(`Test sent to ${sent} device${sent === 1 ? '' : 's'}${failed ? ` (${failed} couldn't be reached)` : ''}. It should arrive in a few seconds.`);
     } catch (err) {
       setMsg(err?.response?.data?.message || 'Couldn\'t send a test notification.');
     }

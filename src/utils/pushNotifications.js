@@ -87,6 +87,14 @@ export async function initPush(authToken, navigate) {
   handles.push(await fm.addListener('tokenReceived', ({ token }) => {
     if (savedToken()) registerToken(authToken, token).catch(() => {});
   }));
+  if (platform() === 'android') {
+    // Android doesn't display a push while the app is open; show it in-app (PushBanner).
+    handles.push(await fm.addListener('notificationReceived', ({ notification }) => {
+      window.dispatchEvent(new CustomEvent('lh-push', {
+        detail: { title: notification?.title, body: notification?.body, url: notification?.data?.url },
+      }));
+    }));
+  }
   handles.push(await fm.addListener('notificationActionPerformed', ({ notification }) => {
     const url = notification?.data?.url;
     if (typeof url === 'string' && url.startsWith('/')) navigate(url);

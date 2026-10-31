@@ -301,6 +301,7 @@ const ExpressStatLogger = ({
   opponentScore,
   setOurScore,
   setOpponentScore,
+  recordRally,
   isBeachMode = false,
 }) => {
   // ========================================================================
@@ -499,6 +500,9 @@ const triggerHapticFeedback = useCallback((pattern = [50]) => {
   }
 }, []);
 
+const saveMatchDataRef = useRef(saveMatchData);
+saveMatchDataRef.current = saveMatchData;
+
 const triggerNonBlockingSave = useCallback((reason = 'action') => {
   console.log(`💾 Save triggered: ${reason}`);
   
@@ -533,6 +537,9 @@ const triggerNonBlockingSave = useCallback((reason = 'action') => {
 
 
 const performNonBlockingSave = useCallback(async () => {
+  // Read the latest saveMatchData: triggerNonBlockingSave keeps the first version of this
+  // function, and an old saveMatchData would save an old copy of the match (scores, logs).
+  const saveMatchData = saveMatchDataRef.current;
   if (!saveMatchData || saveQueueRef.current.length === 0) {
     return;
   }
@@ -552,8 +559,8 @@ const performNonBlockingSave = useCallback(async () => {
       console.error('Save error:', error);
     }
   });
-  
-}, [saveMatchData]);
+
+}, []);
 
 // Cleanup on unmount
 useEffect(() => {
@@ -4980,6 +4987,9 @@ const handlePointAwarded = useCallback((pointType) => {
   const nextOurScore = team === 'our' ? (ourScore || 0) + 1 : (ourScore || 0);
   const nextOpponentScore = team === 'opponent' ? (opponentScore || 0) + 1 : (opponentScore || 0);
 
+  // Add the rally (with its time) to the match's rally log before the score changes
+  recordRally?.(team === 'our' ? 'our' : 'opponent');
+
   setOurScore(nextOurScore);
   setOpponentScore(nextOpponentScore);
   
@@ -5029,7 +5039,8 @@ const handlePointAwarded = useCallback((pointType) => {
   token,
   addActionLogEntry,
   showActionToast,
-  triggerNonBlockingSave
+  triggerNonBlockingSave,
+  recordRally
 ]);
 
 // FIXED: Add cleanup for scoring timeout

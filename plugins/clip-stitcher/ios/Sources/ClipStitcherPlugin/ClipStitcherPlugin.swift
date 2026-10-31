@@ -28,6 +28,8 @@ public class ClipStitcherPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewContro
     ]
 
     private var pickCall: CAPPluginCall?
+    /// Overall progress of copying picked clips (includes iCloud downloads). Cancel stops it.
+    private var pickProgress: Progress?
     private var exportSession: AVAssetExportSession?
     private var progressTimer: Timer?
 
@@ -64,17 +66,35 @@ public class ClipStitcherPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewContro
         }
 
         let dir = workDir()
-        let picked = PickedClips(count: results.count)
+        let total = results.count
+        let picked = PickedClips(count: total)
         let group = DispatchGroup()
         let movie = UTType.movie.identifier
+
+        // Clips kept in iCloud download before they can be copied, which is slow on cellular.
+        // Report progress so the page can show it's working, not stuck.
+        let overall = Progress(totalUnitCount: Int64(total) * 100)
+        pickProgress = overall
+        let report: () -> Void = { [weak self] in
+            self?.notifyListeners("pickProgress", data: [
+                "done": picked.doneCount(),
+                "total": total,
+                "fraction": overall.fractionCompleted
+            ])
+        }
+        report()
 
         for (index, result) in results.enumerated() {
             let provider = result.itemProvider
             guard provider.hasItemConformingToTypeIdentifier(movie) else { continue }
             let name = provider.suggestedName ?? "Clip \(index + 1)"
             group.enter()
-            provider.loadFileRepresentation(forTypeIdentifier: movie) { url, _ in
-                defer { group.leave() }
+            let child = provider.loadFileRepresentation(forTypeIdentifier: movie) { url, _ in
+                defer {
+                    picked.markDone()
+                    report()
+                    group.leave()
+                }
                 // The system deletes `url` when this handler returns, so copy it now.
                 guard let url = url else { return }
                 let ext = url.pathExtension.isEmpty ? "mov" : url.pathExtension
@@ -84,12 +104,26 @@ public class ClipStitcherPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewContro
                     picked.set(index, url: dest, name: name)
                 } catch {}
             }
+            overall.addChild(child, withPendingUnitCount: 100)
         }
 
+        // Download progress moves between clips finishing, so also report it twice a second.
+        let ticker = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        ticker.schedule(deadline: .now() + 0.5, repeating: 0.5)
+        ticker.setEventHandler { report() }
+        ticker.resume()
+
         group.notify(queue: .global(qos: .userInitiated)) {
+            ticker.cancel()
+            let cancelled = overall.isCancelled
+            DispatchQueue.main.async { self.pickProgress = nil }
             let ok = picked.all()
             let clips = ok.map { self.describe($0.url, name: $0.name) }
-            call.resolve(["clips": clips, "failed": results.count - ok.count])
+            call.resolve([
+                "clips": clips,
+                "failed": cancelled ? 0 : total - ok.count,
+                "cancelled": cancelled
+            ])
         }
     }
 
@@ -340,7 +374,11 @@ public class ClipStitcherPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewContro
 
     @objc func cancel(_ call: CAPPluginCall) {
         exportSession?.cancelExport()
-        call.resolve()
+        DispatchQueue.main.async {
+            // Stops clips still downloading or copying; clips already loaded are kept.
+            self.pickProgress?.cancel()
+            call.resolve()
+        }
     }
 
     // MARK: - Saving and cleanup
@@ -380,9 +418,22 @@ public class ClipStitcherPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewContro
 private final class PickedClips: @unchecked Sendable {
     private let lock = NSLock()
     private var items: [(url: URL, name: String)?]
+    private var done = 0
 
     init(count: Int) {
         items = Array(repeating: nil, count: count)
+    }
+
+    func markDone() {
+        lock.lock()
+        done += 1
+        lock.unlock()
+    }
+
+    func doneCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return done
     }
 
     func set(_ index: Int, url: URL, name: String) {

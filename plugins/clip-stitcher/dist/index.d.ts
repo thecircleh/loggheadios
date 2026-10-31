@@ -24,8 +24,11 @@ export interface StitchResult {
 }
 
 export interface ClipStitcherPlugin {
-  /** Opens the system video picker (multiple selection). */
-  pickVideos(): Promise<{ clips: Clip[]; failed: number }>;
+  /**
+   * Opens the system video picker (multiple selection). Emits 'pickProgress' while picked clips
+   * load (cloud clips download first). cancel() stops loading and keeps clips already loaded.
+   */
+  pickVideos(): Promise<{ clips: Clip[]; failed: number; cancelled?: boolean }>;
   /** Joins the clips in the given order. Emits 'progress' (0..1) while working. */
   stitch(options: { ids: string[] }): Promise<StitchResult>;
   cancel(): Promise<void>;
@@ -34,6 +37,10 @@ export interface ClipStitcherPlugin {
   /** Deletes picked-clip copies and stitched videos from app storage. */
   clear(): Promise<void>;
   addListener(eventName: 'progress', listener: (e: { progress: number }) => void): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: 'pickProgress',
+    listener: (e: { done: number; total: number; fraction: number }) => void,
+  ): Promise<PluginListenerHandle>;
 }
 
 export declare const ClipStitcher: ClipStitcherPlugin;

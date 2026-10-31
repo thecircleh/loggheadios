@@ -61,6 +61,7 @@ public class ClipStitcherPlugin extends Plugin {
     private PluginCall stitchCall;
     private File stitchOutput;
     private Runnable progressPoller;
+    private volatile boolean pickCancelled = false;
 
     private File workDir() {
         File dir = new File(getContext().getCacheDir(), "clip-stitcher");
@@ -103,21 +104,39 @@ public class ClipStitcherPlugin extends Plugin {
                 uris.add(data.getData());
             }
         }
+        pickCancelled = false;
         new Thread(() -> {
             JSArray clips = new JSArray();
             int failed = 0;
+            int done = 0;
+            final int total = uris.size();
+            // Clips kept in Google Photos' cloud download when first read, which is slow on
+            // cellular. Report each clip so the page can show it's working, not stuck.
+            notifyPickProgress(0, total);
             for (Uri uri : uris) {
+                if (pickCancelled) break;
                 try {
                     clips.put(describe(uri));
                 } catch (Exception e) {
                     failed++;
                 }
+                done++;
+                notifyPickProgress(done, total);
             }
             JSObject ret = new JSObject();
             ret.put("clips", clips);
             ret.put("failed", failed);
+            ret.put("cancelled", pickCancelled && done < total);
             call.resolve(ret);
         }).start();
+    }
+
+    private void notifyPickProgress(int done, int total) {
+        JSObject progress = new JSObject();
+        progress.put("done", done);
+        progress.put("total", total);
+        progress.put("fraction", total > 0 ? (double) done / total : 0);
+        notifyListeners("pickProgress", progress);
     }
 
     private JSObject describe(Uri uri) throws Exception {
@@ -366,6 +385,8 @@ public class ClipStitcherPlugin extends Plugin {
 
     @PluginMethod
     public void cancel(PluginCall call) {
+        // Stops loading picked clips after the current one; clips already loaded are kept.
+        pickCancelled = true;
         main.post(() -> {
             if (transformer != null) {
                 PluginCall pending = stitchCall;

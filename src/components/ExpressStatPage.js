@@ -33,6 +33,7 @@ const ExpressStatPage = ({
   opponentScore,
   onOurPoint,
   onOpponentPoint,
+  recordRally,
   teamStats,
   setTeamStats,
   openEndSetDialog,
@@ -1528,6 +1529,7 @@ const orderedNumbers = React.useMemo(() => {
       {/* Express Stat Logger */}
       <DndProvider backend={HTML5Backend}>
         <ExpressStatLogger
+		  recordRally={recordRally}
 		  passGradingEnabled={passGradingEnabled}
 		  setPassGradingEnabled={setPassGradingEnabled}
 		  setDistributionTrackingEnabled={setDistributionTrackingEnabled}

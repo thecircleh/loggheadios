@@ -37,10 +37,12 @@ export default function StatBookContainer({
   setMatchSettings,
   actionLog,
   setActionLog,
+  setRallyLog,
   ourScore,
   opponentScore,
   onOurPoint,
   onOpponentPoint,
+  recordRally,
   teamStats,
   setTeamStats,
   openEndSetDialog,
@@ -137,15 +139,16 @@ const isCompatibleMatch =
       if (setOurScore) setOurScore(0);
       if (setOpponentScore) setOpponentScore(0);
 
-      // Clear action log for new match
+      // Clear action log and rally log for new match
       if (setActionLog) setActionLog([]);
+      if (setRallyLog) setRallyLog([]);
 
       console.log('✅ StatBook: New match initialized successfully');
     } catch (error) {
       console.error('❌ StatBook: Failed to initialize new match:', error);
       alert('Failed to load match data. Please try again.');
     }
-  }, [token, setCurrentMatchId, setMatch, setMatchSettings, setOurScore, setOpponentScore, setActionLog]);
+  }, [token, setCurrentMatchId, setMatch, setMatchSettings, setOurScore, setOpponentScore, setActionLog, setRallyLog]);
 
   /**
    * Handle resuming an existing Stat Book match
@@ -195,6 +198,11 @@ const isCompatibleMatch =
         setActionLog(matchData.actionLog);
       }
 
+      // Restore the rally log so the next save doesn't overwrite it with an empty one
+      if (setRallyLog) {
+        setRallyLog(Array.isArray(matchData.rallyLog) ? matchData.rallyLog : []);
+      }
+
       // Restore court players if available
       if (setCourtPlayers && matchData.courtPlayers) {
         setCourtPlayers(matchData.courtPlayers);
@@ -223,6 +231,7 @@ const isCompatibleMatch =
     setOurScore, 
     setOpponentScore, 
     setActionLog,
+    setRallyLog,
     setCourtPlayers,
     setBenchPlayers,
     setTeamStats
@@ -257,6 +266,7 @@ const isCompatibleMatch =
           opponentScore={opponentScore}
           onOurPoint={onOurPoint}
           onOpponentPoint={onOpponentPoint}
+          recordRally={recordRally}
           teamStats={teamStats}
           setTeamStats={setTeamStats}
           openEndSetDialog={openEndSetDialog}

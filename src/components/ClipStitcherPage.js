@@ -10,6 +10,8 @@ import { useAuth } from './AuthContext';
 // Premium only. There's no server call to guard, so this page check is the whole lock.
 const isNative = () => !!window.Capacitor?.isNativePlatform?.();
 const isAndroid = () => window.Capacitor?.getPlatform?.() === 'android';
+const cloudName = () => (isAndroid() ? 'Google Photos' : 'iCloud');
+const galleryName = () => (isAndroid() ? 'Google Photos' : 'Photos');
 
 const formatDuration = (ms) => {
   const total = Math.round((ms || 0) / 1000);
@@ -47,9 +49,26 @@ export default function ClipStitcherPage() {
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState(null);
   const [msg, setMsg] = useState('');
+  // While picked clips load: { done, total, fraction }. Clips in iCloud / Google Photos
+  // download first, which can take minutes on cellular, so show it's still working.
+  const [pick, setPick] = useState(null);
+  const [pickStartedAt, setPickStartedAt] = useState(0);
+  const [now, setNow] = useState(Date.now());
   const listenerRef = useRef(null);
+  const pickListenerRef = useRef(null);
 
-  useEffect(() => () => listenerRef.current?.remove?.(), []);
+  useEffect(() => () => {
+    listenerRef.current?.remove?.();
+    pickListenerRef.current?.remove?.();
+  }, []);
+
+  // Tick once a second while clips load, so the elapsed time shows the app isn't frozen.
+  const pickActive = loading && !!pick?.total;
+  useEffect(() => {
+    if (!pickActive) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [pickActive]);
 
   if (!isNative()) {
     return (
@@ -86,10 +105,27 @@ export default function ClipStitcherPage() {
 
   const addClips = async () => {
     setMsg('');
+    setPick(null);
     setLoading(true);
     try {
-      const { clips: picked = [], failed = 0 } = await ClipStitcher.pickVideos();
-      if (failed) setMsg(`${failed} clip${failed > 1 ? 's' : ''} couldn't be loaded. If they're in iCloud, wait for them to download and try again.`);
+      // The first event arrives when the picker closes; time loading from there.
+      let started = false;
+      pickListenerRef.current = await ClipStitcher.addListener('pickProgress', (p) => {
+        if (!started) {
+          started = true;
+          setPickStartedAt(Date.now());
+          setNow(Date.now());
+        }
+        setPick(p);
+      });
+      const { clips: picked = [], failed = 0, cancelled = false } = await ClipStitcher.pickVideos();
+      if (cancelled) {
+        setMsg(picked.length
+          ? `Stopped. Kept the ${picked.length} clip${picked.length > 1 ? 's' : ''} that finished loading.`
+          : 'Stopped loading clips.');
+      } else if (failed) {
+        setMsg(`${failed} clip${failed > 1 ? 's' : ''} couldn't be loaded. If they're in ${cloudName()}, open them in your ${galleryName()} app so they download, then try again.`);
+      }
       if (picked.length) {
         setResult(null);
         setClips((prev) => {
@@ -101,6 +137,9 @@ export default function ClipStitcherPage() {
     } catch (err) {
       setMsg(err?.message || "Couldn't open your videos.");
     } finally {
+      pickListenerRef.current?.remove?.();
+      pickListenerRef.current = null;
+      setPick(null);
       setLoading(false);
     }
   };
@@ -204,9 +243,39 @@ export default function ClipStitcherPage() {
         </div>
       ) : (
         <>
-          <button type="button" className="primary-button" onClick={addClips} disabled={loading || stitching}>
-            {loading ? 'Loading clips…' : clips.length ? '+ Add more clips' : 'Choose clips'}
-          </button>
+          {pickActive ? (
+            <div className="card">
+              <p style={{ margin: 0, fontWeight: 700 }}>
+                {pick.done >= pick.total
+                  ? `Preparing ${pick.total} clip${pick.total > 1 ? 's' : ''}…`
+                  : `Getting clip ${pick.done + 1} of ${pick.total}…`}
+                <span style={{ ...styles.muted, marginLeft: 8, fontWeight: 400 }}>
+                  {formatDuration(now - pickStartedAt)}
+                </span>
+              </p>
+              <div style={{ ...styles.barTrack, marginTop: 10 }}>
+                <div style={{ ...styles.barFill, width: `${Math.round(Math.max(pick.fraction || 0, pick.done / pick.total) * 100)}%` }} />
+              </div>
+              <p style={styles.muted}>
+                Clips saved in {cloudName()} download to your phone first. On cellular that can take a
+                few minutes, longer for long clips. Wi-Fi is much faster. Keep Loggerhead open; it's
+                still working.
+              </p>
+              <button type="button" onClick={() => ClipStitcher.cancel()} style={styles.link}>Cancel</button>
+            </div>
+          ) : (
+            <>
+              <button type="button" className="primary-button" onClick={addClips} disabled={loading || stitching}>
+                {loading ? 'Loading clips…' : clips.length ? '+ Add more clips' : 'Choose clips'}
+              </button>
+              {!clips.length && (
+                <p style={styles.muted}>
+                  Tip: clips saved in {cloudName()} have to download first. Use Wi-Fi if you can,
+                  since cellular can be slow.
+                </p>
+              )}
+            </>
+          )}
 
           {clips.length > 0 && (
             <div className="card" style={{ marginTop: 14 }}>

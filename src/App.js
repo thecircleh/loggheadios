@@ -67,6 +67,7 @@ import PracticePlannerPage from "./components/PracticePlannerPage";
 import PracticeLivePage from "./components/PracticeLivePage";
 import PracticeRecapPage from "./components/PracticeRecapPage";
 import BottomTabBar from "./components/BottomTabBar";
+import PushBanner from "./components/PushBanner";
 import RecruitingProfilePage from "./components/RecruitingProfilePage";
 import FlowPuzzleGame from "./components/FlowPuzzleGame";
 import TurtleHuntGame from "./components/TurtleHuntGame";
@@ -91,7 +92,7 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl(); 
 // Shown next to the logo; keep in step with APP_VERSION in codemagic.yaml.
-const APP_VERSION = "3.0";
+const APP_VERSION = "3.0.1";
 const AUTO_SAVE_DELAY = 5000;
 const PERIODIC_SAVE_INTERVAL = 300000;
 
@@ -2617,11 +2618,13 @@ const saveScoreImmediately = useCallback(async (newOurScore, newOpponentScore, r
   }
 }, [currentMatchId, token]);
 
-// Classic: record the rally (who served, who won, rotation) for Rally Insights. Rotation is
-// derived from the log itself — each rally we win on their serve is a side-out rotation — so it
-// stays right after undos. Collaborative matches are skipped: several devices score the same match.
+// Classic and Stat Book: record each rally (who served, who won, rotation, time) for Rally
+// Insights and for matching game video clips to rallies later. Rotation is derived from the log
+// itself — each rally we win on their serve is a side-out rotation — so it stays right after
+// undos. Collaborative matches are skipped: several devices score the same match.
 const recordRally = useCallback((winner) => {
-  if (location.pathname !== "/classic" || collaborativeMode) return;
+  const logsRallies = location.pathname === "/classic" || location.pathname === "/stat-book";
+  if (!logsRallies || collaborativeMode) return;
   const set = Number(matchSettings?.currentSet) || 1;
   const won = winner === "our" ? "our" : "their";
   const entry = {
@@ -5699,11 +5702,12 @@ if (location.pathname === "/match-tracking") {
       // Action and stats state
       actionLog={actionLog}
       setActionLog={setActionLog}
+      setRallyLog={setRallyLog}
       substitutionLog={substitutionLog}
       setSubstitutionLog={setSubstitutionLog}
       teamStats={teamStats}
       setTeamStats={setTeamStats}
-      
+
       // Ball state
       ballState={ballState}
       setBallState={setBallState}
@@ -5722,6 +5726,7 @@ if (location.pathname === "/match-tracking") {
       setMatchSettings={setMatchSettings}
       onOurPoint={onOurPoint}
       onOpponentPoint={onOpponentPoint}
+      recordRally={recordRally}
       processSetEnding={processSetEnding}
       openEndSetDialog={openEndSetDialog}
       handleNewMatch={handleNewMatch}
@@ -5770,6 +5775,7 @@ if (location.pathname === "/match-tracking") {
             <Route path="/reset-password/:token" element={<ResetPassword />} />
           </Routes>
         <BottomTabBar isNative={isNativeApp} isMobile={isMobile} offlinePending={offlinePending} isOnline={isOnline} />
+        {isNativeApp && <PushBanner />}
         </>
       </DndProvider>
  
