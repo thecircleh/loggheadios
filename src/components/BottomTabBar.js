@@ -136,6 +136,7 @@ const BottomTabBar = ({ isNative, offlinePending = 0, isOnline = true }) => {
         { label: "Expenses", path: "/roi-calendar" },
         { label: "Recruiting Card", path: "/recruiting" },
         { label: "Stitch Game Clips", path: "/stitch" },
+        { label: "Highlight Reel", path: "/stitch?mode=reel" },
         { label: "Brain Break", path: "/puzzle" },
       ],
       icon: (active) => (
@@ -234,8 +235,11 @@ const BottomTabBar = ({ isNative, offlinePending = 0, isOnline = true }) => {
                   zIndex: 9001,
                 }}>
                   {tab.menuItems.map((item, i) => {
-                    const itemActive = location.pathname === item.path ||
-                      location.pathname.startsWith(item.path + "/");
+                    // Items with a query (e.g. /stitch?mode=reel) match only that exact view.
+                    const itemActive = item.path.includes("?")
+                      ? location.pathname + location.search === item.path
+                      : (location.pathname === item.path && !location.search.includes("mode=reel")) ||
+                        location.pathname.startsWith(item.path + "/");
                     return (
                       <button
                         key={item.path}

@@ -668,9 +668,18 @@ const handleUndoLastStatAction = useCallback(async () => {
 
     setStatUndoStack(prev => prev.slice(0, -1));
 
+    // Mark the undone stats in the log, so highlight reels and reports skip them.
+    if (lastEntry.undoId) {
+      setActionLog(prev =>
+        prev.map(logEntry =>
+          logEntry.undoId === lastEntry.undoId ? { ...logEntry, undone: true } : logEntry
+        )
+      );
+    }
+
     addActionLogEntry(`Undid stat action: ${lastEntry.label}`, {
       type: 'stat_undo',
-      meta: { originalLabel: lastEntry.label }
+      meta: { originalLabel: lastEntry.label, undoId: lastEntry.undoId }
     });
 
     showActionToast(`Undid: ${lastEntry.label}`, 'info');
@@ -687,7 +696,8 @@ const handleUndoLastStatAction = useCallback(async () => {
   match?.teamName,
   token,
   addActionLogEntry,
-  showActionToast
+  showActionToast,
+  setActionLog
 ]);
 
   // Initialize active players based on courtPlayers
@@ -1360,10 +1370,11 @@ const logStat = useCallback(async (player, label, statKeys, actionText, options 
     undoId
   });
 
-  // Always update visible action log immediately
+  // Always update visible action log immediately. Stats logged as part of a combo (assist +
+  // kill) carry the combo's undo id, so undoing the combo marks them undone too.
   addActionLogEntry(resolvedActionText, {
     type: 'stat_log',
-    undoId,
+    undoId: undoId || options.groupUndoId || null,
     meta: { playerId: player._id, label, statKeys }
   });
 
@@ -5470,7 +5481,7 @@ const completeAssistKillSequence = useCallback(async (assistPlayer, killPlayer) 
       "Assist",
       assistStatKeys,
       `${fmtPlayer(assistPlayer)} → Assist${selectedAssistDistribution ? ` (${selectedAssistDistribution})` : ''}`,
-      { skipUndo: true }
+      { skipUndo: true, groupUndoId: comboUndoId }
     );
 
     await new Promise(resolve => setTimeout(resolve, 200));
@@ -5480,7 +5491,7 @@ const completeAssistKillSequence = useCallback(async (assistPlayer, killPlayer) 
       "Kill",
       killStatKeys,
       `${fmtPlayer(killPlayer)} → Kill`,
-      { skipUndo: true }
+      { skipUndo: true, groupUndoId: comboUndoId }
     );
 
     setStatUndoStack(prev => [

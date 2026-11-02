@@ -7,6 +7,17 @@ import android.content.ContentValues;
 import android.content.Intent;
 import android.database.Cursor;
 import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
+import androidx.media3.effect.OverlayEffect;
+import androidx.media3.effect.OverlaySettings;
+import androidx.media3.effect.TextOverlay;
+import androidx.media3.effect.TextureOverlay;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
@@ -245,10 +256,53 @@ public class ClipStitcherPlugin extends Plugin {
             call.reject("Choose at least one clip.");
             return;
         }
-        main.post(() -> startStitch(call, ids));
+        List<Part> parts = new ArrayList<>();
+        for (String id : ids) parts.add(new Part(id, -1, -1, null));
+        main.post(() -> startExport(call, parts));
     }
 
-    private void startStitch(PluginCall call, List<String> ids) {
+    /** A whole clip (start/end -1) or a cut of one, with an optional caption. */
+    private static final class Part {
+        final String id;
+        final long startMs;
+        final long endMs;
+        final String caption;
+
+        Part(String id, long startMs, long endMs, String caption) {
+            this.id = id;
+            this.startMs = startMs;
+            this.endMs = endMs;
+            this.caption = caption;
+        }
+    }
+
+    /**
+     * Highlight reel: cuts the given time ranges out of the clips, joins them in order and
+     * captions each one (e.g. "KILL · #12 Ava · Set 2").
+     */
+    @PluginMethod
+    public void makeReel(PluginCall call) {
+        final List<Part> parts = new ArrayList<>();
+        JSArray array = call.getArray("segments");
+        if (array != null) {
+            for (int i = 0; i < array.length(); i++) {
+                org.json.JSONObject item = array.optJSONObject(i);
+                if (item == null) continue;
+                String id = item.optString("id", null);
+                long start = Math.max(0, item.optLong("startMs", 0));
+                long end = item.optLong("endMs", 0);
+                if (id == null || end - start < 250) continue; // under 0.25s: skip
+                parts.add(new Part(id, start, end, item.optString("caption", "")));
+            }
+        }
+        if (parts.isEmpty()) {
+            call.reject("No plays to put in the reel.");
+            return;
+        }
+        main.post(() -> startExport(call, parts));
+    }
+
+    private void startExport(PluginCall call, List<Part> parts) {
         if (transformer != null) {
             call.reject("Already making a video.");
             return;
@@ -256,16 +310,33 @@ public class ClipStitcherPlugin extends Plugin {
         try {
             // Output size: the upright size most clips share (ties: the earliest), rounded down to
             // even numbers, so moving one odd clip to the front doesn't reshape the whole game.
+            List<String> ids = new ArrayList<>();
+            for (Part part : parts) ids.add(part.id);
             int[] size = commonSize(ids);
-            ImmutableList<androidx.media3.common.Effect> videoEffects = size == null
-                ? ImmutableList.of()
-                : ImmutableList.of(Presentation.createForWidthAndHeight(size[0], size[1], Presentation.LAYOUT_SCALE_TO_FIT));
+            int outHeight = size == null ? 1080 : size[1];
+            int outWidth = size == null ? 1920 : size[0];
 
             List<EditedMediaItem> items = new ArrayList<>();
-            for (String id : ids) {
+            for (Part part : parts) {
+                MediaItem.Builder media = new MediaItem.Builder().setUri(Uri.parse(part.id));
+                if (part.startMs >= 0 && part.endMs > part.startMs) {
+                    media.setClippingConfiguration(
+                        new MediaItem.ClippingConfiguration.Builder()
+                            .setStartPositionMs(part.startMs)
+                            .setEndPositionMs(part.endMs)
+                            .build()
+                    );
+                }
+                ImmutableList.Builder<androidx.media3.common.Effect> videoEffects = ImmutableList.builder();
+                if (size != null) {
+                    videoEffects.add(Presentation.createForWidthAndHeight(size[0], size[1], Presentation.LAYOUT_SCALE_TO_FIT));
+                }
+                if (part.caption != null && !part.caption.isEmpty()) {
+                    videoEffects.add(new OverlayEffect(ImmutableList.<TextureOverlay>of(captionOverlay(part.caption, outWidth, outHeight))));
+                }
                 items.add(
-                    new EditedMediaItem.Builder(MediaItem.fromUri(Uri.parse(id)))
-                        .setEffects(new Effects(ImmutableList.of(), videoEffects))
+                    new EditedMediaItem.Builder(media.build())
+                        .setEffects(new Effects(ImmutableList.of(), videoEffects.build()))
                         .build()
                 );
             }
@@ -311,6 +382,23 @@ public class ClipStitcherPlugin extends Plugin {
             finishStitch();
             call.reject("Couldn't make the video: " + e.getMessage());
         }
+    }
+
+    /** White bold caption on a dark band, bottom-left, sized to the video. */
+    private TextOverlay captionOverlay(String caption, int width, int height) {
+        SpannableString text = new SpannableString(" " + caption + " ");
+        int all = text.length();
+        text.setSpan(new ForegroundColorSpan(Color.WHITE), 0, all, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.setSpan(new BackgroundColorSpan(Color.argb(160, 0, 0, 0)), 0, all, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        text.setSpan(new StyleSpan(Typeface.BOLD), 0, all, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        // TextOverlay draws at a fixed size; scale it to about 5% of the short side.
+        float scale = Math.max(0.2f, Math.min(width, height) * 0.05f / TextOverlay.TEXT_SIZE_PIXELS);
+        OverlaySettings settings = new OverlaySettings.Builder()
+            .setScale(scale, scale)
+            .setBackgroundFrameAnchor(-0.92f, -0.88f) // near the bottom-left corner of the video
+            .setOverlayFrameAnchor(-1f, -1f) // pin the caption's own bottom-left corner there
+            .build();
+        return TextOverlay.createStaticTextOverlay(text, settings);
     }
 
     private int[] commonSize(List<String> ids) {

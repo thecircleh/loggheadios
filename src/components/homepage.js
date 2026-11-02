@@ -68,6 +68,12 @@ const HomePage = ({ matchSettings, isMobile }) => {
       description: 'Filmed only the rallies? Join your clips back into one game video, in the order you filmed them.',
       route: '/stitch',
       tag: 'Premium'
+    }, {
+      title: 'Highlight Reel',
+      icon: '⭐',
+      description: "Logged the match in Stat Book? Turn your player's kills, aces and blocks into one highlight video.",
+      route: '/stitch?mode=reel',
+      tag: 'Premium'
     }] : []),
     {
       title: 'FAQ & How-To',

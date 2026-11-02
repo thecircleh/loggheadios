@@ -31,6 +31,13 @@ export interface ClipStitcherPlugin {
   pickVideos(): Promise<{ clips: Clip[]; failed: number; cancelled?: boolean }>;
   /** Joins the clips in the given order. Emits 'progress' (0..1) while working. */
   stitch(options: { ids: string[] }): Promise<StitchResult>;
+  /**
+   * Highlight reel: cuts each time range out of its clip (ms from the clip's start), joins
+   * them in order and captions each one. Emits 'progress' (0..1). Always re-encodes.
+   */
+  makeReel(options: {
+    segments: { id: string; startMs: number; endMs: number; caption?: string }[];
+  }): Promise<StitchResult>;
   cancel(): Promise<void>;
   /** Saves a stitched video to Photos (iOS) or Movies/Loggerhead (Android 10+). */
   saveToGallery(options: { path: string }): Promise<void>;

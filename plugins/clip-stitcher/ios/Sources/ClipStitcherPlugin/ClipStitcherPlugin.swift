@@ -1,6 +1,7 @@
 import Foundation
 import Capacitor
 import AVFoundation
+import CoreText
 import Photos
 import PhotosUI
 import UIKit
@@ -22,6 +23,7 @@ public class ClipStitcherPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewContro
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "pickVideos", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stitch", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "makeReel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "cancel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "saveToGallery", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise)
@@ -234,6 +236,150 @@ public class ClipStitcherPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewContro
         } else {
             reencode()
         }
+    }
+
+    // MARK: - Highlight reel
+
+    private struct ReelPart {
+        let id: String
+        let startMs: Double
+        let endMs: Double
+        let caption: String
+    }
+
+    /// Cuts the given time ranges out of the clips, joins them in order and captions each one
+    /// (e.g. "KILL · #12 Ava · Set 2"). Always re-encodes, which is quick for a short reel.
+    @objc func makeReel(_ call: CAPPluginCall) {
+        let raw = call.getArray("segments", JSObject.self) ?? []
+        let parts: [ReelPart] = raw.compactMap { item in
+            guard let id = item["id"] as? String,
+                  let start = (item["startMs"] as? NSNumber)?.doubleValue,
+                  let end = (item["endMs"] as? NSNumber)?.doubleValue,
+                  end > start else { return nil }
+            return ReelPart(id: id, startMs: start, endMs: end, caption: item["caption"] as? String ?? "")
+        }
+        if parts.isEmpty {
+            call.reject("No plays to put in the reel.")
+            return
+        }
+        if exportSession != nil {
+            call.reject("Already making a video.")
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.runReel(call, parts: parts)
+        }
+    }
+
+    private func runReel(_ call: CAPPluginCall, parts: [ReelPart]) {
+        var assets: [String: AVURLAsset] = [:]
+        for part in parts where assets[part.id] == nil {
+            assets[part.id] = AVURLAsset(url: URL(fileURLWithPath: part.id))
+        }
+        if assets.values.contains(where: { $0.tracks(withMediaType: .video).isEmpty }) {
+            call.reject("One of the videos couldn't be read. Pick it again and try again.")
+            return
+        }
+
+        let composition = AVMutableComposition()
+        guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+            call.reject("Couldn't start the video.")
+            return
+        }
+        let hasAudio = assets.values.contains { !$0.tracks(withMediaType: .audio).isEmpty }
+        let audioTrack = hasAudio
+            ? composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+            : nil
+
+        var segments: [Segment] = []
+        var captions: [(text: String, start: CMTime, duration: CMTime)] = []
+        var cursor = CMTime.zero
+        do {
+            for part in parts {
+                guard let asset = assets[part.id] else { continue }
+                let source = asset.tracks(withMediaType: .video)[0]
+                let full = source.timeRange
+                let wanted = CMTimeRange(
+                    start: full.start + CMTime(seconds: max(part.startMs, 0) / 1000, preferredTimescale: 600),
+                    end: full.start + CMTime(seconds: part.endMs / 1000, preferredTimescale: 600))
+                let range = CMTimeRangeGetIntersection(wanted, otherRange: full)
+                if range.duration < CMTime(value: 1, timescale: 4) { continue } // under 0.25s: skip
+                try videoTrack.insertTimeRange(range, of: source, at: cursor)
+                if let audioTrack = audioTrack, let sourceAudio = asset.tracks(withMediaType: .audio).first {
+                    let audioRange = CMTimeRangeGetIntersection(sourceAudio.timeRange, otherRange: range)
+                    if audioRange.duration > .zero {
+                        try audioTrack.insertTimeRange(audioRange, of: sourceAudio, at: cursor + (audioRange.start - range.start))
+                    }
+                }
+                segments.append(Segment(track: source, start: cursor, duration: range.duration))
+                captions.append((part.caption, cursor, range.duration))
+                cursor = cursor + range.duration
+            }
+        } catch {
+            call.reject("Couldn't cut the plays: \(error.localizedDescription)")
+            return
+        }
+        if segments.isEmpty {
+            call.reject("None of the plays are inside your videos.")
+            return
+        }
+
+        videoTrack.preferredTransform = .identity
+        let videoComposition = makeVideoComposition(videoTrack: videoTrack, segments: segments,
+                                                    total: composition.duration)
+        if captions.contains(where: { !$0.text.isEmpty }) {
+            let render = videoComposition.renderSize
+            DispatchQueue.main.sync {
+                videoComposition.animationTool = self.captionTool(captions, render: render)
+            }
+        }
+        export(composition, preset: AVAssetExportPresetHighestQuality, videoComposition: videoComposition,
+               call: call, reencoded: true, onFailure: nil)
+    }
+
+    /// One caption per play, bottom-left, shown only during that play.
+    private func captionTool(_ captions: [(text: String, start: CMTime, duration: CMTime)],
+                             render: CGSize) -> AVVideoCompositionCoreAnimationTool {
+        let parent = CALayer()
+        parent.frame = CGRect(origin: .zero, size: render)
+        let videoLayer = CALayer()
+        videoLayer.frame = parent.frame
+        parent.addSublayer(videoLayer)
+
+        let fontSize = max(18, min(render.width, render.height) * 0.05)
+        let margin = min(render.width, render.height) * 0.04
+        let font = UIFont.boldSystemFont(ofSize: fontSize)
+        for caption in captions where !caption.text.isEmpty {
+            let text = " \(caption.text) "
+            let width = min(render.width - margin * 2,
+                            (text as NSString).size(withAttributes: [.font: font]).width + fontSize * 0.4)
+            let layer = CATextLayer()
+            layer.string = text
+            layer.font = CTFontCreateWithName(font.fontName as CFString, fontSize, nil)
+            layer.fontSize = fontSize
+            layer.foregroundColor = UIColor.white.cgColor
+            layer.alignmentMode = .center
+            layer.isWrapped = false
+            layer.truncationMode = .end
+            layer.backgroundColor = UIColor(white: 0, alpha: 0.6).cgColor
+            layer.cornerRadius = fontSize * 0.3
+            layer.contentsScale = 2
+            // Core Animation's origin is bottom-left here, so a small y sits near the bottom.
+            layer.frame = CGRect(x: margin, y: margin, width: width, height: fontSize * 1.45)
+            layer.opacity = 0
+
+            let show = CABasicAnimation(keyPath: "opacity")
+            show.fromValue = 1
+            show.toValue = 1
+            // Zero means "now" to Core Animation, so the very start needs the special constant.
+            let start = CMTimeGetSeconds(caption.start)
+            show.beginTime = start <= 0 ? AVCoreAnimationBeginTimeAtZero : start
+            show.duration = CMTimeGetSeconds(caption.duration)
+            show.isRemovedOnCompletion = true
+            layer.add(show, forKey: "show")
+            parent.addSublayer(layer)
+        }
+        return AVVideoCompositionCoreAnimationTool(postProcessingAsVideoLayer: videoLayer, in: parent)
     }
 
     private func codec(_ track: AVAssetTrack) -> FourCharCode {

@@ -9,3 +9,7 @@ build/
 
 # Shell Slide level generator resume file
 scripts/.shellslide-checkpoint.json
+
+# Local compile of the clip-stitcher plugin
+plugins/clip-stitcher/android/.gradle/
+plugins/clip-stitcher/android/build/
