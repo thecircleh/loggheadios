@@ -7,6 +7,7 @@ import { getApiUrl } from '../utils/getApiUrl';
 import {
   PLAY_TYPES, DEFAULT_TYPES, LENGTHS,
   activeStats, reelPlayers, reelPlays, placePlays, reelSegments, whyNothingPlaced, playerLabel,
+  makeAnchor, addAnchor, TAP_DELAY_MS,
 } from './reelPlays';
 import {
   useClipPicker, pickMessage, PickProgress, MakingProgress, VideoResult, formatDuration, styles,
@@ -35,6 +36,10 @@ export default function HighlightReel() {
   const [captions, setCaptions] = useState(true);
   const [clips, setClips] = useState([]);
   const [offsetSec, setOffsetSec] = useState(0);
+  // Plays lined up by hand (for matches statted from the video later). See reelPlays.js.
+  const [anchors, setAnchors] = useState([]);
+  const [finding, setFinding] = useState(null); // { play, clipId, startSec } while lining up
+  const [timelineMode, setTimelineMode] = useState('live'); // clock the line-up uses (reelPlays.js)
   const [previewIndex, setPreviewIndex] = useState(0);
   const [making, setMaking] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -86,6 +91,9 @@ export default function HighlightReel() {
       setMatch(data);
       setPlayerId(null);
       setPreviewIndex(0);
+      setAnchors([]);
+      setFinding(null);
+      setOffsetSec(0);
     } catch {
       setMsg("Couldn't open that match. Check your connection and try again.");
     } finally {
@@ -113,11 +121,33 @@ export default function HighlightReel() {
   );
   const length = LENGTHS[lengthKey];
   const { placed, missed } = useMemo(
-    () => placePlays(plays, clips, offsetSec * 1000, length),
-    [plays, clips, offsetSec, length],
+    () => placePlays(plays, clips, offsetSec * 1000, length, anchors, anchors.length ? timelineMode : 'live'),
+    [plays, clips, offsetSec, length, anchors, timelineMode],
   );
   const undated = clips.filter((c) => !c.createdAt).length;
   const preview = placed[Math.min(previewIndex, placed.length - 1)] || null;
+  const reason = placed.length || anchors.length ? '' : whyNothingPlaced(plays, clips, offsetSec * 1000);
+
+  // The parent found finding.play at markMs into clip: line every play up from it.
+  // Statted later: the stat times follow playback of the videos back to back, so line up on
+  // that timeline. Logged live: line up on real time (only the clocks differ).
+  const lineUp = (clip, markMs) => {
+    const mode = anchors.length ? timelineMode : (reason === 'later' || reason === 'earlier' ? 'watched' : 'live');
+    const next = addAnchor(anchors, makeAnchor(finding.play, clip, markMs, mode, clips));
+    const index = placePlays(plays, clips, 0, length, next, mode).placed.findIndex((p) => p.play.t === finding.play.t);
+    setTimelineMode(mode);
+    setAnchors(next);
+    setOffsetSec(0);
+    setFinding(null);
+    setPreviewIndex(Math.max(0, index));
+    setResult(null);
+  };
+
+  // Where the play itself is in the previewed stretch (the tap came a moment after it).
+  const fixPreviewPlay = () => {
+    const at = preview.startMs > 0 ? preview.startMs + length.before : preview.endMs - length.after;
+    setFinding({ play: preview.play, clipId: preview.id, startSec: Math.max(0, at - TAP_DELAY_MS) / 1000 });
+  };
 
   const toggleType = (key) => {
     setResult(null);
@@ -166,6 +196,8 @@ export default function HighlightReel() {
     setMatch(null);
     setPlayerId(null);
     setOffsetSec(0);
+    setAnchors([]);
+    setFinding(null);
     setMsg('');
   };
 
@@ -285,8 +317,35 @@ export default function HighlightReel() {
               <p style={{ margin: '10px 0 0', fontWeight: 700, color: placed.length ? '#166534' : '#B45309' }}>
                 {placed.length} of {plays.length} play{plays.length > 1 ? 's are' : ' is'} in your videos
               </p>
-              {placed.length === 0 && (
-                <p style={styles.warn}>{whyNothingPlaced(plays, clips, offsetSec * 1000)}</p>
+              {reason === 'later' && !finding && (
+                <div style={styles.lineUpBox}>
+                  <p style={{ margin: 0, fontWeight: 700 }}>Statted from the video later?</p>
+                  <p style={{ ...styles.muted, fontSize: 13 }}>
+                    These stats were logged after the videos were filmed, so their times don't match
+                    the video. Find one play in the video and Loggerhead lines up the rest.
+                  </p>
+                  <button type="button" className="primary-button" style={{ marginTop: 10 }}
+                    onClick={() => setFinding({ play: plays[0], clipId: null, startSec: 0 })}>
+                    Line up the first play
+                  </button>
+                </div>
+              )}
+              {reason === 'earlier' && !finding && (
+                <p style={styles.warn}>
+                  These videos were filmed after the match was logged. Check you picked the videos
+                  from this match, or <button type="button" style={styles.inlineLink}
+                    onClick={() => setFinding({ play: plays[0], clipId: null, startSec: 0 })}>line up a play by hand</button>.
+                </p>
+              )}
+              {reason === 'gaps' && !finding && (
+                <p style={styles.warn}>
+                  The plays fall in gaps between your clips. Try the timing slider, pick more of this
+                  match's videos, or <button type="button" style={styles.inlineLink}
+                    onClick={() => setFinding({ play: plays[0], clipId: null, startSec: 0 })}>line up a play by hand</button>.
+                </p>
+              )}
+              {placed.length === 0 && anchors.length > 0 && !finding && (
+                <p style={styles.warn}>None of the plays land inside your videos with that line-up. Try lining up the play again.</p>
               )}
               {placed.length > 0 && missed.length > 0 && (
                 <p style={styles.muted}>The other {missed.length} happened while no video was recording.</p>
@@ -297,17 +356,38 @@ export default function HighlightReel() {
                 </p>
               )}
 
-              <p style={{ ...styles.muted, marginTop: 14, fontWeight: 700 }}>
-                Timing: {offsetSec === 0 ? 'as recorded' : `${Math.abs(offsetSec)}s ${offsetSec > 0 ? 'later' : 'earlier'}`}
-              </p>
-              <input type="range" min={-60} max={60} step={1} value={offsetSec}
-                onChange={(e) => setOffsetSec(Number(e.target.value))} style={{ width: '100%' }} />
-              <p style={styles.muted}>
-                If the plays start too early or late (for example, one phone filmed and another
-                logged stats), slide until the preview shows the play.
-              </p>
+              {finding ? (
+                <FindPlay
+                  play={finding.play}
+                  clips={clips}
+                  initialClipId={finding.clipId}
+                  initialSec={finding.startSec}
+                  onDone={lineUp}
+                  onCancel={() => setFinding(null)}
+                />
+              ) : (
+                <>
+                  <p style={{ ...styles.muted, marginTop: 14, fontWeight: 700 }}>
+                    Timing: {offsetSec === 0 ? (anchors.length ? 'lined up by hand' : 'as recorded') : `${Math.abs(offsetSec)}s ${offsetSec > 0 ? 'later' : 'earlier'}`}
+                  </p>
+                  <input type="range" min={-60} max={60} step={1} value={offsetSec}
+                    onChange={(e) => setOffsetSec(Number(e.target.value))} style={{ width: '100%' }} />
+                  <p style={styles.muted}>
+                    If the plays start too early or late (for example, one phone filmed and another
+                    logged stats), slide until the preview shows the play.
+                  </p>
+                  {anchors.length > 0 && (
+                    <p style={styles.muted}>
+                      {anchors.length} play{anchors.length > 1 ? 's' : ''} lined up by hand.{' '}
+                      <button type="button" style={styles.inlineLink} onClick={() => { setAnchors([]); setPreviewIndex(0); }}>
+                        Undo line-up
+                      </button>
+                    </p>
+                  )}
+                </>
+              )}
 
-              {preview && (
+              {preview && !finding && (
                 <div style={{ marginTop: 10 }}>
                   <ReelPreview segment={preview} />
                   <div style={{ ...styles.row, alignItems: 'center', justifyContent: 'space-between' }}>
@@ -320,6 +400,11 @@ export default function HighlightReel() {
                     <button type="button" style={styles.icon} disabled={previewIndex >= placed.length - 1}
                       onClick={() => setPreviewIndex((i) => Math.min(placed.length - 1, i + 1))}>›</button>
                   </div>
+                  <p style={{ ...styles.muted, textAlign: 'center' }}>
+                    Wrong moment?{' '}
+                    <button type="button" style={styles.inlineLink} onClick={fixPreviewPlay}>Fix this play</button>
+                    {' '}— plays after it move too (handy if the stats were paused or rewound).
+                  </p>
                 </div>
               )}
 
@@ -338,6 +423,81 @@ export default function HighlightReel() {
 
       {msg && <p style={{ ...styles.muted, marginTop: 12 }}>{msg}</p>}
     </>
+  );
+}
+
+const formatClock = (ms) =>
+  new Date(ms).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+
+// Line up one play by hand: pick the video it's in, move to the moment it happens, confirm.
+function FindPlay({ play, clips, initialClipId, initialSec, onDone, onCancel }) {
+  const usable = clips.filter((c) => c.createdAt && c.durationMs).sort((a, b) => a.createdAt - b.createdAt);
+  const [clipId, setClipId] = useState(
+    usable.some((c) => c.id === initialClipId) ? initialClipId : usable[0]?.id,
+  );
+  const ref = useRef(null);
+  const clip = usable.find((c) => c.id === clipId);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (!video) return undefined;
+    const seek = () => {
+      if (clipId === initialClipId && initialSec) video.currentTime = initialSec;
+    };
+    if (video.readyState >= 1) seek();
+    video.addEventListener('loadedmetadata', seek);
+    return () => video.removeEventListener('loadedmetadata', seek);
+  }, [clipId, initialClipId, initialSec]);
+
+  const nudge = (seconds) => {
+    const video = ref.current;
+    if (video) video.currentTime = Math.max(0, video.currentTime + seconds);
+  };
+
+  if (!clip) {
+    return <p style={styles.warn}>None of your videos say when they were filmed, so plays can't be lined up.</p>;
+  }
+
+  return (
+    <div style={styles.lineUpBox}>
+      <p style={{ margin: 0, fontWeight: 700 }}>
+        Find this play: {play.what} · {play.who}{play.when ? ` · ${play.when}` : ''}
+      </p>
+      <p style={{ ...styles.muted, fontSize: 13 }}>
+        Pick the video it's in, then play or drag to the moment the ball is hit (or served, or
+        blocked) and tap "The play is here".
+      </p>
+      {usable.length > 1 && (
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '8px 0' }}>
+          {usable.map((c, i) => (
+            <button key={c.id} type="button" onClick={() => setClipId(c.id)}
+              style={{ ...styles.chip, flexShrink: 0, textAlign: 'left', ...(c.id === clipId ? styles.chipOn : null) }}>
+              Video {i + 1}
+              <div style={{ fontSize: 11, fontWeight: 400 }}>{formatClock(c.createdAt)} · {formatDuration(c.durationMs)}</div>
+            </button>
+          ))}
+        </div>
+      )}
+      <video
+        key={clip.id}
+        ref={ref}
+        src={Capacitor.convertFileSrc(clip.id)}
+        controls
+        playsInline
+        style={{ width: '100%', borderRadius: 10, background: '#000', marginTop: 6 }}
+      />
+      <div style={{ ...styles.row, justifyContent: 'center' }}>
+        <button type="button" style={{ ...styles.icon, width: 56 }} onClick={() => nudge(-1)}>−1s</button>
+        <button type="button" style={{ ...styles.icon, width: 56 }} onClick={() => nudge(-0.25)}>−¼s</button>
+        <button type="button" style={{ ...styles.icon, width: 56 }} onClick={() => nudge(0.25)}>+¼s</button>
+        <button type="button" style={{ ...styles.icon, width: 56 }} onClick={() => nudge(1)}>+1s</button>
+      </div>
+      <button type="button" className="primary-button" style={{ marginTop: 12 }}
+        onClick={() => onDone(clip, (ref.current?.currentTime || 0) * 1000)}>
+        ✓ The play is here
+      </button>
+      <button type="button" style={styles.link} onClick={onCancel}>Cancel</button>
+    </div>
   );
 }
 

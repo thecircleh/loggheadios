@@ -124,21 +124,75 @@ export function reelPlays(match, stats, player, typeKeys) {
     });
 }
 
+// Lined-up plays ("anchors"). When stats were logged later from the video, tap times don't
+// match the video's clock. The parent finds a play in the video; the difference between that
+// moment and the tap time is that play's offset. Each play uses the offset of the latest
+// anchor at or before it (plays before the first anchor use the first one), so fixing a play
+// after the statter paused or rewound also realigns everything after it.
+// The tap comes just after the play, so the marked moment of the play counts as the tap
+// time minus this much.
+export const TAP_DELAY_MS = 1500;
+
+// Two clocks a play time can map onto:
+// - 'live': stats logged while filming, so a play at T is in the clip recording at T.
+// - 'watched': stats logged later while watching the videos back to back (or the stitched
+//   game video). Playback has no gaps between clips, so the videos form one continuous
+//   timeline in filmed order, and a play maps to a position on that timeline.
+export function watchTimeline(clips) {
+  const ordered = [
+    ...clips.filter((c) => c.createdAt && c.durationMs).sort((a, b) => a.createdAt - b.createdAt),
+    ...clips.filter((c) => !c.createdAt && c.durationMs),
+  ];
+  let start = 0;
+  return ordered.map((clip) => {
+    const entry = { clip, start };
+    start += clip.durationMs;
+    return entry;
+  });
+}
+
+// Where a clip begins on the chosen clock.
+const clipBase = (clip, mode, timeline) =>
+  mode === 'watched' ? timeline.find((e) => e.clip.id === clip.id)?.start ?? 0 : clip.createdAt;
+
+export function makeAnchor(play, clip, markMs, mode = 'live', clips = []) {
+  const base = clipBase(clip, mode, mode === 'watched' ? watchTimeline(clips) : []);
+  return { t: play.t, offsetMs: base + markMs + TAP_DELAY_MS - play.t };
+}
+
+export function addAnchor(anchors, anchor) {
+  return [...anchors.filter((a) => a.t !== anchor.t), anchor].sort((a, b) => a.t - b.t);
+}
+
+export function offsetAt(anchors, t) {
+  if (!anchors.length) return 0;
+  let offset = anchors[0].offsetMs;
+  for (const a of anchors) {
+    if (a.t <= t) offset = a.offsetMs;
+    else break;
+  }
+  return offset;
+}
+
 // Finds each play in the videos. offsetMs shifts play times to the video's clock (if the
-// filming phone's clock differs from the logging phone's).
-export function placePlays(plays, clips, offsetMs, length) {
-  const timed = clips.filter((c) => c.createdAt && c.durationMs);
+// filming phone's clock differs from the logging phone's); anchors (above) come first.
+export function placePlays(plays, clips, offsetMs, length, anchors = [], mode = 'live') {
+  // [{ clip, start }] on the chosen clock
+  const spans = mode === 'watched'
+    ? watchTimeline(clips)
+    : clips.filter((c) => c.createdAt && c.durationMs).map((clip) => ({ clip, start: clip.createdAt }));
   const placed = [];
   const missed = [];
   for (const play of plays) {
-    const vt = play.t + offsetMs;
+    const vt = play.t + offsetAt(anchors, play.t) + offsetMs;
     // The tap can come a moment after the parent stopped filming.
-    const clip = timed.find((c) => vt >= c.createdAt - 1000 && vt <= c.createdAt + c.durationMs + 3000);
-    if (!clip) {
+    const span = spans.find((s) => vt >= s.start - 1000 && vt <= s.start + s.clip.durationMs + 3000);
+    if (!span) {
       missed.push(play);
       continue;
     }
-    const at = vt - clip.createdAt;
+    const clip = span.clip;
+    const at = vt - span.start;
     const startMs = Math.max(0, at - length.before);
     const endMs = Math.min(clip.durationMs, at + length.after);
     if (endMs - startMs < 500) {
@@ -150,7 +204,9 @@ export function placePlays(plays, clips, offsetMs, length) {
   return { placed, missed };
 }
 
-// Why no plays landed in the videos, if the times say why.
+// Why no plays landed in the videos: 'later' (stats logged well after filming, e.g. statted
+// from the video later), 'earlier' (videos filmed after the stats), 'gaps' (plays fall
+// between clips), or '' if there's nothing to judge.
 export function whyNothingPlaced(plays, clips, offsetMs) {
   const timed = clips.filter((c) => c.createdAt && c.durationMs);
   if (!plays.length || !timed.length) return '';
@@ -160,12 +216,10 @@ export function whyNothingPlaced(plays, clips, offsetMs) {
   const lastFilm = Math.max(...timed.map((c) => c.createdAt + c.durationMs));
   const TEN_MIN = 10 * 60 * 1000;
   if (firstPlay > lastFilm + TEN_MIN) {
-    return 'These stats were logged after the videos were filmed (for example, statted from the video later). Highlight reels need stats logged live while filming.';
+    return 'later';
   }
-  if (lastPlay < firstFilm - TEN_MIN) {
-    return 'These videos were filmed after the match was logged. Check you picked the videos from this match.';
-  }
-  return "The plays fall in gaps between your clips. Try the timing slider, or pick more of this match's videos.";
+  if (lastPlay < firstFilm - TEN_MIN) return 'earlier';
+  return 'gaps';
 }
 
 // Joins plays that overlap in the same clip (e.g. a dig then a kill in one rally).

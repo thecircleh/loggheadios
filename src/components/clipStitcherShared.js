@@ -214,4 +214,6 @@ export const styles = {
   chips: { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   listItem: { display: 'block', width: '100%', textAlign: 'left', padding: '10px 0', border: 'none', borderTop: '1px solid var(--border, #e5e7eb)', background: 'transparent', cursor: 'pointer', color: 'inherit' },
   stepTitle: { margin: '0 0 4px', fontWeight: 800, fontSize: 15 },
+  lineUpBox: { marginTop: 12, padding: 12, borderRadius: 10, border: '1px solid #c4b5fd', background: 'rgba(124,58,237,0.06)' },
+  inlineLink: { background: 'none', border: 'none', padding: 0, color: 'var(--blue, #2563eb)', fontWeight: 700, fontSize: 'inherit', cursor: 'pointer', textDecoration: 'underline' },
 };
