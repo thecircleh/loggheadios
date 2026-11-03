@@ -7,7 +7,7 @@ import { getApiUrl } from '../utils/getApiUrl';
 import {
   PLAY_TYPES, DEFAULT_TYPES, LENGTHS,
   activeStats, reelPlayers, reelPlays, placePlays, reelSegments, whyNothingPlaced, playerLabel,
-  makeAnchor, addAnchor, TAP_DELAY_MS,
+  makeAnchor, addAnchor, markerAnchors, TAP_DELAY_MS,
 } from './reelPlays';
 import {
   useClipPicker, pickMessage, PickProgress, MakingProgress, VideoResult, formatDuration, styles,
@@ -21,6 +21,9 @@ const matchDate = (m) => {
 };
 
 const isStatBook = (m) => ['statbook', 'Statbook', 'Express'].includes(m.mode);
+
+// Film a Match hands over the video it just recorded (and its match) through this key.
+export const REEL_HANDOFF_KEY = 'lh_reel_handoff';
 
 // Player highlight reel: pick a Stat Book match, a player and the kinds of plays, then the
 // videos from that match. Plays are found in the videos by time and joined into one reel.
@@ -41,6 +44,7 @@ export default function HighlightReel() {
   const [finding, setFinding] = useState(null); // { play, clipId, startSec } while lining up
   const [timelineMode, setTimelineMode] = useState('live'); // clock the line-up uses (reelPlays.js)
   const [previewIndex, setPreviewIndex] = useState(0);
+  const [recordings, setRecordings] = useState([]); // Film a Match recordings (rally markers)
   const [making, setMaking] = useState(false);
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState(null);
@@ -80,6 +84,15 @@ export default function HighlightReel() {
     return () => { cancelled = true; };
   }, [token, user?.teams]);
 
+  // Rally markers from videos filmed with Film a Match, for this match.
+  useEffect(() => {
+    setRecordings([]);
+    if (!match?._id) return;
+    axios.get(`${API_URL}/api/camera/recordings`, {
+      headers: { Authorization: `Bearer ${token}` }, params: { matchId: match._id }, timeout: 15000,
+    }).then(({ data }) => setRecordings(Array.isArray(data) ? data : [])).catch(() => {});
+  }, [match?._id, token]);
+
   const chooseMatch = async (id) => {
     setMsg('');
     setResult(null);
@@ -101,6 +114,18 @@ export default function HighlightReel() {
     }
   };
 
+  // Coming from Film a Match: start with that video and its match.
+  useEffect(() => {
+    let handoff = null;
+    try {
+      handoff = JSON.parse(sessionStorage.getItem(REEL_HANDOFF_KEY) || 'null');
+      sessionStorage.removeItem(REEL_HANDOFF_KEY);
+    } catch {}
+    if (!handoff?.clip) return;
+    setClips([handoff.clip]);
+    if (handoff.matchId) chooseMatch(handoff.matchId);
+  }, []);
+
   const stats = useMemo(() => (match ? activeStats(match.actionLog) : []), [match]);
   const players = useMemo(() => (match ? reelPlayers(match, stats) : []), [match, stats]);
   const player = players.find((p) => p.id === playerId) || null;
@@ -120,13 +145,21 @@ export default function HighlightReel() {
     [match, stats, player, types],
   );
   const length = LENGTHS[lengthKey];
+  // Rally markers line plays up exactly; lining up by hand takes over if the parent does it.
+  const autoAnchors = useMemo(
+    () => markerAnchors(match?.rallyLog, recordings, clips),
+    [match, recordings, clips],
+  );
+  const usingMarkers = !anchors.length && autoAnchors.length > 0;
   const { placed, missed } = useMemo(
-    () => placePlays(plays, clips, offsetSec * 1000, length, anchors, anchors.length ? timelineMode : 'live'),
-    [plays, clips, offsetSec, length, anchors, timelineMode],
+    () => (usingMarkers
+      ? placePlays(plays, clips, offsetSec * 1000, length, autoAnchors, 'live')
+      : placePlays(plays, clips, offsetSec * 1000, length, anchors, anchors.length ? timelineMode : 'live')),
+    [plays, clips, offsetSec, length, anchors, timelineMode, usingMarkers, autoAnchors],
   );
   const undated = clips.filter((c) => !c.createdAt).length;
   const preview = placed[Math.min(previewIndex, placed.length - 1)] || null;
-  const reason = placed.length || anchors.length ? '' : whyNothingPlaced(plays, clips, offsetSec * 1000);
+  const reason = placed.length || anchors.length || usingMarkers ? '' : whyNothingPlaced(plays, clips, offsetSec * 1000);
 
   // The parent found finding.play at markMs into clip: line every play up from it.
   // Statted later: the stat times follow playback of the videos back to back, so line up on
@@ -376,6 +409,11 @@ export default function HighlightReel() {
                     If the plays start too early or late (for example, one phone filmed and another
                     logged stats), slide until the preview shows the play.
                   </p>
+                  {usingMarkers && (
+                    <p style={{ ...styles.muted, color: '#166534', fontWeight: 700 }}>
+                      🎯 Lined up using the rally markers from Film a Match.
+                    </p>
+                  )}
                   {anchors.length > 0 && (
                     <p style={styles.muted}>
                       {anchors.length} play{anchors.length > 1 ? 's' : ''} lined up by hand.{' '}

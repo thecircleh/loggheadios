@@ -8,6 +8,7 @@ import {PlayerAssignmentModal} from './collaborative/PlayerAssignmentModal';
 import {CollaborativeStatusBar} from './collaborative/CollaborativeStatusBar';
 import { useActionManager } from './collaborative/useActionManager';
 import { useAuth } from './AuthContext';
+import { announcePlay } from '../utils/cameraLink';
  
 
 const getApiUrl = () => {
@@ -1377,6 +1378,7 @@ const logStat = useCallback(async (player, label, statKeys, actionText, options 
     undoId: undoId || options.groupUndoId || null,
     meta: { playerId: player._id, label, statKeys }
   });
+  announcePlay({ label, name: player.name, number: player.number });
 
   // Try collaborative first
   if (collaborativeMode && isCollaborativeReady()) {
@@ -1431,6 +1433,7 @@ const logStat = useCallback(async (player, label, statKeys, actionText, options 
       playerStats,
       currentMatchId,
       teamId: match?.teamName,
+      announce: false, // announced above
     });
 
     if (undoEntry) {

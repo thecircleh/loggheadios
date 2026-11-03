@@ -37,6 +37,7 @@
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
     "loggerhead-clip-stitcher": "file:plugins/clip-stitcher",
+    "loggerhead-game-camera": "file:plugins/game-camera",
     "react": "^18.2.0",
     "react-device-detect": "^2.2.3",
     "react-dnd": "^16.0.1",

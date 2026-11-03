@@ -79,6 +79,9 @@ import { initPush } from "./utils/pushNotifications";
 import { noteAppOpened, noteHappyMoment } from "./utils/appReview";
 import BrainBreakHub, { SubscriberGame } from "./components/BrainBreakHub";
 import ClipStitcherPage from "./components/ClipStitcherPage";
+import GameCameraPage from "./components/GameCameraPage";
+import CameraConnectSheet from "./components/CameraConnectSheet";
+import { useCameraScoreFeed } from "./utils/cameraLink";
 
 
 // Constants
@@ -92,7 +95,7 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl(); 
 // Shown next to the logo; keep in step with APP_VERSION in codemagic.yaml.
-const APP_VERSION = "3.0.2";
+const APP_VERSION = "4.0.0";
 const AUTO_SAVE_DELAY = 5000;
 const PERIODIC_SAVE_INTERVAL = 300000;
 
@@ -2617,6 +2620,21 @@ const saveScoreImmediately = useCallback(async (newOurScore, newOpponentScore, r
     console.error("Failed to save score:", err);
   }
 }, [currentMatchId, token]);
+
+// Film a Match: while this match has a camera code, send every score change to the
+// filming phone (works in every logging mode; see utils/cameraLink.js).
+useCameraScoreFeed({
+  token,
+  matchId: currentMatchId,
+  us: Number(ourScore) || 0,
+  them: Number(opponentScore) || 0,
+  set: Number(matchSettings?.currentSet) || (Number(ourSetsWon) || 0) + (Number(opponentSetsWon) || 0) + 1,
+  ourSets: Number(ourSetsWon) || 0,
+  oppSets: Number(opponentSetsWon) || 0,
+  serving: location.pathname === "/match-tracking" ? null : (currentServeSide === "our" ? "our" : "their"),
+  teamName: matchSettings?.teamName || "",
+  opponentName: matchSettings?.opponentName || "",
+});
 
 // Classic and Stat Book: record each rally (who served, who won, rotation, time) for Rally
 // Insights and for matching game video clips to rallies later. Rotation is derived from the log
@@ -5431,6 +5449,10 @@ if (location.pathname === "/match-tracking") {
               path="/stitch"
               element={<PrivateRoute><ClipStitcherPage /></PrivateRoute>}
             />
+            <Route
+              path="/camera"
+              element={<PrivateRoute><GameCameraPage /></PrivateRoute>}
+            />
             {/* Brain Break: all games for subscribers; one free game a day for everyone else */}
             <Route
               path="/puzzle"
@@ -5776,6 +5798,13 @@ if (location.pathname === "/match-tracking") {
           </Routes>
         <BottomTabBar isNative={isNativeApp} isMobile={isMobile} offlinePending={offlinePending} isOnline={isOnline} />
         {isNativeApp && <PushBanner />}
+        {isNativeApp && (
+          <CameraConnectSheet
+            token={token}
+            matchId={currentMatchId}
+            matchLabel={matchSettings?.teamName ? `${matchSettings.teamName} vs ${matchSettings.opponentName || "Opponent"}` : ""}
+          />
+        )}
         </>
       </DndProvider>
  

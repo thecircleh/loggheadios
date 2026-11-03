@@ -25,6 +25,17 @@ const BottomTabBar = ({ isNative, offlinePending = 0, isOnline = true }) => {
     navigate(path);
   };
 
+  // Menu items either go to a page (path) or open a sheet (event).
+  const chooseItem = (item) => {
+    if (item.event) {
+      closeMenus();
+      window.dispatchEvent(new Event(item.event));
+    } else {
+      navigateTo(item.path);
+    }
+  };
+  const onLoggingScreen = ["/stat-book", "/match-tracking", "/classic"].includes(location.pathname);
+
   const tabs = [
     {
       key: "home",
@@ -58,13 +69,15 @@ const BottomTabBar = ({ isNative, offlinePending = 0, isOnline = true }) => {
     {
       key: "log",
       label: "Log",
-      paths: ["/stat-book", "/match-tracking", "/classic"],
+      paths: ["/stat-book", "/match-tracking", "/classic", "/camera"],
       hasMenu: true,
       onPress: () => toggleMenu("log"),
       menuItems: [
         { label: "Stat Book Mode", path: "/stat-book" },
         { label: "Match Tracking Mode", path: "/match-tracking" },
         { label: "Classic Mode", path: "/classic" },
+        ...(onLoggingScreen ? [{ label: "🔗 Connect a Camera", event: "lh-camera-connect" }] : []),
+        { label: "🎥 Film a Match", path: "/camera" },
       ],
       icon: (active) => (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -236,14 +249,14 @@ const BottomTabBar = ({ isNative, offlinePending = 0, isOnline = true }) => {
                 }}>
                   {tab.menuItems.map((item, i) => {
                     // Items with a query (e.g. /stitch?mode=reel) match only that exact view.
-                    const itemActive = item.path.includes("?")
+                    const itemActive = !item.path ? false : item.path.includes("?")
                       ? location.pathname + location.search === item.path
                       : (location.pathname === item.path && !location.search.includes("mode=reel")) ||
                         location.pathname.startsWith(item.path + "/");
                     return (
                       <button
-                        key={item.path}
-                        onClick={() => navigateTo(item.path)}
+                        key={item.path || item.event}
+                        onClick={() => chooseItem(item)}
                         style={{
                           display: "block",
                           width: "100%",

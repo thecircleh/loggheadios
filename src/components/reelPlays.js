@@ -174,6 +174,27 @@ export function offsetAt(anchors, t) {
   return offset;
 }
 
+// Videos filmed with "Film a Match" come with rally markers: where in the video each point
+// arrived from the logging phone. Matching a marker to the same point in the match's rally
+// log (by set and score) gives an exact line-up for that rally, with no clock comparison.
+// A picked video is matched to its recording by length.
+export function markerAnchors(rallyLog, recordings, clips) {
+  const rallies = (rallyLog || [])
+    .map((r) => ({ ...r, ms: toMs(r.t) }))
+    .filter((r) => Number.isFinite(r.ms));
+  const anchors = [];
+  for (const clip of clips) {
+    if (!clip.createdAt || !clip.durationMs) continue;
+    const rec = (recordings || []).find((r) => Math.abs((r.durationMs || 0) - clip.durationMs) < 1500);
+    if (!rec) continue;
+    for (const m of rec.markers || []) {
+      const rally = rallies.find((r) => r.set === m.set && r.us === m.us && r.them === m.them);
+      if (rally) anchors.push({ t: rally.ms, offsetMs: clip.createdAt + m.positionMs - rally.ms });
+    }
+  }
+  return anchors.sort((a, b) => a.t - b.t);
+}
+
 // Finds each play in the videos. offsetMs shifts play times to the video's clock (if the
 // filming phone's clock differs from the logging phone's); anchors (above) come first.
 export function placePlays(plays, clips, offsetMs, length, anchors = [], mode = 'live') {

@@ -1,0 +1,436 @@
+import Foundation
+import Capacitor
+import AVFoundation
+import UIKit
+
+/// Full-screen game camera shown over the app. The web view keeps running underneath, so the
+/// live score from the logging phone keeps arriving and is shown on the camera screen.
+/// Records to the app's temporary folder; the page saves or shares the video afterwards.
+/// mark() reports where the recording is, so each point can be pinned to the video.
+///
+/// Note: the Capacitor CLI registers this plugin by the FIRST objc-name attribute in this
+/// file (the one on the class below), so never write that attribute with a name in any
+/// comment above it, and don't add other named objc attributes to this file.
+@objc(GameCameraPlugin)
+public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputRecordingDelegate {
+    public let identifier = "GameCameraPlugin"
+    public let jsName = "GameCamera"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "open", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "close", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setScoreboard", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "showPlay", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "mark", returnType: CAPPluginReturnPromise)
+    ]
+
+    private let session = AVCaptureSession()
+    private let movieOutput = AVCaptureMovieFileOutput()
+    private let sessionQueue = DispatchQueue(label: "app.loggerhead.gamecamera")
+    private var configured = false
+    private var cameraView: GameCameraView?
+    private var startedAt: Date?
+    private var closeAfterStop = false
+
+    // MARK: - Open / close
+
+    @objc func open(_ call: CAPPluginCall) {
+        AVCaptureDevice.requestAccess(for: .video) { granted in
+            guard granted else {
+                call.reject("Loggerhead needs camera access to film. Turn it on in Settings › Loggerhead.", "PERMISSION_DENIED")
+                return
+            }
+            // Sound is optional: film without it if the microphone is off.
+            AVCaptureDevice.requestAccess(for: .audio) { _ in
+                self.sessionQueue.async {
+                    if !self.configured {
+                        if let problem = self.configure() {
+                            call.reject(problem)
+                            return
+                        }
+                    }
+                    if !self.session.isRunning { self.session.startRunning() }
+                    DispatchQueue.main.async {
+                        self.showView()
+                        UIApplication.shared.isIdleTimerDisabled = true
+                        call.resolve()
+                    }
+                }
+            }
+        }
+    }
+
+    /// Back camera + microphone into a movie file. Returns a message if the camera can't start.
+    private func configure() -> String? {
+        session.beginConfiguration()
+        defer { session.commitConfiguration() }
+        if session.canSetSessionPreset(.hd1920x1080) {
+            session.sessionPreset = .hd1920x1080
+        } else {
+            session.sessionPreset = .high
+        }
+        guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+              let input = try? AVCaptureDeviceInput(device: camera),
+              session.canAddInput(input) else {
+            return "Couldn't start the camera on this phone."
+        }
+        session.addInput(input)
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
+           let mic = AVCaptureDevice.default(for: .audio),
+           let micInput = try? AVCaptureDeviceInput(device: mic),
+           session.canAddInput(micInput) {
+            session.addInput(micInput)
+        }
+        guard session.canAddOutput(movieOutput) else { return "Couldn't record on this phone." }
+        session.addOutput(movieOutput)
+        configured = true
+        return nil
+    }
+
+    private func showView() {
+        guard cameraView == nil, let host = bridge?.viewController?.view else { return }
+        let view = GameCameraView(frame: host.bounds, session: session)
+        view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.onRecordTapped = { [weak self] in self?.toggleRecording() }
+        view.onCloseTapped = { [weak self] in self?.confirmClose() }
+        view.recordedTime = { [weak self] in
+            guard let self = self, self.movieOutput.isRecording else { return nil }
+            return CMTimeGetSeconds(self.movieOutput.recordedDuration)
+        }
+        host.addSubview(view)
+        cameraView = view
+    }
+
+    @objc func close(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.closeCamera()
+            call.resolve()
+        }
+    }
+
+    private func confirmClose() {
+        guard movieOutput.isRecording else {
+            closeCamera()
+            return
+        }
+        let alert = UIAlertController(title: "Stop recording?", message: "The video so far is kept.", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Keep filming", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Stop and close", style: .destructive) { _ in self.closeCamera() })
+        bridge?.viewController?.present(alert, animated: true)
+    }
+
+    private func closeCamera() {
+        if movieOutput.isRecording {
+            // Finish the file first; the view goes when the recording is saved.
+            closeAfterStop = true
+            sessionQueue.async { self.movieOutput.stopRecording() }
+            return
+        }
+        cameraView?.stop()
+        cameraView?.removeFromSuperview()
+        cameraView = nil
+        UIApplication.shared.isIdleTimerDisabled = false
+        sessionQueue.async {
+            if self.session.isRunning { self.session.stopRunning() }
+        }
+        notifyListeners("closed", data: [:])
+    }
+
+    // MARK: - Recording
+
+    private func toggleRecording() {
+        if movieOutput.isRecording {
+            sessionQueue.async { self.movieOutput.stopRecording() }
+            return
+        }
+        let orientation = cameraView?.videoOrientation ?? .landscapeRight
+        sessionQueue.async {
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("game-camera", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent("loggerhead-game-\(Int(Date().timeIntervalSince1970 * 1000)).mov")
+            if let connection = self.movieOutput.connection(with: .video), connection.isVideoOrientationSupported {
+                connection.videoOrientation = orientation
+            }
+            self.movieOutput.startRecording(to: url, recordingDelegate: self)
+        }
+    }
+
+    public func fileOutput(_ output: AVCaptureFileOutput, didStartRecordingTo fileURL: URL, from connections: [AVCaptureConnection]) {
+        let now = Date()
+        startedAt = now
+        DispatchQueue.main.async { self.cameraView?.setRecording(true) }
+        notifyListeners("recording", data: ["state": "started", "startedAt": Int(now.timeIntervalSince1970 * 1000)])
+    }
+
+    public func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL,
+                           from connections: [AVCaptureConnection], error: Error?) {
+        // An error can still leave a playable file (e.g. the phone ran low on space).
+        let finished = (error as NSError?)?.userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool
+        let usable = error == nil || finished == true
+        let seconds = CMTimeGetSeconds(AVURLAsset(url: outputFileURL).duration)
+        var data: [String: Any] = [:]
+        if usable && FileManager.default.fileExists(atPath: outputFileURL.path) {
+            data = [
+                "state": "stopped",
+                "path": outputFileURL.path,
+                "uri": outputFileURL.absoluteString,
+                "durationMs": seconds.isFinite ? Int(seconds * 1000) : 0,
+                "startedAt": Int((startedAt ?? Date()).timeIntervalSince1970 * 1000)
+            ]
+            if let error = error { data["message"] = "Recording stopped early: \(error.localizedDescription)" }
+        } else {
+            data = ["state": "error", "message": "The recording couldn't be saved: \(error?.localizedDescription ?? "unknown error")"]
+        }
+        notifyListeners("recording", data: data)
+        DispatchQueue.main.async {
+            self.cameraView?.setRecording(false)
+            if self.closeAfterStop {
+                self.closeAfterStop = false
+                self.closeCamera()
+            }
+        }
+    }
+
+    @objc func mark(_ call: CAPPluginCall) {
+        let recording = movieOutput.isRecording
+        let seconds = recording ? CMTimeGetSeconds(movieOutput.recordedDuration) : 0
+        call.resolve([
+            "recording": recording,
+            "positionMs": seconds.isFinite ? Int(seconds * 1000) : 0
+        ])
+    }
+
+    @objc func setScoreboard(_ call: CAPPluginCall) {
+        let title = call.getString("title")
+        let subtitle = call.getString("subtitle")
+        let status = call.getString("status")
+        let connected = call.getBool("connected")
+        DispatchQueue.main.async {
+            self.cameraView?.setScoreboard(title: title, subtitle: subtitle, status: status, connected: connected)
+            call.resolve()
+        }
+    }
+
+    @objc func showPlay(_ call: CAPPluginCall) {
+        let text = call.getString("text") ?? ""
+        DispatchQueue.main.async {
+            if !text.isEmpty { self.cameraView?.showPlay(text) }
+            call.resolve()
+        }
+    }
+}
+
+/// Label with room around the text (the play banner).
+final class PaddedLabel: UILabel {
+    var insets = UIEdgeInsets(top: 5, left: 14, bottom: 5, right: 14)
+    override func drawText(in rect: CGRect) { super.drawText(in: rect.inset(by: insets)) }
+    override var intrinsicContentSize: CGSize {
+        let size = super.intrinsicContentSize
+        return CGSize(width: size.width + insets.left + insets.right, height: size.height + insets.top + insets.bottom)
+    }
+}
+
+/// The camera screen: preview, scoreboard, record button, timer, battery and free space.
+final class GameCameraView: UIView {
+    var onRecordTapped: (() -> Void)?
+    var onCloseTapped: (() -> Void)?
+    var recordedTime: (() -> Double?)?
+
+    private let previewLayer: AVCaptureVideoPreviewLayer
+    private let board = UIStackView()
+    private let titleLabel = UILabel()
+    private let subtitleLabel = UILabel()
+    private let statusLabel = UILabel()
+    private let timerLabel = UILabel()
+    private let infoLabel = UILabel()
+    private let playLabel = PaddedLabel()
+    private var playHide: DispatchWorkItem?
+    private let recordButton = UIButton(type: .custom)
+    private let recordInner = UIView()
+    private var ticker: Timer?
+    private var tickCount = 0
+
+    init(frame: CGRect, session: AVCaptureSession) {
+        previewLayer = AVCaptureVideoPreviewLayer(session: session)
+        super.init(frame: frame)
+        backgroundColor = .black
+        previewLayer.videoGravity = .resizeAspect
+        layer.addSublayer(previewLayer)
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        buildUI()
+        ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
+        tick()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    func stop() {
+        ticker?.invalidate()
+        ticker = nil
+    }
+
+    /// Matches the recording to how the screen is turned (landscape for most games).
+    var videoOrientation: AVCaptureVideoOrientation {
+        switch window?.windowScene?.interfaceOrientation ?? .landscapeRight {
+        case .portrait: return .portrait
+        case .portraitUpsideDown: return .portraitUpsideDown
+        case .landscapeLeft: return .landscapeLeft
+        default: return .landscapeRight
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        previewLayer.frame = bounds
+        if let connection = previewLayer.connection, connection.isVideoOrientationSupported {
+            connection.videoOrientation = videoOrientation
+        }
+    }
+
+    private func style(_ label: UILabel, size: CGFloat, weight: UIFont.Weight) {
+        label.font = .systemFont(ofSize: size, weight: weight)
+        label.textColor = .white
+        label.textAlignment = .center
+        label.shadowColor = UIColor.black.withAlphaComponent(0.8)
+        label.shadowOffset = CGSize(width: 0, height: 1)
+        label.isHidden = true
+    }
+
+    private func buildUI() {
+        style(titleLabel, size: 20, weight: .bold)
+        style(subtitleLabel, size: 13, weight: .regular)
+        style(statusLabel, size: 12, weight: .semibold)
+        board.axis = .vertical
+        board.alignment = .center
+        board.spacing = 2
+        board.backgroundColor = UIColor.black.withAlphaComponent(0.55)
+        board.layer.cornerRadius = 12
+        board.isLayoutMarginsRelativeArrangement = true
+        board.layoutMargins = UIEdgeInsets(top: 6, left: 14, bottom: 6, right: 14)
+        board.isHidden = true
+        [titleLabel, subtitleLabel, statusLabel].forEach { board.addArrangedSubview($0) }
+
+        playLabel.font = .systemFont(ofSize: 17, weight: .bold)
+        playLabel.textColor = UIColor(red: 0.07, green: 0.09, blue: 0.15, alpha: 1)
+        playLabel.backgroundColor = UIColor(red: 0.98, green: 0.8, blue: 0.08, alpha: 1)
+        playLabel.textAlignment = .center
+        playLabel.layer.cornerRadius = 10
+        playLabel.clipsToBounds = true
+        playLabel.alpha = 0
+
+        let close = UIButton(type: .system)
+        close.setTitle("✕", for: .normal)
+        close.titleLabel?.font = .systemFont(ofSize: 26, weight: .bold)
+        close.tintColor = .white
+        close.accessibilityLabel = "Close camera"
+        close.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+
+        timerLabel.font = .monospacedDigitSystemFont(ofSize: 16, weight: .bold)
+        timerLabel.textColor = UIColor(red: 0.97, green: 0.44, blue: 0.44, alpha: 1)
+
+        infoLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        infoLabel.textColor = .white
+        infoLabel.shadowColor = UIColor.black.withAlphaComponent(0.8)
+        infoLabel.shadowOffset = CGSize(width: 0, height: 1)
+
+        recordButton.layer.cornerRadius = 38
+        recordButton.layer.borderWidth = 5
+        recordButton.layer.borderColor = UIColor.white.cgColor
+        recordButton.accessibilityLabel = "Start recording"
+        recordButton.addTarget(self, action: #selector(recordTapped), for: .touchUpInside)
+        recordInner.backgroundColor = UIColor(red: 0.94, green: 0.27, blue: 0.27, alpha: 1)
+        recordInner.isUserInteractionEnabled = false
+        recordInner.layer.cornerRadius = 29
+        recordButton.addSubview(recordInner)
+
+        for view in [board, playLabel, close, timerLabel, infoLabel, recordButton] as [UIView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+        }
+        recordInner.translatesAutoresizingMaskIntoConstraints = false
+        let guide = safeAreaLayoutGuide
+        NSLayoutConstraint.activate([
+            board.topAnchor.constraint(equalTo: guide.topAnchor, constant: 8),
+            board.centerXAnchor.constraint(equalTo: guide.centerXAnchor),
+            board.widthAnchor.constraint(lessThanOrEqualTo: guide.widthAnchor, constant: -120),
+            playLabel.topAnchor.constraint(equalTo: board.bottomAnchor, constant: 6),
+            playLabel.centerXAnchor.constraint(equalTo: guide.centerXAnchor),
+            playLabel.widthAnchor.constraint(lessThanOrEqualTo: guide.widthAnchor, constant: -120),
+            close.topAnchor.constraint(equalTo: guide.topAnchor, constant: 4),
+            close.leadingAnchor.constraint(equalTo: guide.leadingAnchor, constant: 12),
+            close.widthAnchor.constraint(equalToConstant: 44),
+            close.heightAnchor.constraint(equalToConstant: 44),
+            recordButton.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -16),
+            recordButton.centerXAnchor.constraint(equalTo: guide.centerXAnchor),
+            recordButton.widthAnchor.constraint(equalToConstant: 76),
+            recordButton.heightAnchor.constraint(equalToConstant: 76),
+            recordInner.centerXAnchor.constraint(equalTo: recordButton.centerXAnchor),
+            recordInner.centerYAnchor.constraint(equalTo: recordButton.centerYAnchor),
+            recordInner.widthAnchor.constraint(equalToConstant: 58),
+            recordInner.heightAnchor.constraint(equalToConstant: 58),
+            timerLabel.bottomAnchor.constraint(equalTo: recordButton.topAnchor, constant: -10),
+            timerLabel.centerXAnchor.constraint(equalTo: guide.centerXAnchor),
+            infoLabel.leadingAnchor.constraint(equalTo: guide.leadingAnchor, constant: 14),
+            infoLabel.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -14),
+        ])
+    }
+
+    @objc private func closeTapped() { onCloseTapped?() }
+    @objc private func recordTapped() { onRecordTapped?() }
+
+    func setRecording(_ recording: Bool) {
+        UIView.animate(withDuration: 0.2) {
+            self.recordInner.transform = recording ? CGAffineTransform(scaleX: 0.55, y: 0.55) : .identity
+            self.recordInner.layer.cornerRadius = recording ? 12 : 29
+        }
+        recordButton.accessibilityLabel = recording ? "Stop recording" : "Start recording"
+        if !recording { timerLabel.text = "" }
+    }
+
+    func setScoreboard(title: String?, subtitle: String?, status: String?, connected: Bool?) {
+        if let title = title { titleLabel.text = title }
+        if let subtitle = subtitle { subtitleLabel.text = subtitle }
+        if let status = status { statusLabel.text = status }
+        if let connected = connected {
+            statusLabel.textColor = connected
+                ? UIColor(red: 0.29, green: 0.87, blue: 0.5, alpha: 1)
+                : UIColor(red: 0.99, green: 0.73, blue: 0.45, alpha: 1)
+        }
+        for label in [titleLabel, subtitleLabel, statusLabel] {
+            label.isHidden = (label.text ?? "").isEmpty
+        }
+        board.isHidden = titleLabel.isHidden && subtitleLabel.isHidden && statusLabel.isHidden
+    }
+
+    /// Shows the play under the scoreboard for 4 seconds.
+    func showPlay(_ text: String) {
+        playHide?.cancel()
+        playLabel.text = text
+        UIView.animate(withDuration: 0.2) { self.playLabel.alpha = 1 }
+        let hide = DispatchWorkItem { [weak self] in
+            UIView.animate(withDuration: 0.3) { self?.playLabel.alpha = 0 }
+        }
+        playHide = hide
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: hide)
+    }
+
+    private func tick() {
+        if let seconds = recordedTime?(), seconds.isFinite {
+            let s = Int(seconds)
+            timerLabel.text = String(format: "● %d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60)
+        }
+        if tickCount % 20 == 0 { infoLabel.text = deviceInfo() }
+        tickCount += 1
+    }
+
+    private func deviceInfo() -> String {
+        var parts: [String] = []
+        let level = UIDevice.current.batteryLevel
+        if level >= 0 { parts.append("🔋 \(Int(level * 100))%") }
+        if let values = try? URL(fileURLWithPath: NSHomeDirectory())
+            .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
+           let free = values.volumeAvailableCapacityForImportantUsage {
+            parts.append(String(format: "💾 %.1f GB free", Double(free) / 1e9))
+        }
+        return parts.joined(separator: "   ")
+    }
+}

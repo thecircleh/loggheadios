@@ -1,4 +1,5 @@
 import axios from "axios";
+import { announcePlay } from "../utils/cameraLink";
 
 const getApiUrl = () => {
   const h = window.location.hostname;
@@ -21,7 +22,10 @@ const logAndSyncStat = async ({
   currentMatchId,
   teamId,
   delta = 1,
+  announce = true,
 }) => {
+  // Show highlight plays on a connected game camera.
+  if (announce && delta > 0) announcePlay({ label, name: playerName });
   try {
     // ✅ Locally update playerStats (in UI)
     if (typeof setPlayerStats === 'function') {
