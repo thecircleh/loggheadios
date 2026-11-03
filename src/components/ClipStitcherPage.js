@@ -75,7 +75,10 @@ export default function ClipStitcherPage() {
 
   return (
     <div style={styles.page}>
-      <h2 style={styles.h2}>🎬 {mode === 'reel' ? 'Highlight Reel' : 'Stitch Game Clips'}</h2>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <h2 style={styles.h2}>🎬 {mode === 'reel' ? 'Highlight Reel' : 'Stitch Game Clips'}</h2>
+        <HelpButton mode={mode} />
+      </div>
       <div style={styles.tabs} role="tablist">
         <button type="button" role="tab" aria-selected={mode === 'stitch'} onClick={() => setMode('stitch')}
           style={{ ...styles.tab, ...(mode === 'stitch' ? styles.tabOn : null) }}>
@@ -92,6 +95,107 @@ export default function ClipStitcherPage() {
     </div>
   );
 }
+
+// "?" next to the title: what's going to happen, for the tab you're on.
+function HelpButton({ mode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="How this works"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        style={{ ...helpStyles.button, ...(open ? helpStyles.buttonOn : null) }}
+      >
+        ?
+      </button>
+      {open && (
+        <div role="dialog" aria-label="How this works" style={helpStyles.overlay} onClick={() => setOpen(false)}>
+          <div style={helpStyles.sheet} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0 }}>{mode === 'reel' ? 'How highlight reels work' : 'How stitching works'}</h3>
+              <button type="button" aria-label="Close" onClick={() => setOpen(false)} style={helpStyles.close}>×</button>
+            </div>
+            {mode === 'reel' ? <ReelHelp /> : <StitchHelp />}
+            <button type="button" className="primary-button" style={{ marginTop: 16 }} onClick={() => setOpen(false)}>
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function StitchHelp() {
+  return (
+    <div style={helpStyles.body}>
+      <p><strong>What it does:</strong> joins the clips you filmed at a match into one game video, right on your phone. Nothing is uploaded.</p>
+      <ol style={helpStyles.list}>
+        <li><strong>Choose clips</strong> from your camera roll. Pick them all at once; you can add more later.</li>
+        <li>Loggerhead puts them <strong>in the order you filmed them</strong> and shows the gap between each one. Use the arrows to move a clip, or × to drop one.</li>
+        <li>Tap <strong>Stitch</strong>. Clips from one phone join in seconds. Mixed sizes or phones take longer because each clip is re-made to fit.</li>
+        <li><strong>Save</strong> it to your phone or <strong>Share</strong> it with family and coaches.</li>
+      </ol>
+      <p style={helpStyles.tipTitle}>Good to know</p>
+      <ul style={helpStyles.list}>
+        <li>Clips saved in {cloudName()} download first. That can take a few minutes on cellular; Wi-Fi is much faster. The screen shows progress, and you can cancel.</li>
+        <li>Clips that were texted, downloaded or screen-recorded may not say when they were filmed. They go at the end; move them with the arrows.</li>
+        <li>Keep Loggerhead open while it's working.</li>
+      </ul>
+    </div>
+  );
+}
+
+function ReelHelp() {
+  return (
+    <div style={helpStyles.body}>
+      <p><strong>What it does:</strong> finds one player's big plays in your match videos and joins just those plays into a short reel, ready for family or recruiting coaches.</p>
+      <p><strong>What you need:</strong> a match logged in <strong>Stat Book</strong> (it records who made each play and when), and the videos you filmed at that match.</p>
+      <ol style={helpStyles.list}>
+        <li><strong>Pick the match</strong>, then <strong>the player</strong>. The number by each name is how many highlight plays they have.</li>
+        <li><strong>Pick the plays</strong>: kills, aces and blocks to start; add digs, assists or perfect passes if you like. Choose how long each play runs and whether to caption it (for example "KILL · #12 Ava · Set 2 · 18–16").</li>
+        <li><strong>Choose the videos</strong> from that match. Loggerhead tells you how many plays it found in them.</li>
+        <li><strong>Check the preview.</strong> Step through the plays to make sure each one shows the right moment.</li>
+        <li>Tap <strong>Make reel</strong>, then Save or Share.</li>
+      </ol>
+      <p style={helpStyles.tipTitle}>How Loggerhead finds each play</p>
+      <ul style={helpStyles.list}>
+        <li><strong>Stats logged live while filming:</strong> each stat has the time it was tapped, and each video knows when it was filmed, so plays line up on their own. If one phone filmed and another logged, their clocks can be a few seconds apart; use the timing slider.</li>
+        <li><strong>Statted later from the video</strong> (later that day or the next): the tap times don't match the video. Loggerhead notices and asks you to <strong>line up the first play</strong>: find it in the video, stop on the moment the ball is hit, and tap "The play is here". The rest line up from that one.</li>
+        <li><strong>Paused or rewound while statting?</strong> Later plays can drift. Use <strong>Fix this play</strong> on the first one that's off; every play after it moves too.</li>
+      </ul>
+      <p style={helpStyles.tipTitle}>Good to know</p>
+      <ul style={helpStyles.list}>
+        <li>Plays that happened while nobody was filming can't be included; Loggerhead tells you how many.</li>
+        <li>Undone stats are left out.</li>
+        <li>Match Tracking and Classic don't record who made each play, so reels use Stat Book matches.</li>
+      </ul>
+    </div>
+  );
+}
+
+const helpStyles = {
+  button: {
+    width: 32, height: 32, borderRadius: '50%', border: '2px solid #7C3AED', background: 'transparent',
+    color: '#7C3AED', fontWeight: 800, fontSize: 16, flexShrink: 0, cursor: 'pointer', lineHeight: 1,
+  },
+  buttonOn: { background: '#7C3AED', color: '#fff' },
+  overlay: {
+    position: 'fixed', inset: 0, zIndex: 10001, background: 'rgba(0,0,0,0.45)',
+    display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+  },
+  sheet: {
+    background: 'var(--card-bg, #fff)', color: 'inherit', width: '100%', maxWidth: 560, maxHeight: '85vh',
+    overflowY: 'auto', borderRadius: '16px 16px 0 0', padding: '18px 18px calc(18px + env(safe-area-inset-bottom))',
+    boxShadow: '0 -8px 30px rgba(0,0,0,0.25)',
+  },
+  close: { background: 'none', border: 'none', fontSize: 26, lineHeight: 1, cursor: 'pointer', color: 'inherit', padding: 0 },
+  body: { fontSize: 14, lineHeight: 1.5 },
+  list: { paddingLeft: 20, margin: '6px 0 0' },
+  tipTitle: { fontWeight: 800, margin: '14px 0 0' },
+};
 
 function StitchClips() {
   const [clips, setClips] = useState([]);
