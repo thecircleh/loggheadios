@@ -54,7 +54,28 @@ export default function GameCameraPage() {
   const [msg, setMsg] = useState('');
   const [streamTarget, setStreamTarget] = useState(loadStreamTarget);
   const [showKey, setShowKey] = useState(false);
+  const [phoneKeyOpen, setPhoneKeyOpen] = useState(false);
   const [live, setLive] = useState(null); // { state, message }
+  const [accountKeys, setAccountKeys] = useState({}); // keys saved on the website: { youtube: { last4 } }
+
+  // Stream keys saved from the website (Profile › Live streaming), so nobody types them here.
+  useEffect(() => {
+    if (!isSubscriber || !token || !isNative()) return undefined;
+    let cancelled = false;
+    const load = () => {
+      axios.get(`${API_URL}/api/camera/stream-keys`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 })
+        .then(({ data }) => { if (!cancelled) setAccountKeys(data || {}); })
+        .catch(() => {});
+    };
+    load();
+    // Check again when they come back from saving the key on their computer.
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [isSubscriber, token]);
 
   const socketRef = useRef(null);
   const linkRef = useRef(null);
@@ -202,16 +223,30 @@ export default function GameCameraPage() {
     ? streamTarget.url.trim()
     : STREAM_TARGETS[streamTarget.platform]?.url || '';
   const streaming = streamTarget.on;
+  const savedKey = accountKeys[streamTarget.platform]; // { last4 } when saved on the website
 
   const openCamera = async () => {
     setMsg('');
     setLive(null);
-    if (streaming && (!streamTarget.key.trim() || !streamUrl)) {
-      setMsg(streamUrl ? 'Paste your stream key first.' : 'Enter the stream server URL first.');
+    let key = streamTarget.key.trim();
+    if (streaming && !key && savedKey) {
+      try {
+        const { data } = await axios.get(`${API_URL}/api/camera/stream-keys/${streamTarget.platform}`,
+          { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+        key = data.key || '';
+      } catch (err) {
+        setMsg(err?.response?.data?.message || "Couldn't get your saved stream key. Check your connection.");
+        return;
+      }
+    }
+    if (streaming && (!key || !streamUrl)) {
+      setMsg(streamUrl
+        ? 'Add your stream key first: on your computer, save it at ui.loggerhead.app/profile › Live streaming.'
+        : 'Enter the stream server URL first.');
       return;
     }
     try {
-      await GameCamera.open(streaming ? { stream: { url: streamUrl, key: streamTarget.key.trim() } } : undefined);
+      await GameCamera.open(streaming ? { stream: { url: streamUrl, key } } : undefined);
       setCameraOpen(true);
     } catch (err) {
       setMsg(err?.message || "Couldn't open the camera.");
@@ -371,38 +406,86 @@ export default function GameCameraPage() {
                 </button>
               ))}
             </div>
-            {streamTarget.platform === 'youtube' && (
-              <p style={{ ...styles.muted, fontSize: 12 }}>
-                In <strong>YouTube Studio</strong>: Create › Go live › Stream, then copy the <strong>Stream key</strong>.
-                The first time, YouTube can take up to 24 hours to turn on live streaming for a channel.
-                Choose <strong>Unlisted</strong> so only people with the link can watch, a good choice for kids' games.
-              </p>
+            {streamTarget.platform !== 'other' && savedKey && (
+              <>
+                <p style={{ ...styles.muted, fontSize: 13, color: '#166534', fontWeight: 700, margin: '10px 0 0' }}>
+                  ✓ Using the {STREAM_TARGETS[streamTarget.platform].label} key saved on your account (ends in {savedKey.last4}).
+                  {streamTarget.key.trim() ? ' The key pasted on this phone replaces it here.' : ''}
+                </p>
+                {streamTarget.platform === 'youtube' && (
+                  <p style={{ ...styles.muted, fontSize: 12 }}>
+                    Game day: tap the red button on the camera. YouTube starts the stream by itself within about
+                    30 seconds; share the watch link from YouTube Studio.
+                  </p>
+                )}
+                {streamTarget.platform === 'facebook' && (
+                  <p style={{ ...styles.muted, fontSize: 12 }}>
+                    Game day: on your computer (or a phone browser), open <strong>facebook.com/live/create</strong>,
+                    choose where to post and <strong>Streaming software</strong>. Then tap the red button on the camera,
+                    and click <strong>Go live</strong> on Facebook when the preview shows the game.
+                  </p>
+                )}
+              </>
             )}
-            {streamTarget.platform === 'facebook' && (
-              <p style={{ ...styles.muted, fontSize: 12 }}>
-                Go to <strong>facebook.com/live/producer</strong> › Go live › <strong>Streaming software</strong>,
-                pick where to post (your profile, a Page or a Group), then copy the <strong>Stream key</strong>.
-              </p>
+            {streamTarget.platform === 'youtube' && !savedKey && (
+              <>
+                <p style={{ ...styles.muted, fontSize: 13, fontWeight: 700, margin: '10px 0 0' }}>
+                  One-time setup, on your computer (stream keys are long, so don't type them on the phone):
+                </p>
+                <ol style={{ ...styles.muted, fontSize: 12, paddingLeft: 18 }}>
+                  <li><strong>First time only:</strong> open <strong>youtube.com/verify</strong> and verify your phone number.
+                    YouTube can take up to 24 hours to turn on live streaming, so do this before game day.</li>
+                  <li>Open <strong>studio.youtube.com</strong> › <strong>Create</strong> › <strong>Go live</strong>.</li>
+                  <li>Choose <strong>Streaming software</strong> (not Webcam or Mobile). Set it to <strong>Unlisted</strong> so only
+                    people with the link can watch, a good choice for kids' games.</li>
+                  <li>Copy the <strong>Stream key</strong>. It stays the same from game to game.</li>
+                  <li>On the same computer, open <strong>ui.loggerhead.app/profile</strong> › <strong>Live streaming</strong>,
+                    paste the key and tap <strong>Save</strong>. This phone picks it up.</li>
+                </ol>
+              </>
+            )}
+            {streamTarget.platform === 'facebook' && !savedKey && (
+              <>
+                <p style={{ ...styles.muted, fontSize: 13, fontWeight: 700, margin: '10px 0 0' }}>
+                  One-time setup, on your computer (Facebook's key is very long, and its phone app only offers its own camera):
+                </p>
+                <ol style={{ ...styles.muted, fontSize: 12, paddingLeft: 18 }}>
+                  <li>Open <strong>facebook.com/live/create</strong>.</li>
+                  <li>Choose where to post (your profile, a Page or a Group) and who can see it.</li>
+                  <li>Under the video source, choose <strong>Streaming software</strong>, not Webcam. Facebook starts on your
+                    camera: switch it.</li>
+                  <li>Turn on <strong>Persistent stream key</strong> so the same key works every game, then copy the <strong>Stream key</strong>.</li>
+                  <li>On the same computer, open <strong>ui.loggerhead.app/profile</strong> › <strong>Live streaming</strong>,
+                    paste the key and tap <strong>Save</strong>. This phone picks it up.</li>
+                </ol>
+              </>
             )}
             {streamTarget.platform === 'other' && (
               <input value={streamTarget.url} onChange={(e) => updateStream({ url: e.target.value })}
                 placeholder="Server URL (rtmp:// or rtmps://)" autoCapitalize="off" autoCorrect="off" spellCheck={false}
                 style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)' }} />
             )}
-            <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
-              <input value={streamTarget.key} onChange={(e) => updateStream({ key: e.target.value })}
-                type={showKey ? 'text' : 'password'} placeholder="Stream key"
-                autoCapitalize="off" autoCorrect="off" spellCheck={false}
-                style={{ flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)' }} />
-              <button type="button" style={{ ...styles.link, whiteSpace: 'nowrap' }} onClick={() => setShowKey((v) => !v)}>
-                {showKey ? 'Hide' : 'Show'}
+            {(streamTarget.platform === 'other' || phoneKeyOpen || streamTarget.key.trim()) ? (
+              <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+                <input value={streamTarget.key} onChange={(e) => updateStream({ key: e.target.value })}
+                  type={showKey ? 'text' : 'password'}
+                  placeholder={savedKey && streamTarget.platform !== 'other' ? 'Leave blank to use your saved key' : 'Stream key'}
+                  autoCapitalize="off" autoCorrect="off" spellCheck={false}
+                  style={{ flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)' }} />
+                <button type="button" style={{ ...styles.link, whiteSpace: 'nowrap' }} onClick={() => setShowKey((v) => !v)}>
+                  {showKey ? 'Hide' : 'Show'}
+                </button>
+              </div>
+            ) : (
+              <button type="button" style={{ ...styles.link, fontSize: 12, marginTop: 6 }} onClick={() => setPhoneKeyOpen(true)}>
+                {savedKey ? 'Use a different key on this phone' : 'Paste the key on this phone instead'}
               </button>
-            </div>
+            )}
             <ul style={{ ...styles.muted, paddingLeft: 18, fontSize: 12 }}>
               <li>The score, the latest play and a Loggerhead tag are shown in the stream. A full-quality copy stays on this phone.</li>
               <li>Check your event's rules first: some tournaments sell exclusive streaming rights and don't allow other streams.</li>
               <li>Streaming uses about 1.2 GB of data an hour and a lot of battery. Wi-Fi and a power bank help.</li>
-              <li>The stream key stays on this phone only.</li>
+              <li>Keys saved on the website are stored encrypted on your account. A key pasted here stays on this phone.</li>
             </ul>
           </>
         )}

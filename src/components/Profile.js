@@ -7,6 +7,7 @@ import "./Profile.css";
 import SubscriptionButtons from "./SubscriptionButtons";
 import TeamNameBuilder from "./TeamNameBuilder";
 import PushNotificationSettings from "./PushNotificationSettings";
+import StreamKeySettings from "./StreamKeySettings";
 
 const getApiUrl = () => {
   const h = window.location.hostname;
@@ -921,6 +922,9 @@ const Profile = ({ setCurrentMatchId, isNative }) => {
           </>
         )}
       </div>
+
+      {/* ── Live streaming keys (Premium) ── */}
+      <StreamKeySettings />
 
       {/* ── Notifications (native apps only) ── */}
       <PushNotificationSettings />
