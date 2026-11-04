@@ -7,6 +7,8 @@ import UIKit
 /// live score from the logging phone keeps arriving and is shown on the camera screen.
 /// Records to the app's temporary folder; the page saves or shares the video afterwards.
 /// mark() reports where the recording is, so each point can be pinned to the video.
+/// Opened with a stream target, it goes live instead (LiveEngine), with the scoreboard drawn
+/// into the video.
 ///
 /// Note: the Capacitor CLI registers this plugin by the FIRST objc-name attribute in this
 /// file (the one on the class below), so never write that attribute with a name in any
@@ -31,9 +33,28 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
     private var startedAt: Date?
     private var closeAfterStop = false
 
+    // Live streaming
+    private var live: LiveEngine?
+    // LiveEngine runs on the main actor; these mirror its state for synchronous reads here.
+    private var liveRecording = false
+    private var liveStartedAt: Date?
+    private var sbTitle = ""
+    private var sbSubtitle = ""
+    private var sbPlay = ""
+    private var playClear: DispatchWorkItem?
+
     // MARK: - Open / close
 
     @objc func open(_ call: CAPPluginCall) {
+        let stream = call.getObject("stream")
+        let target: (url: String, key: String)? = stream.map {
+            (($0["url"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+             ($0["key"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        if let target = target, target.url.isEmpty || target.key.isEmpty {
+            call.reject("Add your stream key first.")
+            return
+        }
         AVCaptureDevice.requestAccess(for: .video) { granted in
             guard granted else {
                 call.reject("Loggerhead needs camera access to film. Turn it on in Settings › Loggerhead.", "PERMISSION_DENIED")
@@ -41,6 +62,10 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
             }
             // Sound is optional: film without it if the microphone is off.
             AVCaptureDevice.requestAccess(for: .audio) { _ in
+                if let target = target {
+                    DispatchQueue.main.async { self.openLive(call, url: target.url, key: target.key) }
+                    return
+                }
                 self.sessionQueue.async {
                     if !self.configured {
                         if let problem = self.configure() {
@@ -86,9 +111,110 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
         return nil
     }
 
+    // MARK: - Live
+
+    private func openLive(_ call: CAPPluginCall, url: String, key: String) {
+        guard cameraView == nil, let host = bridge?.viewController?.view else {
+            call.reject("The camera is already open.")
+            return
+        }
+        Task { @MainActor in
+            let engine = LiveEngine(serverURL: url, streamKey: key)
+            self.live = engine
+            self.wireLive(engine)
+            let view = GameCameraView(frame: host.bounds, session: nil, preview: engine.previewView)
+            view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            view.onRecordTapped = { [weak self, weak view] in
+                guard let self = self, let engine = self.live else { return }
+                let orientation = view?.videoOrientation ?? .landscapeRight
+                Task { @MainActor in await engine.toggle(orientation: orientation) }
+            }
+            view.onCloseTapped = { [weak self] in self?.confirmClose() }
+            view.recordedTime = { [weak self] in
+                guard let self = self, self.liveRecording, let at = self.liveStartedAt else { return nil }
+                return Date().timeIntervalSince(at)
+            }
+            host.addSubview(view)
+            self.cameraView = view
+            UIApplication.shared.isIdleTimerDisabled = true
+            view.setLiveStatus("Tap the red button to go live", color: .white)
+            do {
+                try await engine.prepare(orientation: view.videoOrientation)
+                self.refreshLiveOverlay()
+                call.resolve()
+            } catch {
+                await engine.shutdown()
+                self.live = nil
+                view.stop()
+                view.removeFromSuperview()
+                self.cameraView = nil
+                UIApplication.shared.isIdleTimerDisabled = false
+                call.reject("This phone couldn't start a live stream: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    @MainActor
+    private func wireLive(_ engine: LiveEngine) {
+        engine.onLive = { [weak self] state, message in
+            guard let self = self else { return }
+            let amber = UIColor(red: 0.99, green: 0.73, blue: 0.45, alpha: 1)
+            switch state {
+            case "connecting": self.cameraView?.setLiveStatus("Connecting…", color: amber)
+            case "live": self.cameraView?.setLiveStatus("● LIVE", color: UIColor(red: 0.97, green: 0.44, blue: 0.44, alpha: 1))
+            case "reconnecting": self.cameraView?.setLiveStatus("Reconnecting… (still recording)", color: amber)
+            case "failed": self.cameraView?.setLiveStatus("Not live (still recording)", color: amber)
+            default: self.cameraView?.setLiveStatus("", color: .white)
+            }
+            var data: [String: Any] = ["state": state]
+            if !message.isEmpty { data["message"] = message }
+            self.notifyListeners("live", data: data)
+        }
+        engine.onRecordingStarted = { [weak self] at in
+            self?.liveRecording = true
+            self?.liveStartedAt = Date()
+            self?.cameraView?.setRecording(true)
+            self?.notifyListeners("recording", data: ["state": "started", "startedAt": at])
+        }
+        engine.onRecordingStopped = { [weak self] url, durationMs, error in
+            guard let self = self else { return }
+            self.liveRecording = false
+            self.liveStartedAt = nil
+            self.cameraView?.setRecording(false)
+            var data: [String: Any]
+            if let url = url, FileManager.default.fileExists(atPath: url.path) {
+                let seconds = CMTimeGetSeconds(AVURLAsset(url: url).duration)
+                let startedAt = Int(Date().timeIntervalSince1970 * 1000) - durationMs
+                data = [
+                    "state": "stopped",
+                    "path": url.path,
+                    "uri": url.absoluteString,
+                    "durationMs": seconds.isFinite && seconds > 0 ? Int(seconds * 1000) : durationMs,
+                    "startedAt": startedAt
+                ]
+                if let error = error { data["message"] = "Recording stopped early: \(error)" }
+            } else {
+                data = ["state": "error", "message": "The recording couldn't be saved: \(error ?? "unknown error")"]
+            }
+            self.notifyListeners("recording", data: data)
+            if self.closeAfterStop {
+                self.closeAfterStop = false
+                self.closeCamera()
+            }
+        }
+    }
+
+    private func refreshLiveOverlay() {
+        let title = sbTitle, subtitle = sbSubtitle, play = sbPlay
+        guard let engine = live else { return }
+        Task { @MainActor in
+            engine.setScore(ScoreArt.score(title: title, subtitle: subtitle, play: play))
+        }
+    }
+
     private func showView() {
         guard cameraView == nil, let host = bridge?.viewController?.view else { return }
-        let view = GameCameraView(frame: host.bounds, session: session)
+        let view = GameCameraView(frame: host.bounds, session: session, preview: nil)
         view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.onRecordTapped = { [weak self] in self?.toggleRecording() }
         view.onCloseTapped = { [weak self] in self?.confirmClose() }
@@ -108,17 +234,37 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
     }
 
     private func confirmClose() {
-        guard movieOutput.isRecording else {
+        guard movieOutput.isRecording || liveRecording else {
             closeCamera()
             return
         }
-        let alert = UIAlertController(title: "Stop recording?", message: "The video so far is kept.", preferredStyle: .alert)
+        let alert = UIAlertController(
+            title: live != nil ? "End the live stream?" : "Stop recording?",
+            message: live != nil ? "The stream ends. The video so far is kept on this phone." : "The video so far is kept.",
+            preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Keep filming", style: .cancel))
         alert.addAction(UIAlertAction(title: "Stop and close", style: .destructive) { _ in self.closeCamera() })
         bridge?.viewController?.present(alert, animated: true)
     }
 
     private func closeCamera() {
+        if let engine = live {
+            if liveRecording {
+                // Finish the file first; the view goes when the recording is saved.
+                closeAfterStop = true
+                Task { @MainActor in await engine.stop() }
+                return
+            }
+            live = nil
+            playClear?.cancel()
+            Task { @MainActor in await engine.shutdown() }
+            cameraView?.stop()
+            cameraView?.removeFromSuperview()
+            cameraView = nil
+            UIApplication.shared.isIdleTimerDisabled = false
+            notifyListeners("closed", data: [:])
+            return
+        }
         if movieOutput.isRecording {
             // Finish the file first; the view goes when the recording is saved.
             closeAfterStop = true
@@ -191,6 +337,11 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
     }
 
     @objc func mark(_ call: CAPPluginCall) {
+        if live != nil {
+            let position = liveStartedAt.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
+            call.resolve(["recording": liveRecording, "positionMs": liveRecording ? position : 0])
+            return
+        }
         let recording = movieOutput.isRecording
         let seconds = recording ? CMTimeGetSeconds(movieOutput.recordedDuration) : 0
         call.resolve([
@@ -205,6 +356,9 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
         let status = call.getString("status")
         let connected = call.getBool("connected")
         DispatchQueue.main.async {
+            if let title = title { self.sbTitle = title }
+            if let subtitle = subtitle { self.sbSubtitle = subtitle }
+            if self.live != nil { self.refreshLiveOverlay() }
             self.cameraView?.setScoreboard(title: title, subtitle: subtitle, status: status, connected: connected)
             call.resolve()
         }
@@ -213,7 +367,20 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
     @objc func showPlay(_ call: CAPPluginCall) {
         let text = call.getString("text") ?? ""
         DispatchQueue.main.async {
-            if !text.isEmpty { self.cameraView?.showPlay(text) }
+            if self.live != nil, !text.isEmpty {
+                // Live: the play goes into the video under the scoreboard for 4 seconds.
+                self.sbPlay = text
+                self.refreshLiveOverlay()
+                self.playClear?.cancel()
+                let clear = DispatchWorkItem { [weak self] in
+                    self?.sbPlay = ""
+                    self?.refreshLiveOverlay()
+                }
+                self.playClear = clear
+                DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: clear)
+            } else if !text.isEmpty {
+                self.cameraView?.showPlay(text)
+            }
             call.resolve()
         }
     }
@@ -235,7 +402,10 @@ final class GameCameraView: UIView {
     var onCloseTapped: (() -> Void)?
     var recordedTime: (() -> Double?)?
 
-    private let previewLayer: AVCaptureVideoPreviewLayer
+    private let previewLayer: AVCaptureVideoPreviewLayer?
+    private let previewView: UIView?
+    private let isLive: Bool
+    private let liveLabel = PaddedLabel()
     private let board = UIStackView()
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
@@ -249,12 +419,21 @@ final class GameCameraView: UIView {
     private var ticker: Timer?
     private var tickCount = 0
 
-    init(frame: CGRect, session: AVCaptureSession) {
-        previewLayer = AVCaptureVideoPreviewLayer(session: session)
+    init(frame: CGRect, session: AVCaptureSession?, preview: UIView?) {
+        previewLayer = session.map { AVCaptureVideoPreviewLayer(session: $0) }
+        previewView = preview
+        isLive = preview != nil
         super.init(frame: frame)
         backgroundColor = .black
-        previewLayer.videoGravity = .resizeAspect
-        layer.addSublayer(previewLayer)
+        if let previewLayer = previewLayer {
+            previewLayer.videoGravity = .resizeAspect
+            layer.addSublayer(previewLayer)
+        }
+        if let preview = preview {
+            preview.frame = bounds
+            preview.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            addSubview(preview)
+        }
         UIDevice.current.isBatteryMonitoringEnabled = true
         buildUI()
         ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
@@ -280,8 +459,9 @@ final class GameCameraView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        previewLayer.frame = bounds
-        if let connection = previewLayer.connection, connection.isVideoOrientationSupported {
+        previewLayer?.frame = bounds
+        previewView?.frame = bounds
+        if let connection = previewLayer?.connection, connection.isVideoOrientationSupported {
             connection.videoOrientation = videoOrientation
         }
     }
@@ -342,7 +522,20 @@ final class GameCameraView: UIView {
         recordInner.layer.cornerRadius = 29
         recordButton.addSubview(recordInner)
 
-        for view in [board, playLabel, close, timerLabel, infoLabel, recordButton] as [UIView] {
+        liveLabel.font = .systemFont(ofSize: 14, weight: .bold)
+        liveLabel.textColor = .white
+        liveLabel.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+        liveLabel.layer.cornerRadius = 8
+        liveLabel.clipsToBounds = true
+        liveLabel.insets = UIEdgeInsets(top: 4, left: 10, bottom: 4, right: 10)
+        liveLabel.isHidden = true
+        // Live: the scoreboard is drawn into the video itself, so the on-screen copy stays hidden.
+        if isLive {
+            board.alpha = 0
+            playLabel.isHidden = true
+        }
+
+        for view in [board, playLabel, close, timerLabel, infoLabel, recordButton, liveLabel] as [UIView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -369,6 +562,8 @@ final class GameCameraView: UIView {
             recordInner.heightAnchor.constraint(equalToConstant: 58),
             timerLabel.bottomAnchor.constraint(equalTo: recordButton.topAnchor, constant: -10),
             timerLabel.centerXAnchor.constraint(equalTo: guide.centerXAnchor),
+            liveLabel.topAnchor.constraint(equalTo: guide.topAnchor, constant: 12),
+            liveLabel.trailingAnchor.constraint(equalTo: guide.trailingAnchor, constant: -12),
             infoLabel.leadingAnchor.constraint(equalTo: guide.leadingAnchor, constant: 14),
             infoLabel.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -14),
         ])
@@ -399,6 +594,12 @@ final class GameCameraView: UIView {
             label.isHidden = (label.text ?? "").isEmpty
         }
         board.isHidden = titleLabel.isHidden && subtitleLabel.isHidden && statusLabel.isHidden
+    }
+
+    func setLiveStatus(_ text: String, color: UIColor) {
+        liveLabel.text = text
+        liveLabel.textColor = color
+        liveLabel.isHidden = text.isEmpty
     }
 
     /// Shows the play under the scoreboard for 4 seconds.

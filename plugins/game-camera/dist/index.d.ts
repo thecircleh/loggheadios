@@ -12,9 +12,18 @@ export interface RecordingEvent {
   message?: string;
 }
 
+export interface LiveEvent {
+  state: 'connecting' | 'live' | 'reconnecting' | 'failed' | 'ended';
+  message?: string;
+}
+
 export interface GameCameraPlugin {
-  /** Shows the full-screen camera over the app (asks for camera + microphone access). */
-  open(): Promise<void>;
+  /**
+   * Shows the full-screen camera over the app (asks for camera + microphone access).
+   * With `stream`, the red button goes live (RTMP/RTMPS + stream key) and keeps a copy on the
+   * phone; the scoreboard and the Loggerhead tag are drawn into the video.
+   */
+  open(options?: { stream?: { url: string; key: string } }): Promise<void>;
   /** Stops any recording and removes the camera. Emits 'closed'. */
   close(): Promise<void>;
   /** Scoreboard text on the camera screen, e.g. title "Lakers 18 – 16 Waves", subtitle "Set 2". */
@@ -24,6 +33,7 @@ export interface GameCameraPlugin {
   /** Where the recording is right now (for rally markers). */
   mark(): Promise<{ recording: boolean; positionMs: number }>;
   addListener(eventName: 'recording', listener: (e: RecordingEvent) => void): Promise<PluginListenerHandle>;
+  addListener(eventName: 'live', listener: (e: LiveEvent) => void): Promise<PluginListenerHandle>;
   addListener(eventName: 'closed', listener: () => void): Promise<PluginListenerHandle>;
 }
 

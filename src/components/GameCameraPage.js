@@ -12,6 +12,28 @@ const API_URL = getApiUrl();
 const isNative = () => !!window.Capacitor?.isNativePlatform?.();
 const SERVE = '🏐';
 
+// Where to stream. People paste the stream key from YouTube Studio or Facebook Live Producer.
+const STREAM_TARGETS = {
+  youtube: { label: 'YouTube', url: 'rtmps://a.rtmps.youtube.com/live2' },
+  facebook: { label: 'Facebook', url: 'rtmps://live-api-s.facebook.com:443/rtmp' },
+  other: { label: 'Other', url: '' },
+};
+const STREAM_KEY = 'lh_stream_target'; // { on, platform, key, url } on this phone only
+const loadStreamTarget = () => {
+  try {
+    return { on: false, platform: 'youtube', key: '', url: '', ...JSON.parse(localStorage.getItem(STREAM_KEY) || '{}') };
+  } catch {
+    return { on: false, platform: 'youtube', key: '', url: '' };
+  }
+};
+const LIVE_TEXT = {
+  connecting: 'Connecting to the stream…',
+  live: '● You are live',
+  reconnecting: 'Connection dropped: reconnecting (still recording on the phone)',
+  failed: 'Not live (the video is still recording on the phone)',
+  ended: 'Stream ended',
+};
+
 // "🏐 Lakers 18 – 16 Waves": the ball marks the serving team.
 const scoreLine = (teams, score) =>
   `${score.serving === 'our' ? `${SERVE} ` : ''}${teams[0]} ${score.us} – ${score.them} ${teams[1]}${score.serving === 'their' ? ` ${SERVE}` : ''}`;
@@ -30,6 +52,9 @@ export default function GameCameraPage() {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [recordings, setRecordings] = useState([]);
   const [msg, setMsg] = useState('');
+  const [streamTarget, setStreamTarget] = useState(loadStreamTarget);
+  const [showKey, setShowKey] = useState(false);
+  const [live, setLive] = useState(null); // { state, message }
 
   const socketRef = useRef(null);
   const linkRef = useRef(null);
@@ -71,8 +96,8 @@ export default function GameCameraPage() {
     setConnected(false);
   }, []);
 
-  const connect = async () => {
-    const code = codeInput.trim().toUpperCase();
+  const connect = async (typed) => {
+    const code = (typeof typed === 'string' ? typed : codeInput).trim().toUpperCase();
     if (code.length < 6) {
       setMsg('Enter the 6-character code from the logging phone.');
       return;
@@ -149,6 +174,7 @@ export default function GameCameraPage() {
         }
       }));
       handles.push(await GameCamera.addListener('closed', () => setCameraOpen(false)));
+      handles.push(await GameCamera.addListener('live', (e) => setLive(e)));
     })();
     return () => handles.forEach((h) => h?.remove?.());
   }, [token]);
@@ -165,10 +191,27 @@ export default function GameCameraPage() {
     } : { title: '', subtitle: '', status: '' }).catch(() => {});
   }, [cameraOpen, link, score, connected]);
 
+  const updateStream = (patch) => {
+    setStreamTarget((prev) => {
+      const next = { ...prev, ...patch };
+      try { localStorage.setItem(STREAM_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+  const streamUrl = streamTarget.platform === 'other'
+    ? streamTarget.url.trim()
+    : STREAM_TARGETS[streamTarget.platform]?.url || '';
+  const streaming = streamTarget.on;
+
   const openCamera = async () => {
     setMsg('');
+    setLive(null);
+    if (streaming && (!streamTarget.key.trim() || !streamUrl)) {
+      setMsg(streamUrl ? 'Paste your stream key first.' : 'Enter the stream server URL first.');
+      return;
+    }
     try {
-      await GameCamera.open();
+      await GameCamera.open(streaming ? { stream: { url: streamUrl, key: streamTarget.key.trim() } } : undefined);
       setCameraOpen(true);
     } catch (err) {
       setMsg(err?.message || "Couldn't open the camera.");
@@ -277,37 +320,115 @@ export default function GameCameraPage() {
             <p style={styles.muted}>
               On the logging phone: <strong>Log › Connect a Camera</strong>. Enter the code it shows:
             </p>
-            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-              <input
-                value={codeInput}
-                onChange={(e) => setCodeInput(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6))}
-                placeholder="ABC123"
-                autoCapitalize="characters"
-                autoCorrect="off"
-                spellCheck={false}
-                inputMode="text"
-                style={{ flex: 1, fontSize: 22, fontWeight: 800, letterSpacing: 4, padding: '8px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)', textTransform: 'uppercase' }}
-              />
-              <button type="button" className="primary-button" style={{ width: 'auto' }} onClick={connect} disabled={joining}>
-                {joining ? '…' : 'Connect'}
-              </button>
-            </div>
+            <input
+              value={codeInput}
+              onChange={(e) => {
+                const code = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+                setCodeInput(code);
+                // All six characters in: connect without hunting for the button.
+                if (code.length === 6 && !joining) connect(code);
+              }}
+              placeholder="ABC123"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+              inputMode="text"
+              enterKeyHint="go"
+              onKeyDown={(e) => { if (e.key === 'Enter') connect(); }}
+              style={{
+                display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 10,
+                fontSize: 26, fontWeight: 800, letterSpacing: 6, textAlign: 'center',
+                padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)', textTransform: 'uppercase',
+              }}
+            />
+            <button type="button" className="primary-button" style={{ width: '100%', marginTop: 10 }}
+              onClick={() => connect()} disabled={joining || codeInput.length < 6}>
+              {joining ? 'Connecting…' : 'Connect'}
+            </button>
           </>
         )}
       </div>
 
       <div className="card" style={{ marginTop: 14 }}>
-        <p style={styles.stepTitle}>2. Film</p>
+        <p style={styles.stepTitle}>2. Go live <span style={{ fontWeight: 500, color: 'var(--text-muted, #6b7280)' }}>(optional)</span></p>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, cursor: 'pointer' }}>
+          <input type="checkbox" checked={streaming} onChange={(e) => updateStream({ on: e.target.checked })}
+            style={{ width: 20, height: 20 }} />
+          Stream this game live on YouTube or Facebook
+        </label>
+        {streaming && (
+          <>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              {Object.entries(STREAM_TARGETS).map(([key, t]) => (
+                <button key={key} type="button" onClick={() => updateStream({ platform: key })}
+                  style={{
+                    flex: 1, padding: '8px 4px', borderRadius: 10, fontWeight: 700, cursor: 'pointer',
+                    border: streamTarget.platform === key ? '2px solid #2563eb' : '1px solid var(--border, #d1d5db)',
+                    background: streamTarget.platform === key ? 'rgba(37,99,235,0.08)' : 'transparent',
+                    color: 'inherit',
+                  }}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {streamTarget.platform === 'youtube' && (
+              <p style={{ ...styles.muted, fontSize: 12 }}>
+                In <strong>YouTube Studio</strong>: Create › Go live › Stream, then copy the <strong>Stream key</strong>.
+                The first time, YouTube can take up to 24 hours to turn on live streaming for a channel.
+                Choose <strong>Unlisted</strong> so only people with the link can watch, a good choice for kids' games.
+              </p>
+            )}
+            {streamTarget.platform === 'facebook' && (
+              <p style={{ ...styles.muted, fontSize: 12 }}>
+                Go to <strong>facebook.com/live/producer</strong> › Go live › <strong>Streaming software</strong>,
+                pick where to post (your profile, a Page or a Group), then copy the <strong>Stream key</strong>.
+              </p>
+            )}
+            {streamTarget.platform === 'other' && (
+              <input value={streamTarget.url} onChange={(e) => updateStream({ url: e.target.value })}
+                placeholder="Server URL (rtmp:// or rtmps://)" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+                style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)' }} />
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+              <input value={streamTarget.key} onChange={(e) => updateStream({ key: e.target.value })}
+                type={showKey ? 'text' : 'password'} placeholder="Stream key"
+                autoCapitalize="off" autoCorrect="off" spellCheck={false}
+                style={{ flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)' }} />
+              <button type="button" style={{ ...styles.link, whiteSpace: 'nowrap' }} onClick={() => setShowKey((v) => !v)}>
+                {showKey ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            <ul style={{ ...styles.muted, paddingLeft: 18, fontSize: 12 }}>
+              <li>The score, the latest play and a Loggerhead tag are shown in the stream. A full-quality copy stays on this phone.</li>
+              <li>Check your event's rules first: some tournaments sell exclusive streaming rights and don't allow other streams.</li>
+              <li>Streaming uses about 1.2 GB of data an hour and a lot of battery. Wi-Fi and a power bank help.</li>
+              <li>The stream key stays on this phone only.</li>
+            </ul>
+          </>
+        )}
+      </div>
+
+      <div className="card" style={{ marginTop: 14 }}>
+        <p style={styles.stepTitle}>3. Film</p>
         <button type="button" className="primary-button" onClick={openCamera} disabled={cameraOpen}>
-          {link ? '🎥 Open camera' : '🎥 Film without a live score'}
+          {streaming
+            ? `🔴 Open camera to go live on ${STREAM_TARGETS[streamTarget.platform]?.label || 'stream'}`
+            : link ? '🎥 Open camera' : '🎥 Film without a live score'}
         </button>
         <ul style={{ ...styles.muted, paddingLeft: 18, fontSize: 12 }}>
           <li>Turn the phone sideways and keep the whole court in view.</li>
           <li>Keep Loggerhead open while filming. A long match uses a lot of battery and storage; a power bank helps.</li>
-          <li>Tap the red button to start and stop. Each recording is kept on this phone until you save or share it.</li>
+          <li>{streaming
+            ? 'Tap the red button to go live and start recording; tap again to end the stream.'
+            : 'Tap the red button to start and stop.'} Each recording is kept on this phone until you save or share it.</li>
         </ul>
       </div>
 
+      {live && LIVE_TEXT[live.state] && (
+        <p style={{ ...styles.muted, marginTop: 12, fontWeight: 700, color: live.state === 'live' ? '#b91c1c' : undefined }}>
+          {LIVE_TEXT[live.state]}{live.message ? ` (${live.message})` : ''}
+        </p>
+      )}
       {msg && <p style={{ ...styles.muted, marginTop: 12 }}>{msg}</p>}
     </div>
   );

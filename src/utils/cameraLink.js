@@ -76,7 +76,9 @@ export async function stopCameraLink(token, matchId) {
 
 // While this match has a camera code, send the score whenever it changes (and once when the
 // code is created, so a camera that joins starts in sync), with the latest highlight play.
-export function useCameraScoreFeed({ token, matchId, us, them, set, ourSets, oppSets, serving, teamName, opponentName }) {
+// In a collaborative match the server also feeds the camera from the shared match (every
+// collaborator's points and plays), so this phone leaves plays to the server.
+export function useCameraScoreFeed({ token, matchId, us, them, set, ourSets, oppSets, serving, teamName, opponentName, collaborative = false }) {
   const [code, setCode] = useState(() => savedCameraCode(matchId));
   const lastSent = useRef('');
   const [play, setPlay] = useState(null); // { id, text }
@@ -93,7 +95,7 @@ export function useCameraScoreFeed({ token, matchId, us, them, set, ourSets, opp
   useEffect(() => {
     setPlay(null);
     pendingPlays.current = [];
-    if (!code) return undefined;
+    if (!code || collaborative) return undefined;
     let timer;
     const onPlay = (e) => {
       pendingPlays.current.push(e.detail);
@@ -109,7 +111,7 @@ export function useCameraScoreFeed({ token, matchId, us, them, set, ourSets, opp
       window.removeEventListener(PLAY_EVENT, onPlay);
       clearTimeout(timer);
     };
-  }, [code]);
+  }, [code, collaborative]);
 
   useEffect(() => {
     if (!code || !token || !matchId) return undefined;

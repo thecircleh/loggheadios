@@ -2634,6 +2634,7 @@ useCameraScoreFeed({
   serving: location.pathname === "/match-tracking" ? null : (currentServeSide === "our" ? "our" : "their"),
   teamName: matchSettings?.teamName || "",
   opponentName: matchSettings?.opponentName || "",
+  collaborative: !!collaborativeMode,
 });
 
 // Classic and Stat Book: record each rally (who served, who won, rotation, time) for Rally

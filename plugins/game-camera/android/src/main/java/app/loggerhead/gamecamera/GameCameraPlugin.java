@@ -6,6 +6,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -17,6 +18,7 @@ import android.os.StatFs;
 import android.os.SystemClock;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -59,6 +61,7 @@ import java.util.Locale;
  * Full-screen game camera shown over the app (the web view keeps running underneath, so the
  * live score keeps arriving). Records to the app's storage; the page saves or shares it.
  * mark() reports where the recording is, so each point can be pinned to the video.
+ * With a stream target, the camera goes live (LiveSession) with the scoreboard in the video.
  */
 @CapacitorPlugin(
     name = "GameCamera",
@@ -96,10 +99,35 @@ public class GameCameraPlugin extends Plugin {
     private volatile boolean isRecording;
     private Runnable ticker;
 
+    // Live streaming (open with a stream target)
+    private String liveEndpoint;
+    private LiveSession live;
+    private SurfaceView liveView;
+    private TextView liveBadge;
+    private Integer savedOrientation;
+    private String sbTitle = "";
+    private String sbSubtitle = "";
+    private String sbPlay = "";
+    private final Runnable clearLivePlay = () -> {
+        sbPlay = "";
+        refreshLiveOverlay();
+    };
+
     // ------------------------------------------------------------ open / close
 
     @PluginMethod
     public void open(PluginCall call) {
+        liveEndpoint = null;
+        JSObject target = call.getObject("stream", null);
+        if (target != null) {
+            String url = target.optString("url", "").trim();
+            String key = target.optString("key", "").trim();
+            if (url.isEmpty() || key.isEmpty()) {
+                call.reject("Add your stream key first.");
+                return;
+            }
+            liveEndpoint = url.endsWith("/") ? url + key : url + "/" + key;
+        }
         if (getPermissionState("camera") != PermissionState.GRANTED) {
             requestPermissionForAliases(new String[] { "camera", "microphone" }, call, "permissionsDone");
             return;
@@ -117,6 +145,10 @@ public class GameCameraPlugin extends Plugin {
     }
 
     private void startCamera(PluginCall call) {
+        if (liveEndpoint != null) {
+            startLiveCamera(call);
+            return;
+        }
         Activity activity = getActivity();
         activity.runOnUiThread(() -> {
             try {
@@ -147,6 +179,112 @@ public class GameCameraPlugin extends Plugin {
         });
     }
 
+    // Live: RootEncoder owns the camera. Sideways only, so the stream is landscape.
+    private void startLiveCamera(PluginCall call) {
+        Activity activity = getActivity();
+        activity.runOnUiThread(() -> {
+            try {
+                if (savedOrientation == null) savedOrientation = activity.getRequestedOrientation();
+                activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+                if (root == null) buildView(activity);
+                activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                boolean withAudio = getPermissionState("microphone") == PermissionState.GRANTED;
+                live = new LiveSession(activity, liveEndpoint, withAudio, liveEvents);
+                if (!live.prepare()) {
+                    live.release();
+                    live = null;
+                    removeView();
+                    restoreOrientation();
+                    call.reject("This phone couldn't start a live stream.");
+                    return;
+                }
+                live.startPreview(liveView);
+                refreshLiveOverlay();
+                setLiveBadge("Tap the red button to go live", Color.WHITE);
+                startTicker();
+                call.resolve();
+            } catch (Exception e) {
+                if (live != null) live.release();
+                live = null;
+                removeView();
+                restoreOrientation();
+                call.reject("Couldn't start the live camera: " + e.getMessage());
+            }
+        });
+    }
+
+    private final LiveSession.Events liveEvents = new LiveSession.Events() {
+        @Override
+        public void onLive(String state, String message) {
+            switch (state) {
+                case "connecting": setLiveBadge("Connecting…", Color.rgb(253, 186, 116)); break;
+                case "live": setLiveBadge("● LIVE", Color.rgb(248, 113, 113)); break;
+                case "reconnecting": setLiveBadge("Reconnecting… (still recording)", Color.rgb(253, 186, 116)); break;
+                case "failed": setLiveBadge("Not live (still recording)", Color.rgb(253, 186, 116)); break;
+                default: setLiveBadge("", Color.WHITE); break;
+            }
+            JSObject data = new JSObject();
+            data.put("state", state);
+            if (message != null && !message.isEmpty()) data.put("message", message);
+            notifyListeners("live", data);
+        }
+
+        @Override
+        public void onRecordingStarted(long at) {
+            startedAt = at;
+            isRecording = true;
+            updateRecordButton();
+            JSObject data = new JSObject();
+            data.put("state", "started");
+            data.put("startedAt", at);
+            notifyListeners("recording", data);
+        }
+
+        @Override
+        public void onRecordingStopped(File file, long durationMs, String error) {
+            isRecording = false;
+            updateRecordButton();
+            JSObject data = new JSObject();
+            if (file != null && file.exists() && file.length() > 0) {
+                data.put("state", "stopped");
+                data.put("path", file.getAbsolutePath());
+                data.put("uri", Uri.fromFile(file).toString());
+                data.put("durationMs", durationMs);
+                data.put("startedAt", startedAt);
+                if (error != null) data.put("message", "Recording stopped early (" + error + ").");
+            } else {
+                data.put("state", "error");
+                data.put("message", "The recording couldn't be saved" + (error != null ? " (" + error + ")." : "."));
+            }
+            notifyListeners("recording", data);
+        }
+    };
+
+    private void setLiveBadge(String text, int color) {
+        main.post(() -> {
+            if (liveBadge == null) return;
+            liveBadge.setText(text);
+            liveBadge.setTextColor(color);
+            liveBadge.setVisibility(text.isEmpty() ? View.GONE : View.VISIBLE);
+        });
+    }
+
+    private void refreshLiveOverlay() {
+        if (live != null) live.setOverlay(ScoreOverlay.render(sbTitle, sbSubtitle, sbPlay));
+    }
+
+    private void restoreOrientation() {
+        if (savedOrientation != null) getActivity().setRequestedOrientation(savedOrientation);
+        savedOrientation = null;
+    }
+
+    private File newRecordingFile() {
+        File dir = new File(getContext().getCacheDir(), "game-camera");
+        //noinspection ResultOfMethodCallIgnored
+        dir.mkdirs();
+        return new File(dir, "loggerhead-game-" + System.currentTimeMillis() + ".mp4");
+    }
+
     @PluginMethod
     public void close(PluginCall call) {
         main.post(() -> {
@@ -156,6 +294,14 @@ public class GameCameraPlugin extends Plugin {
     }
 
     private void closeCamera() {
+        if (live != null) {
+            if (live.isRecording()) live.stop(); // 'stopped' event follows
+            final LiveSession ending = live;
+            live = null;
+            main.postDelayed(ending::release, 1500); // let the file finish first
+            main.removeCallbacks(clearLivePlay);
+            restoreOrientation();
+        }
         if (recording != null) recording.stop(); // 'stopped' event follows
         if (provider != null) provider.unbindAll();
         provider = null;
@@ -171,10 +317,7 @@ public class GameCameraPlugin extends Plugin {
     @SuppressLint("MissingPermission") // audio is only enabled when the permission is granted
     private void startRecording() {
         if (videoCapture == null || recording != null) return;
-        File dir = new File(getContext().getCacheDir(), "game-camera");
-        //noinspection ResultOfMethodCallIgnored
-        dir.mkdirs();
-        recordingFile = new File(dir, "loggerhead-game-" + System.currentTimeMillis() + ".mp4");
+        recordingFile = newRecordingFile();
         if (previewView.getDisplay() != null) videoCapture.setTargetRotation(previewView.getDisplay().getRotation());
         PendingRecording pending = videoCapture.getOutput()
             .prepareRecording(getContext(), new FileOutputOptions.Builder(recordingFile).build());
@@ -224,6 +367,12 @@ public class GameCameraPlugin extends Plugin {
     @PluginMethod
     public void mark(PluginCall call) {
         JSObject ret = new JSObject();
+        if (live != null) {
+            ret.put("recording", live.isRecording());
+            ret.put("positionMs", live.positionMs());
+            call.resolve(ret);
+            return;
+        }
         ret.put("recording", isRecording);
         long sinceStatus = Math.min(1000, SystemClock.elapsedRealtime() - lastStatusAt);
         ret.put("positionMs", isRecording ? recordedNanos / 1_000_000L + sinceStatus : 0);
@@ -236,6 +385,9 @@ public class GameCameraPlugin extends Plugin {
         String subtitle = call.getString("subtitle");
         String status = call.getString("status");
         Boolean connected = call.getBoolean("connected");
+        if (title != null) sbTitle = title;
+        if (subtitle != null) sbSubtitle = subtitle;
+        refreshLiveOverlay();
         main.post(() -> {
             if (root != null) {
                 if (title != null) titleView.setText(title);
@@ -253,6 +405,14 @@ public class GameCameraPlugin extends Plugin {
     @PluginMethod
     public void showPlay(PluginCall call) {
         String text = call.getString("text", "");
+        if (live != null && text != null && !text.isEmpty()) {
+            sbPlay = text;
+            refreshLiveOverlay();
+            main.removeCallbacks(clearLivePlay);
+            main.postDelayed(clearLivePlay, 4000);
+            call.resolve();
+            return;
+        }
         main.post(() -> {
             if (root != null && playView != null && text != null && !text.isEmpty()) {
                 main.removeCallbacks(hidePlay);
@@ -288,9 +448,14 @@ public class GameCameraPlugin extends Plugin {
         root.setBackgroundColor(Color.BLACK);
         root.setClickable(true); // don't let taps reach the app underneath
 
-        previewView = new PreviewView(ctx);
-        previewView.setScaleType(PreviewView.ScaleType.FIT_CENTER);
-        root.addView(previewView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        if (liveEndpoint != null) {
+            liveView = new SurfaceView(ctx);
+            root.addView(liveView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        } else {
+            previewView = new PreviewView(ctx);
+            previewView.setScaleType(PreviewView.ScaleType.FIT_CENTER);
+            root.addView(previewView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        }
 
         // Everything else sits inside the system bars.
         FrameLayout ui = new FrameLayout(ctx);
@@ -338,6 +503,20 @@ public class GameCameraPlugin extends Plugin {
         FrameLayout.LayoutParams topLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         topLp.topMargin = dp(8);
         ui.addView(top, topLp);
+        // Live: the scoreboard is drawn into the video itself, so the on-screen copy is hidden.
+        if (liveEndpoint != null) top.setVisibility(View.GONE);
+
+        liveBadge = label(ctx, 14, true);
+        liveBadge.setPadding(dp(10), dp(4), dp(10), dp(4));
+        GradientDrawable badgeBg = new GradientDrawable();
+        badgeBg.setColor(Color.argb(150, 0, 0, 0));
+        badgeBg.setCornerRadius(dp(8));
+        liveBadge.setBackground(badgeBg);
+        liveBadge.setVisibility(View.GONE);
+        FrameLayout.LayoutParams badgeLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
+        badgeLp.topMargin = dp(12);
+        badgeLp.rightMargin = dp(12);
+        ui.addView(liveBadge, badgeLp);
 
         TextView closeButton = label(ctx, 26, true);
         closeButton.setText("✕");
@@ -353,6 +532,11 @@ public class GameCameraPlugin extends Plugin {
 
         recordButton = new TextView(ctx);
         recordButton.setOnClickListener(v -> {
+            if (live != null) {
+                if (live.isRecording()) live.stop();
+                else live.start(newRecordingFile());
+                return;
+            }
             if (recording == null) startRecording();
             else recording.stop();
         });
@@ -387,13 +571,13 @@ public class GameCameraPlugin extends Plugin {
     }
 
     private void confirmClose() {
-        if (recording == null) {
+        if (recording == null && (live == null || !live.isRecording())) {
             closeCamera();
             return;
         }
         new AlertDialog.Builder(getActivity())
-            .setTitle("Stop recording?")
-            .setMessage("The video so far is kept.")
+            .setTitle(live != null ? "End the live stream?" : "Stop recording?")
+            .setMessage(live != null ? "The stream ends. The video so far is kept on this phone." : "The video so far is kept.")
             .setPositiveButton("Stop and close", (d, w) -> closeCamera())
             .setNegativeButton("Keep filming", null)
             .show();
@@ -402,6 +586,8 @@ public class GameCameraPlugin extends Plugin {
     private void removeView() {
         main.removeCallbacks(hidePlay);
         playView = null;
+        liveBadge = null;
+        liveView = null;
         if (root != null && root.getParent() instanceof ViewGroup) ((ViewGroup) root.getParent()).removeView(root);
         root = null;
     }
@@ -415,7 +601,10 @@ public class GameCameraPlugin extends Plugin {
             @Override
             public void run() {
                 if (root == null) return;
-                if (isRecording) {
+                if (live != null && live.isRecording()) {
+                    long s = live.positionMs() / 1000;
+                    timerView.setText(String.format(Locale.US, "● %d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60));
+                } else if (isRecording) {
                     long ms = recordedNanos / 1_000_000L + Math.min(1000, SystemClock.elapsedRealtime() - lastStatusAt);
                     long s = ms / 1000;
                     timerView.setText(String.format(Locale.US, "● %d:%02d:%02d", s / 3600, (s / 60) % 60, s % 60));

@@ -1,6 +1,15 @@
 ext {
     androidxAppCompatVersion = project.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.1'
     cameraxVersion = '1.4.2'
+    rootEncoderVersion = '2.8.1'
+}
+
+// The live-streaming library (RootEncoder) is published on JitPack. The app resolves this
+// plugin's dependencies with its own repositories, so add JitPack for every project.
+rootProject.allprojects {
+    repositories {
+        maven { url 'https://jitpack.io' }
+    }
 }
 
 buildscript {
@@ -41,6 +50,7 @@ android {
 repositories {
     google()
     mavenCentral()
+    maven { url 'https://jitpack.io' }
 }
 
 dependencies {
@@ -51,4 +61,5 @@ dependencies {
     implementation "androidx.camera:camera-lifecycle:$cameraxVersion"
     implementation "androidx.camera:camera-video:$cameraxVersion"
     implementation "androidx.camera:camera-view:$cameraxVersion"
+    implementation "com.github.pedroSG94.RootEncoder:library:$rootEncoderVersion"
 }
