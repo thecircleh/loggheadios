@@ -512,6 +512,9 @@ export default function GameCameraPage() {
                   <li>In the stream settings, set <strong>Stream latency</strong> to <strong>Normal</strong> (not Low or
                     Ultra-low): YouTube then buffers through gym Wi-Fi hiccups. Turn off <strong>Auto-stop</strong>, so a
                     dropped connection rejoins the same broadcast instead of ending it.</li>
+                  <li>Use the <strong>Default stream key</strong>, and leave <strong>manual settings off</strong> so YouTube
+                    detects the resolution itself: Loggerhead raises and lowers the quality as the Wi-Fi changes. If you do
+                    turn manual settings on, pick <strong>RTMP</strong> (not HLS) and <strong>Variable</strong> bitrate.</li>
                   <li>Copy the <strong>Stream key</strong>. It stays the same from game to game.</li>
                   <li>On the same computer, open <strong>ui.loggerhead.app/profile</strong> › <strong>Live streaming</strong>,
                     paste the key and tap <strong>Save</strong>. This phone picks it up.</li>
