@@ -12,16 +12,16 @@ const API_URL = getApiUrl();
 const isNative = () => !!window.Capacitor?.isNativePlatform?.();
 const SERVE = '🏐';
 
-// Where to stream. People paste the stream key from YouTube Studio or Facebook Live Producer.
+// Where to stream. People save the stream key from YouTube Studio on the website (or paste it here).
 const STREAM_TARGETS = {
   youtube: { label: 'YouTube', url: 'rtmps://a.rtmps.youtube.com/live2' },
-  facebook: { label: 'Facebook', url: 'rtmps://live-api-s.facebook.com:443/rtmp' },
   other: { label: 'Other', url: '' },
 };
 const STREAM_KEY = 'lh_stream_target'; // { on, platform, key, url } on this phone only
 const loadStreamTarget = () => {
   try {
-    return { on: false, platform: 'youtube', key: '', url: '', ...JSON.parse(localStorage.getItem(STREAM_KEY) || '{}') };
+    const saved = { on: false, platform: 'youtube', key: '', url: '', ...JSON.parse(localStorage.getItem(STREAM_KEY) || '{}') };
+    return STREAM_TARGETS[saved.platform] ? saved : { ...saved, platform: 'youtube', key: '' };
   } catch {
     return { on: false, platform: 'youtube', key: '', url: '' };
   }
@@ -389,7 +389,7 @@ export default function GameCameraPage() {
         <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, cursor: 'pointer' }}>
           <input type="checkbox" checked={streaming} onChange={(e) => updateStream({ on: e.target.checked })}
             style={{ width: 20, height: 20 }} />
-          Stream this game live on YouTube or Facebook
+          Stream this game live on YouTube
         </label>
         {streaming && (
           <>
@@ -418,13 +418,6 @@ export default function GameCameraPage() {
                     30 seconds; share the watch link from YouTube Studio.
                   </p>
                 )}
-                {streamTarget.platform === 'facebook' && (
-                  <p style={{ ...styles.muted, fontSize: 12 }}>
-                    Game day: on your computer (or a phone browser), open <strong>facebook.com/live/create</strong>,
-                    choose where to post and <strong>Streaming software</strong>. Then tap the red button on the camera,
-                    and click <strong>Go live</strong> on Facebook when the preview shows the game.
-                  </p>
-                )}
               </>
             )}
             {streamTarget.platform === 'youtube' && !savedKey && (
@@ -439,22 +432,6 @@ export default function GameCameraPage() {
                   <li>Choose <strong>Streaming software</strong> (not Webcam or Mobile). Set it to <strong>Unlisted</strong> so only
                     people with the link can watch, a good choice for kids' games.</li>
                   <li>Copy the <strong>Stream key</strong>. It stays the same from game to game.</li>
-                  <li>On the same computer, open <strong>ui.loggerhead.app/profile</strong> › <strong>Live streaming</strong>,
-                    paste the key and tap <strong>Save</strong>. This phone picks it up.</li>
-                </ol>
-              </>
-            )}
-            {streamTarget.platform === 'facebook' && !savedKey && (
-              <>
-                <p style={{ ...styles.muted, fontSize: 13, fontWeight: 700, margin: '10px 0 0' }}>
-                  One-time setup, on your computer (Facebook's key is very long, and its phone app only offers its own camera):
-                </p>
-                <ol style={{ ...styles.muted, fontSize: 12, paddingLeft: 18 }}>
-                  <li>Open <strong>facebook.com/live/create</strong>.</li>
-                  <li>Choose where to post (your profile, a Page or a Group) and who can see it.</li>
-                  <li>Under the video source, choose <strong>Streaming software</strong>, not Webcam. Facebook starts on your
-                    camera: switch it.</li>
-                  <li>Turn on <strong>Persistent stream key</strong> so the same key works every game, then copy the <strong>Stream key</strong>.</li>
                   <li>On the same computer, open <strong>ui.loggerhead.app/profile</strong> › <strong>Live streaming</strong>,
                     paste the key and tap <strong>Save</strong>. This phone picks it up.</li>
                 </ol>

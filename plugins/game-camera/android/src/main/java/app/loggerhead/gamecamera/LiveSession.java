@@ -19,7 +19,7 @@ import com.pedro.library.util.QueueAwareBitrateAdapter;
 import java.io.File;
 
 /**
- * Live streaming to YouTube / Facebook (RTMP or RTMPS with a stream key) while keeping a
+ * Live streaming to YouTube (or any RTMP or RTMPS with a stream key) while keeping a
  * full-quality copy on the phone. The scoreboard is drawn into both. If the connection drops,
  * it keeps trying to reconnect and the local copy keeps recording either way.
  */
@@ -201,7 +201,7 @@ final class LiveSession implements ConnectChecker {
         main.post(() -> {
             wantLive = false;
             if (stream.isStreaming()) stream.stopStream();
-            events.onLive("failed", "The stream key wasn't accepted. Copy it again from YouTube or Facebook.");
+            events.onLive("failed", "The stream key wasn't accepted. Copy it again from YouTube Studio.");
         });
     }
 

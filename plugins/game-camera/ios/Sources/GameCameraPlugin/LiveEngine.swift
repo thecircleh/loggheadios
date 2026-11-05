@@ -4,7 +4,7 @@ import UIKit
 import HaishinKit
 import RTMPHaishinKit
 
-/// Live streaming to YouTube / Facebook (RTMP or RTMPS with a stream key) while keeping a
+/// Live streaming to YouTube (or any RTMP or RTMPS with a stream key) while keeping a
 /// 1080p copy on the phone. The scoreboard and the Loggerhead tag are drawn into both.
 /// If the connection drops it keeps reconnecting; the local copy keeps recording either way.
 @MainActor

@@ -11,19 +11,14 @@ const PLATFORMS = [
     label: 'YouTube',
     where: 'studio.youtube.com › Create › Go live › Streaming software › copy the Stream key.',
   },
-  {
-    key: 'facebook',
-    label: 'Facebook',
-    where: 'facebook.com/live/create › Streaming software › turn on Persistent stream key › copy the Stream key.',
-  },
 ];
 
-// Profile card (Premium): save YouTube / Facebook stream keys here, on a computer where they're
+// Profile card (Premium): save the YouTube stream key here, on a computer where they're
 // easy to copy, and the filming phone uses them when it goes live (Film a Match).
 export default function StreamKeySettings() {
   const { token, hasPremium } = useAuth();
-  const [saved, setSaved] = useState(null); // { youtube: { last4 } | null, facebook: ... }
-  const [drafts, setDrafts] = useState({ youtube: '', facebook: '' });
+  const [saved, setSaved] = useState(null); // { youtube: { last4 } | null }
+  const [drafts, setDrafts] = useState({ youtube: '' });
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState({});
 
@@ -32,7 +27,7 @@ export default function StreamKeySettings() {
     let cancelled = false;
     axios.get(`${API_URL}/api/camera/stream-keys`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 })
       .then(({ data }) => { if (!cancelled) setSaved(data); })
-      .catch(() => { if (!cancelled) setSaved({ youtube: null, facebook: null }); });
+      .catch(() => { if (!cancelled) setSaved({ youtube: null }); });
     return () => { cancelled = true; };
   }, [hasPremium, token]);
 
