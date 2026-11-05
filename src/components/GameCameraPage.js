@@ -7,6 +7,7 @@ import { useAuth } from './AuthContext';
 import { getApiUrl } from '../utils/getApiUrl';
 import { VideoResult, isAndroid, styles } from './clipStitcherShared';
 import { REEL_HANDOFF_KEY } from './HighlightReel';
+import { QUALITIES, checkConnection, deviceWarnings } from '../utils/streamCheck';
 
 const API_URL = getApiUrl();
 const isNative = () => !!window.Capacitor?.isNativePlatform?.();
@@ -17,15 +18,20 @@ const STREAM_TARGETS = {
   youtube: { label: 'YouTube', url: 'rtmps://a.rtmps.youtube.com/live2' },
   other: { label: 'Other', url: '' },
 };
-const STREAM_KEY = 'lh_stream_target'; // { on, platform, key, url } on this phone only
+const STREAM_KEY = 'lh_stream_target'; // { on, platform, key, url, quality } on this phone only
 const loadStreamTarget = () => {
   try {
-    const saved = { on: false, platform: 'youtube', key: '', url: '', ...JSON.parse(localStorage.getItem(STREAM_KEY) || '{}') };
+    const saved = { on: false, platform: 'youtube', key: '', url: '', quality: 'auto', ...JSON.parse(localStorage.getItem(STREAM_KEY) || '{}') };
     return STREAM_TARGETS[saved.platform] ? saved : { ...saved, platform: 'youtube', key: '' };
   } catch {
-    return { on: false, platform: 'youtube', key: '', url: '' };
+    return { on: false, platform: 'youtube', key: '', url: '', quality: 'auto' };
   }
 };
+const CHECK_FRESH_MS = 10 * 60 * 1000; // re-check the connection after 10 minutes
+const describeCheck = (c) => (c.quality === 'too-slow'
+  ? `Upload ${c.uploadMbps} Mbps · delay ${c.rttMs} ms: too slow to stream here.`
+  : `Upload ${c.uploadMbps} Mbps · delay ${c.rttMs} ms → ${QUALITIES[c.quality].label}.`);
+
 const LIVE_TEXT = {
   connecting: 'Connecting to the stream…',
   live: '● You are live',
@@ -57,6 +63,23 @@ export default function GameCameraPage() {
   const [phoneKeyOpen, setPhoneKeyOpen] = useState(false);
   const [live, setLive] = useState(null); // { state, message }
   const [accountKeys, setAccountKeys] = useState({}); // keys saved on the website: { youtube: { last4 } }
+  const [netCheck, setNetCheck] = useState(null); // { uploadMbps, rttMs, quality, at }, or false if it failed
+  const [checking, setChecking] = useState(false);
+  const [preflight, setPreflight] = useState(null); // warnings to confirm before opening the camera
+  const [finishing, setFinishing] = useState(false);
+
+  // Videos left behind when the app closed mid-recording (crash, dead battery): offer them.
+  useEffect(() => {
+    if (!isNative() || !isSubscriber) return;
+    GameCamera.recoverRecordings().then((res) => {
+      const found = res?.recordings || [];
+      if (!found.length) return;
+      setRecordings((prev) => [...found.map((r) => ({ ...r, markers: [] })), ...prev]);
+      setMsg(found.length === 1
+        ? 'Recovered a video from filming that was interrupted (the app closed mid-recording). Save it below.'
+        : `Recovered ${found.length} videos from filming that was interrupted. Save them below.`);
+    }).catch(() => {});
+  }, [isSubscriber]);
 
   // Stream keys saved from the website (Profile › Live streaming), so nobody types them here.
   useEffect(() => {
@@ -178,7 +201,10 @@ export default function GameCameraPage() {
         if (e.state === 'started') {
           recordingRef.current = true;
           markersRef.current = [];
+        } else if (e.state === 'finishing') {
+          setFinishing(true);
         } else if (e.state === 'stopped') {
+          setFinishing(false);
           recordingRef.current = false;
           const rec = { ...e, markers: markersRef.current, matchId: linkRef.current?.matchId };
           markersRef.current = [];
@@ -190,6 +216,7 @@ export default function GameCameraPage() {
             }, { headers: { Authorization: `Bearer ${token}` }, timeout: 20000 }).catch(() => {});
           }
         } else if (e.state === 'error') {
+          setFinishing(false);
           recordingRef.current = false;
           setMsg(e.message || 'The recording stopped.');
         }
@@ -225,9 +252,37 @@ export default function GameCameraPage() {
   const streaming = streamTarget.on;
   const savedKey = accountKeys[streamTarget.platform]; // { last4 } when saved on the website
 
-  const openCamera = async () => {
+  const runCheck = async () => {
+    setChecking(true);
+    const result = await checkConnection(API_URL, token);
+    setChecking(false);
+    setNetCheck(result || false); // false: the check couldn't run
+    return result;
+  };
+
+  // force: the person saw the warnings and chose to go ahead.
+  const openCamera = async (force = false) => {
     setMsg('');
     setLive(null);
+    setPreflight(null);
+    // Quality: what they picked, or what the connection check says (checked again if stale).
+    let quality = streamTarget.quality && streamTarget.quality !== 'auto' ? streamTarget.quality : null;
+    const warnings = [];
+    if (streaming && !quality) {
+      let result = netCheck && Date.now() - netCheck.at < CHECK_FRESH_MS ? netCheck : null;
+      if (!result && !force) result = await runCheck();
+      if (result?.quality === 'too-slow') {
+        warnings.push(`The upload here is only ${result.uploadMbps} Mbps, too slow for a steady stream. Turn off Wi-Fi to use cellular and check again, or film without streaming. If you go ahead, it streams at the lowest quality.`);
+      }
+      quality = result ? (result.quality === 'too-slow' ? 'low' : result.quality) : 'medium';
+    }
+    if (!force) {
+      warnings.push(...await deviceWarnings());
+      if (warnings.length) {
+        setPreflight(warnings);
+        return;
+      }
+    }
     let key = streamTarget.key.trim();
     if (streaming && !key && savedKey) {
       try {
@@ -246,7 +301,7 @@ export default function GameCameraPage() {
       return;
     }
     try {
-      await GameCamera.open(streaming ? { stream: { url: streamUrl, key } } : undefined);
+      await GameCamera.open(streaming ? { stream: { url: streamUrl, key, quality: quality || 'medium' } } : undefined);
       setCameraOpen(true);
     } catch (err) {
       setMsg(err?.message || "Couldn't open the camera.");
@@ -415,7 +470,9 @@ export default function GameCameraPage() {
                 {streamTarget.platform === 'youtube' && (
                   <p style={{ ...styles.muted, fontSize: 12 }}>
                     Game day: tap the red button on the camera. YouTube starts the stream by itself within about
-                    30 seconds; share the watch link from YouTube Studio.
+                    30 seconds; share the watch link from YouTube Studio. Once, in YouTube Studio's stream
+                    settings: set <strong>Stream latency</strong> to <strong>Normal</strong> and turn
+                    off <strong>Auto-stop</strong>, so gym Wi-Fi hiccups don't end the broadcast.
                   </p>
                 )}
               </>
@@ -431,6 +488,9 @@ export default function GameCameraPage() {
                   <li>Open <strong>studio.youtube.com</strong> › <strong>Create</strong> › <strong>Go live</strong>.</li>
                   <li>Choose <strong>Streaming software</strong> (not Webcam or Mobile). Set it to <strong>Unlisted</strong> so only
                     people with the link can watch, a good choice for kids' games.</li>
+                  <li>In the stream settings, set <strong>Stream latency</strong> to <strong>Normal</strong> (not Low or
+                    Ultra-low): YouTube then buffers through gym Wi-Fi hiccups. Turn off <strong>Auto-stop</strong>, so a
+                    dropped connection rejoins the same broadcast instead of ending it.</li>
                   <li>Copy the <strong>Stream key</strong>. It stays the same from game to game.</li>
                   <li>On the same computer, open <strong>ui.loggerhead.app/profile</strong> › <strong>Live streaming</strong>,
                     paste the key and tap <strong>Save</strong>. This phone picks it up.</li>
@@ -458,7 +518,37 @@ export default function GameCameraPage() {
                 {savedKey ? 'Use a different key on this phone' : 'Paste the key on this phone instead'}
               </button>
             )}
+            <div style={{ marginTop: 12 }}>
+              <label style={{ fontSize: 13, fontWeight: 700 }}>
+                Stream quality{' '}
+                <select value={streamTarget.quality || 'auto'} onChange={(e) => updateStream({ quality: e.target.value })}
+                  style={{ marginLeft: 6, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border, #d1d5db)' }}>
+                  <option value="auto">Auto (checks the connection)</option>
+                  {Object.entries(QUALITIES).map(([k, q]) => <option key={k} value={k}>{q.label}</option>)}
+                </select>
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                <button type="button" style={{ ...styles.link, fontSize: 13 }} onClick={runCheck} disabled={checking}>
+                  {checking ? 'Checking the connection…' : 'Check the connection here'}
+                </button>
+                {netCheck && !checking && (
+                  <span style={{ fontSize: 12, fontWeight: 600, color: netCheck.quality === 'too-slow' ? '#b91c1c' : '#166534' }}>
+                    {describeCheck(netCheck)}
+                  </span>
+                )}
+                {netCheck === false && !checking && (
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#b91c1c' }}>
+                    Couldn't check: the connection may be down.
+                  </span>
+                )}
+              </div>
+              <p style={{ ...styles.muted, fontSize: 12, margin: '4px 0 0' }}>
+                Gym Wi-Fi is often slower than cellular. If the check says it's slow, turn off Wi-Fi and check again.
+              </p>
+            </div>
             <ul style={{ ...styles.muted, paddingLeft: 18, fontSize: 12 }}>
+              <li>The camera shows how the stream is doing: green is good, yellow is struggling, red means a weak
+                connection (the quality drops so the stream keeps going).</li>
               <li>The score, the latest play and a Loggerhead tag are shown in the stream. A full-quality copy stays on this phone.</li>
               <li>Check your event's rules first: some tournaments sell exclusive streaming rights and don't allow other streams.</li>
               <li>Streaming uses about 1.2 GB of data an hour and a lot of battery. Wi-Fi and a power bank help.</li>
@@ -470,8 +560,22 @@ export default function GameCameraPage() {
 
       <div className="card" style={{ marginTop: 14 }}>
         <p style={styles.stepTitle}>3. Film</p>
-        <button type="button" className="primary-button" onClick={openCamera} disabled={cameraOpen}>
-          {streaming
+        {preflight && (
+          <div style={{ border: '1px solid #f59e0b', background: 'rgba(245,158,11,0.08)', borderRadius: 10, padding: '10px 12px', margin: '0 0 10px' }}>
+            <p style={{ margin: '0 0 6px', fontWeight: 700, fontSize: 14 }}>Before you start</p>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
+              {preflight.map((w) => <li key={w} style={{ marginBottom: 4 }}>{w}</li>)}
+            </ul>
+            <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+              <button type="button" className="primary-button" style={{ width: 'auto' }} onClick={() => openCamera(true)}>
+                Open the camera anyway
+              </button>
+              <button type="button" style={styles.link} onClick={() => setPreflight(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
+        <button type="button" className="primary-button" onClick={() => openCamera(false)} disabled={cameraOpen || checking}>
+          {checking ? 'Checking the connection…' : streaming
             ? `🔴 Open camera to go live on ${STREAM_TARGETS[streamTarget.platform]?.label || 'stream'}`
             : link ? '🎥 Open camera' : '🎥 Film without a live score'}
         </button>
@@ -489,6 +593,7 @@ export default function GameCameraPage() {
           {LIVE_TEXT[live.state]}{live.message ? ` (${live.message})` : ''}
         </p>
       )}
+      {finishing && <p style={{ ...styles.muted, marginTop: 12, fontWeight: 700 }}>Finishing the video… (a long match can take a minute)</p>}
       {msg && <p style={{ ...styles.muted, marginTop: 12 }}>{msg}</p>}
     </div>
   );

@@ -101,6 +101,8 @@ public class GameCameraPlugin extends Plugin {
 
     // Live streaming (open with a stream target)
     private String liveEndpoint;
+    private String liveQuality = "high";
+    private String liveState = "";
     private LiveSession live;
     private SurfaceView liveView;
     private TextView liveBadge;
@@ -127,6 +129,7 @@ public class GameCameraPlugin extends Plugin {
                 return;
             }
             liveEndpoint = url.endsWith("/") ? url + key : url + "/" + key;
+            liveQuality = target.optString("quality", "high");
         }
         if (getPermissionState("camera") != PermissionState.GRANTED) {
             requestPermissionForAliases(new String[] { "camera", "microphone" }, call, "permissionsDone");
@@ -189,7 +192,7 @@ public class GameCameraPlugin extends Plugin {
                 if (root == null) buildView(activity);
                 activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
                 boolean withAudio = getPermissionState("microphone") == PermissionState.GRANTED;
-                live = new LiveSession(activity, liveEndpoint, withAudio, liveEvents);
+                live = new LiveSession(activity, liveEndpoint, LiveSession.Quality.named(liveQuality), withAudio, liveEvents);
                 if (!live.prepare()) {
                     live.release();
                     live = null;
@@ -216,6 +219,7 @@ public class GameCameraPlugin extends Plugin {
     private final LiveSession.Events liveEvents = new LiveSession.Events() {
         @Override
         public void onLive(String state, String message) {
+            liveState = state;
             switch (state) {
                 case "connecting": setLiveBadge("Connecting…", Color.rgb(253, 186, 116)); break;
                 case "live": setLiveBadge("● LIVE", Color.rgb(248, 113, 113)); break;
@@ -241,9 +245,31 @@ public class GameCameraPlugin extends Plugin {
         }
 
         @Override
+        public void onRecordingFinishing() {
+            isRecording = false;
+            updateRecordButton();
+            setLiveBadge("Finishing the video…", Color.WHITE);
+            JSObject data = new JSObject();
+            data.put("state", "finishing");
+            notifyListeners("recording", data);
+        }
+
+        @Override
+        public void onHealth(long sentBitsPerSecond, String level, boolean hot) {
+            if (!"live".equals(liveState)) return;
+            int color = "good".equals(level) ? Color.rgb(74, 222, 128)
+                : "fair".equals(level) ? Color.rgb(250, 204, 21) : Color.rgb(248, 113, 113);
+            String text = String.format(Locale.US, "● LIVE · %.1f Mbps", sentBitsPerSecond / 1_000_000.0);
+            if ("poor".equals(level)) text += " · weak connection";
+            if (hot) text += " · phone hot";
+            setLiveBadge(text, color);
+        }
+
+        @Override
         public void onRecordingStopped(File file, long durationMs, String error) {
             isRecording = false;
             updateRecordButton();
+            if ("ended".equals(liveState) || "".equals(liveState)) setLiveBadge("", Color.WHITE);
             JSObject data = new JSObject();
             if (file != null && file.exists() && file.length() > 0) {
                 data.put("state", "stopped");
@@ -362,6 +388,55 @@ public class GameCameraPlugin extends Plugin {
             }
             notifyListeners("recording", data);
         }
+    }
+
+    /** Battery, free space and heat, for the checks before filming. */
+    @PluginMethod
+    public void deviceStatus(PluginCall call) {
+        JSObject ret = new JSObject();
+        BatteryManager bm = (BatteryManager) getContext().getSystemService(Context.BATTERY_SERVICE);
+        int level = bm != null ? bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) : -1;
+        ret.put("battery", level >= 0 && level <= 100 ? level / 100.0 : -1);
+        ret.put("charging", bm != null && bm.isCharging());
+        long free = -1;
+        try {
+            free = new StatFs(getContext().getCacheDir().getAbsolutePath()).getAvailableBytes();
+        } catch (Exception ignored) {}
+        ret.put("freeBytes", free);
+        String thermal = "nominal";
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            android.os.PowerManager pm = (android.os.PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+            int t = pm != null ? pm.getCurrentThermalStatus() : 0;
+            if (t >= android.os.PowerManager.THERMAL_STATUS_CRITICAL) thermal = "critical";
+            else if (t >= android.os.PowerManager.THERMAL_STATUS_SEVERE) thermal = "serious";
+            else if (t >= android.os.PowerManager.THERMAL_STATUS_MODERATE) thermal = "fair";
+        }
+        ret.put("thermal", thermal);
+        call.resolve(ret);
+    }
+
+    /** Videos left behind when the app closed mid-recording, finished and ready to save. */
+    @PluginMethod
+    public void recoverRecordings(PluginCall call) {
+        final File cache = getContext().getCacheDir();
+        new Thread(() -> {
+            com.getcapacitor.JSArray list = new com.getcapacitor.JSArray();
+            try {
+                for (Recordings.Recovered r : Recordings.recover(cache)) {
+                    JSObject item = new JSObject();
+                    item.put("state", "stopped");
+                    item.put("path", r.file.getAbsolutePath());
+                    item.put("uri", Uri.fromFile(r.file).toString());
+                    item.put("durationMs", r.durationMs);
+                    item.put("startedAt", r.startedAt);
+                    item.put("recovered", true);
+                    list.put(item);
+                }
+            } catch (Exception ignored) {}
+            JSObject ret = new JSObject();
+            ret.put("recordings", list);
+            call.resolve(ret);
+        }, "loggerhead-recover").start();
     }
 
     @PluginMethod
@@ -534,7 +609,7 @@ public class GameCameraPlugin extends Plugin {
         recordButton.setOnClickListener(v -> {
             if (live != null) {
                 if (live.isRecording()) live.stop();
-                else live.start(newRecordingFile());
+                else live.start(Recordings.newLiveFile(getContext().getCacheDir()));
                 return;
             }
             if (recording == null) startRecording();

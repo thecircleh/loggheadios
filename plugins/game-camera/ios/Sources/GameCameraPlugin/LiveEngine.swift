@@ -6,13 +6,33 @@ import RTMPHaishinKit
 
 /// Live streaming to YouTube (or any RTMP or RTMPS with a stream key) while keeping a
 /// 1080p copy on the phone. The scoreboard and the Loggerhead tag are drawn into both.
-/// If the connection drops it keeps reconnecting; the local copy keeps recording either way.
+///
+/// Built for gym networks: the bitrate follows what the connection can carry (LiveBitRate),
+/// it keeps reconnecting if the connection drops, and it backs off when the phone runs hot.
+/// The local copy is written in 10-second pieces, so it stays playable if the app is killed
+/// mid-match; a ".inprogress" marker next to it lets the next launch find it.
 @MainActor
 final class LiveEngine {
     /// state: connecting | live | reconnecting | failed | ended
     var onLive: ((String, String) -> Void)?
     var onRecordingStarted: ((Int) -> Void)?
     var onRecordingStopped: ((URL?, Int, String?) -> Void)?
+    /// Every second while live: bits per second actually sent, good | fair | poor, phone hot.
+    var onHealth: ((Int, String, Bool) -> Void)?
+
+    /// Stream size and bitrate, picked by the connection check before going live.
+    struct Quality {
+        let size: CGSize
+        let bitRate: Int
+
+        static func named(_ name: String) -> Quality {
+            switch name {
+            case "low": return Quality(size: CGSize(width: 854, height: 480), bitRate: 800_000)
+            case "medium": return Quality(size: CGSize(width: 1280, height: 720), bitRate: 1_500_000)
+            default: return Quality(size: CGSize(width: 1280, height: 720), bitRate: 2_500_000)
+            }
+        }
+    }
 
     let previewView: MTHKView
     private let mixer = MediaMixer()
@@ -28,10 +48,17 @@ final class LiveEngine {
     private var statusTask: Task<Void, Never>?
     private(set) var isRecording = false
     private var startedAt: Date?
+    private var recordingURL: URL?
+    private let quality: Quality
+    private var bitRate: LiveBitRate?
+    private var connected = false
+    private var hot = false
+    private var heatObserver: NSObjectProtocol?
 
-    init(serverURL: String, streamKey: String) {
+    init(serverURL: String, streamKey: String, quality: String) {
         self.serverURL = serverURL
         self.streamKey = streamKey
+        self.quality = Quality.named(quality)
         stream = RTMPStream(connection: connection)
         previewView = MTHKView(frame: .zero)
         previewView.videoGravity = .resizeAspect
@@ -64,11 +91,19 @@ final class LiveEngine {
         brandObject = objects.1
         setBrand(ScoreArt.brand())
 
-        // Stream 720p (works on most bleacher connections); the local copy is the full 1080p.
+        // Stream at the size the connection check picked; the local copy is the full 1080p.
         var video = await stream.videoSettings
-        video.videoSize = CGSize(width: 1280, height: 720)
-        video.bitRate = 2_500_000
+        video.videoSize = quality.size
+        video.bitRate = quality.bitRate
         try await stream.setVideoSettings(video)
+        let strategy = LiveBitRate(maximum: quality.bitRate) { [weak self] sent, target, queued in
+            Task { @MainActor in self?.report(sent: sent, target: target, queued: queued) }
+        }
+        bitRate = strategy
+        await stream.setBitRateStrategy(strategy)
+        // Write the local copy in 10-second pieces so a crash doesn't lose the match.
+        await recorder.setMovieFragmentInterval(10)
+        watchHeat()
 
         await mixer.addOutput(stream)
         await mixer.addOutput(recorder)
@@ -105,6 +140,48 @@ final class LiveEngine {
         Task { @ScreenActor in object.cgImage = image }
     }
 
+    // MARK: - Health and heat
+
+    private func report(sent: Int, target: Int, queued: Int) {
+        guard connected else { return }
+        let maxRate = Double(quality.bitRate)
+        // Bytes waiting to go out: about 3 s of video behind means the connection can't keep up.
+        let level: String
+        if queued > quality.bitRate * 3 / 8 || Double(target) < maxRate * 0.35 {
+            level = "poor"
+        } else if queued > quality.bitRate / 10 || Double(target) < maxRate * 0.7 {
+            level = "fair"
+        } else {
+            level = "good"
+        }
+        onHealth?(sent, level, hot)
+    }
+
+    private func watchHeat() {
+        heatObserver = NotificationCenter.default.addObserver(
+            forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.applyHeat() }
+        }
+        applyHeat()
+    }
+
+    private func applyHeat() {
+        let factor: Double
+        switch ProcessInfo.processInfo.thermalState {
+        case .critical: factor = 0.4
+        case .serious: factor = 0.6
+        default: factor = 1
+        }
+        hot = factor < 1
+        guard let strategy = bitRate else { return }
+        let stream = self.stream
+        Task {
+            await strategy.setCeilingFactor(factor)
+            await strategy.enforceCeiling(on: stream)
+        }
+    }
+
     // MARK: - Go live / stop
 
     func toggle(orientation: AVCaptureVideoOrientation) async {
@@ -120,6 +197,8 @@ final class LiveEngine {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("game-camera", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("loggerhead-game-\(Int(Date().timeIntervalSince1970 * 1000)).mp4")
+        RecordingMarker.set(url)
+        recordingURL = url
         do {
             try await recorder.startRecording(url, settings: StreamRecorder.defaultSettings)
             isRecording = true
@@ -127,6 +206,8 @@ final class LiveEngine {
             startedAt = now
             onRecordingStarted?(Int(now.timeIntervalSince1970 * 1000))
         } catch {
+            RecordingMarker.clear(url)
+            recordingURL = nil
             onRecordingStopped?(nil, 0, error.localizedDescription)
         }
         wantLive = true
@@ -136,11 +217,13 @@ final class LiveEngine {
 
     private func connect(attempt: Int) async {
         guard wantLive else { return }
+        connected = false
         onLive?(attempt == 0 ? "connecting" : "reconnecting", "")
         do {
             _ = try await connection.connect(serverURL)
             _ = try await stream.publish(streamKey)
             everLive = true
+            connected = true
             onLive?("live", "")
             watchConnection()
         } catch {
@@ -178,6 +261,7 @@ final class LiveEngine {
 
     func stop() async {
         wantLive = false
+        connected = false
         statusTask?.cancel()
         statusTask = nil
         _ = try? await stream.close()
@@ -188,10 +272,15 @@ final class LiveEngine {
         let duration = positionMsAt(Date())
         do {
             let url = try await recorder.stopRecording()
+            RecordingMarker.clear(url)
             onRecordingStopped?(url, duration, nil)
         } catch {
-            onRecordingStopped?(nil, 0, error.localizedDescription)
+            // Pieces written so far stay playable: hand over what's there.
+            let partial = recordingURL.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
+            if let partial { RecordingMarker.clear(partial) }
+            onRecordingStopped?(partial, partial == nil ? 0 : duration, error.localizedDescription)
         }
+        recordingURL = nil
         startedAt = nil
     }
 
@@ -203,6 +292,8 @@ final class LiveEngine {
     /// Ends everything and lets the camera go.
     func shutdown() async {
         if isRecording || wantLive { await stop() }
+        if let heatObserver { NotificationCenter.default.removeObserver(heatObserver) }
+        heatObserver = nil
         await mixer.stopRunning()
         try? await mixer.attachAudio(nil)
         try? await mixer.attachVideo(nil)
@@ -285,5 +376,116 @@ enum ScoreArt {
             }
         }
         return image.cgImage
+    }
+}
+
+
+/// Bitrate control for gym networks. Backs off quickly to what the connection is actually
+/// carrying, climbs back slowly once it's been steady, and never goes above the ceiling (lowered
+/// when the phone runs hot). If nothing is getting out at all, it sends fewer video frames so the
+/// audio keeps flowing. Reports what's being sent every second for the health badge.
+final actor LiveBitRate: StreamBitRateStrategy {
+    nonisolated let mamimumVideoBitRate: Int
+    nonisolated let mamimumAudioBitRate: Int = 0
+    private let floor: Int
+    private let onReport: @Sendable (Int, Int, Int) -> Void // sent bps, target bps, queued bytes
+    private var ceilingFactor: Double = 1
+    private var steadySeconds = 0
+    private var stalledSeconds = 0
+
+    init(maximum: Int, onReport: @escaping @Sendable (Int, Int, Int) -> Void) {
+        mamimumVideoBitRate = maximum
+        floor = max(250_000, maximum / 8)
+        self.onReport = onReport
+    }
+
+    private var ceiling: Int { max(floor, Int(Double(mamimumVideoBitRate) * ceilingFactor)) }
+
+    func setCeilingFactor(_ factor: Double) {
+        ceilingFactor = factor
+    }
+
+    /// Applies a lowered ceiling right away (for heat).
+    func enforceCeiling(on stream: some StreamConvertible) async {
+        var video = await stream.videoSettings
+        guard video.bitRate > ceiling else { return }
+        video.bitRate = ceiling
+        try? await stream.setVideoSettings(video)
+    }
+
+    func adjustBitrate(_ event: NetworkMonitorEvent, stream: some StreamConvertible) async {
+        var video = await stream.videoSettings
+        switch event {
+        case .status(let report):
+            onReport(report.currentBytesOutPerSecond * 8, video.bitRate, report.currentQueueBytesOut)
+            stalledSeconds = 0
+            if video.bitRate > ceiling {
+                video.bitRate = ceiling
+                try? await stream.setVideoSettings(video)
+                return
+            }
+            steadySeconds += 1
+            if steadySeconds >= 8 && (video.bitRate < ceiling || video.frameInterval != 0) {
+                video.bitRate = min(ceiling, video.bitRate + mamimumVideoBitRate / 10)
+                video.frameInterval = 0
+                try? await stream.setVideoSettings(video)
+                steadySeconds = 0
+            }
+        case .publishInsufficientBWOccured(let report):
+            onReport(report.currentBytesOutPerSecond * 8, video.bitRate, report.currentQueueBytesOut)
+            steadySeconds = 0
+            let audio = await stream.audioSettings
+            let sent = report.currentBytesOutPerSecond * 8
+            if sent > 0 {
+                stalledSeconds = 0
+                video.bitRate = max(floor, min(ceiling, Int(Double(sent - audio.bitRate) * 0.8)))
+            } else {
+                stalledSeconds += 1
+                video.bitRate = floor
+                // Nothing getting out: fewer video frames, so the sound keeps going.
+                if stalledSeconds >= 4 {
+                    video.frameInterval = VideoCodecSettings.frameInterval05
+                } else if stalledSeconds >= 2 {
+                    video.frameInterval = VideoCodecSettings.frameInterval10
+                }
+            }
+            try? await stream.setVideoSettings(video)
+        case .reset:
+            steadySeconds = 0
+            stalledSeconds = 0
+            video.bitRate = ceiling
+            video.frameInterval = 0
+            try? await stream.setVideoSettings(video)
+        }
+    }
+}
+
+/// A ".inprogress" file next to a recording while it's being written. If the app is killed
+/// mid-match the marker stays, and the next launch offers the video (see recoverRecordings).
+enum RecordingMarker {
+    static func markerURL(_ video: URL) -> URL {
+        URL(fileURLWithPath: video.path + ".inprogress")
+    }
+
+    static func set(_ video: URL) {
+        FileManager.default.createFile(atPath: markerURL(video).path, contents: nil)
+    }
+
+    static func clear(_ video: URL) {
+        try? FileManager.default.removeItem(at: markerURL(video))
+    }
+
+    /// Recordings left behind, skipping `active` (paths being recorded now).
+    static func leftovers(in dir: URL, active: Set<String>) -> [URL] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
+        var out: [URL] = []
+        for marker in files where marker.lastPathComponent.hasSuffix(".inprogress") {
+            let video = URL(fileURLWithPath: String(marker.path.dropLast(".inprogress".count)))
+            if active.contains(video.path) { continue }
+            try? FileManager.default.removeItem(at: marker)
+            let size = (try? FileManager.default.attributesOfItem(atPath: video.path)[.size] as? Int) ?? 0
+            if size > 64 * 1024 { out.append(video) } else { try? FileManager.default.removeItem(at: video) }
+        }
+        return out
     }
 }

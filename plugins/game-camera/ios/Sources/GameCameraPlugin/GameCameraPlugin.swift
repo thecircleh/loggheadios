@@ -22,7 +22,9 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
         CAPPluginMethod(name: "close", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setScoreboard", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "showPlay", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "mark", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "mark", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "deviceStatus", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "recoverRecordings", returnType: CAPPluginReturnPromise)
     ]
 
     private let session = AVCaptureSession()
@@ -38,6 +40,7 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
     // LiveEngine runs on the main actor; these mirror its state for synchronous reads here.
     private var liveRecording = false
     private var liveStartedAt: Date?
+    private var liveState = ""
     private var sbTitle = ""
     private var sbSubtitle = ""
     private var sbPlay = ""
@@ -55,6 +58,7 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
             call.reject("Add your stream key first.")
             return
         }
+        let quality = (stream?["quality"] as? String) ?? "high"
         AVCaptureDevice.requestAccess(for: .video) { granted in
             guard granted else {
                 call.reject("Loggerhead needs camera access to film. Turn it on in Settings › Loggerhead.", "PERMISSION_DENIED")
@@ -63,7 +67,7 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
             // Sound is optional: film without it if the microphone is off.
             AVCaptureDevice.requestAccess(for: .audio) { _ in
                 if let target = target {
-                    DispatchQueue.main.async { self.openLive(call, url: target.url, key: target.key) }
+                    DispatchQueue.main.async { self.openLive(call, url: target.url, key: target.key, quality: quality) }
                     return
                 }
                 self.sessionQueue.async {
@@ -107,19 +111,21 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
         }
         guard session.canAddOutput(movieOutput) else { return "Couldn't record on this phone." }
         session.addOutput(movieOutput)
+        // Written in 10-second pieces, so the video survives the app being killed mid-match.
+        movieOutput.movieFragmentInterval = CMTime(seconds: 10, preferredTimescale: 1)
         configured = true
         return nil
     }
 
     // MARK: - Live
 
-    private func openLive(_ call: CAPPluginCall, url: String, key: String) {
+    private func openLive(_ call: CAPPluginCall, url: String, key: String, quality: String) {
         guard cameraView == nil, let host = bridge?.viewController?.view else {
             call.reject("The camera is already open.")
             return
         }
         Task { @MainActor in
-            let engine = LiveEngine(serverURL: url, streamKey: key)
+            let engine = LiveEngine(serverURL: url, streamKey: key, quality: quality)
             self.live = engine
             self.wireLive(engine)
             let view = GameCameraView(frame: host.bounds, session: nil, preview: engine.previewView)
@@ -158,6 +164,7 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
     private func wireLive(_ engine: LiveEngine) {
         engine.onLive = { [weak self] state, message in
             guard let self = self else { return }
+            self.liveState = state
             let amber = UIColor(red: 0.99, green: 0.73, blue: 0.45, alpha: 1)
             switch state {
             case "connecting": self.cameraView?.setLiveStatus("Connecting…", color: amber)
@@ -169,6 +176,19 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
             var data: [String: Any] = ["state": state]
             if !message.isEmpty { data["message"] = message }
             self.notifyListeners("live", data: data)
+        }
+        engine.onHealth = { [weak self] sent, level, hot in
+            guard let self = self, self.liveState == "live" else { return }
+            let color: UIColor
+            switch level {
+            case "good": color = UIColor(red: 0.29, green: 0.87, blue: 0.5, alpha: 1)
+            case "fair": color = UIColor(red: 0.98, green: 0.8, blue: 0.08, alpha: 1)
+            default: color = UIColor(red: 0.97, green: 0.44, blue: 0.44, alpha: 1)
+            }
+            var text = String(format: "● LIVE · %.1f Mbps", Double(sent) / 1_000_000)
+            if level == "poor" { text += " · weak connection" }
+            if hot { text += " · phone hot" }
+            self.cameraView?.setLiveStatus(text, color: color)
         }
         engine.onRecordingStarted = { [weak self] at in
             self?.liveRecording = true
@@ -296,6 +316,7 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
             if let connection = self.movieOutput.connection(with: .video), connection.isVideoOrientationSupported {
                 connection.videoOrientation = orientation
             }
+            RecordingMarker.set(url)
             self.movieOutput.startRecording(to: url, recordingDelegate: self)
         }
     }
@@ -312,6 +333,7 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
         // An error can still leave a playable file (e.g. the phone ran low on space).
         let finished = (error as NSError?)?.userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool
         let usable = error == nil || finished == true
+        RecordingMarker.clear(outputFileURL)
         let seconds = CMTimeGetSeconds(AVURLAsset(url: outputFileURL).duration)
         var data: [String: Any] = [:]
         if usable && FileManager.default.fileExists(atPath: outputFileURL.path) {
@@ -332,6 +354,64 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
             if self.closeAfterStop {
                 self.closeAfterStop = false
                 self.closeCamera()
+            }
+        }
+    }
+
+    // MARK: - Checks before filming, and recovery
+
+    /// Battery, free space and heat, for the checks before filming.
+    @objc func deviceStatus(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            UIDevice.current.isBatteryMonitoringEnabled = true
+            let level = UIDevice.current.batteryLevel
+            let state = UIDevice.current.batteryState
+            var free: Int64 = -1
+            let home = URL(fileURLWithPath: NSHomeDirectory())
+            if let values = try? home.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
+               let capacity = values.volumeAvailableCapacityForImportantUsage {
+                free = capacity
+            }
+            let thermal: String
+            switch ProcessInfo.processInfo.thermalState {
+            case .critical: thermal = "critical"
+            case .serious: thermal = "serious"
+            case .fair: thermal = "fair"
+            default: thermal = "nominal"
+            }
+            call.resolve([
+                "battery": level >= 0 ? Double(level) : -1,
+                "charging": state == .charging || state == .full,
+                "freeBytes": free,
+                "thermal": thermal
+            ])
+        }
+    }
+
+    /// Videos left behind when the app closed mid-recording (they're written in 10-second
+    /// pieces, so everything up to the last piece plays). Only while the camera is closed.
+    @objc func recoverRecordings(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard self.cameraView == nil else {
+                call.resolve(["recordings": [] as [Any]])
+                return
+            }
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("game-camera", isDirectory: true)
+            DispatchQueue.global(qos: .userInitiated).async {
+                var list: [[String: Any]] = []
+                for url in RecordingMarker.leftovers(in: dir, active: []) {
+                    let seconds = CMTimeGetSeconds(AVURLAsset(url: url).duration)
+                    let digits = url.deletingPathExtension().lastPathComponent.filter { $0.isNumber }
+                    list.append([
+                        "state": "stopped",
+                        "path": url.path,
+                        "uri": url.absoluteString,
+                        "durationMs": seconds.isFinite && seconds > 0 ? Int(seconds * 1000) : 0,
+                        "startedAt": Int(digits) ?? 0,
+                        "recovered": true
+                    ])
+                }
+                call.resolve(["recordings": list])
             }
         }
     }
