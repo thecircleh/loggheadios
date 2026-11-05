@@ -19,6 +19,7 @@ export default function StreamKeySettings() {
   const { token, hasPremium } = useAuth();
   const [saved, setSaved] = useState(null); // { youtube: { last4 } | null }
   const [drafts, setDrafts] = useState({ youtube: '' });
+  const [showKey, setShowKey] = useState(false);
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState({});
 
@@ -68,8 +69,15 @@ export default function StreamKeySettings() {
             </div>
             <p style={{ margin: '4px 0 8px', fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{p.where}</p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {/* Plain text field, masked with CSS: a password-type box gets filled by password
+                  managers with the account password. */}
               <input
-                type="password"
+                type="text"
+                name={`${p.key}-stream-key`}
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-bwignore="true"
+                data-form-type="other"
                 value={drafts[p.key]}
                 onChange={(e) => setDrafts((d) => ({ ...d, [p.key]: e.target.value }))}
                 placeholder={current ? 'Paste a new key to replace it' : `Paste your ${p.label} stream key`}
@@ -77,8 +85,13 @@ export default function StreamKeySettings() {
                 autoCapitalize="off"
                 autoCorrect="off"
                 spellCheck={false}
-                style={{ flex: '1 1 220px', minWidth: 0, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)' }}
+                style={{ flex: '1 1 220px', minWidth: 0, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)',
+                  WebkitTextSecurity: showKey ? 'none' : 'disc' }}
               />
+              <button type="button" onClick={() => setShowKey((v) => !v)}
+                style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 600, cursor: 'pointer', padding: '0 4px' }}>
+                {showKey ? 'Hide' : 'Show'}
+              </button>
               <button type="button" className="primary-button" style={{ width: 'auto', flex: '0 0 auto' }}
                 disabled={busy === p.key || !drafts[p.key].trim()} onClick={() => save(p.key, drafts[p.key])}>
                 {busy === p.key ? 'Saving…' : 'Save'}

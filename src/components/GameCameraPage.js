@@ -529,10 +529,12 @@ export default function GameCameraPage() {
             {(streamTarget.platform === 'other' || phoneKeyOpen || streamTarget.key.trim()) ? (
               <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
                 <input value={streamTarget.key} onChange={(e) => updateStream({ key: e.target.value })}
-                  type={showKey ? 'text' : 'password'}
+                  type="text" name="stream-key" autoComplete="off"
+                  data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"
                   placeholder={savedKey && streamTarget.platform !== 'other' ? 'Leave blank to use your saved key' : 'Stream key'}
                   autoCapitalize="off" autoCorrect="off" spellCheck={false}
-                  style={{ flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)' }} />
+                  style={{ flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)',
+                    WebkitTextSecurity: showKey ? 'none' : 'disc' }} />
                 <button type="button" style={{ ...styles.link, whiteSpace: 'nowrap' }} onClick={() => setShowKey((v) => !v)}>
                   {showKey ? 'Hide' : 'Show'}
                 </button>
