@@ -184,6 +184,11 @@ final class LiveEngine {
 
     // MARK: - Go live / stop
 
+    /// The phone was turned: turn the stream (and its recording) to match.
+    func setOrientation(_ orientation: AVCaptureVideoOrientation) async {
+        await mixer.setVideoOrientation(orientation)
+    }
+
     func toggle(orientation: AVCaptureVideoOrientation) async {
         if isRecording {
             await stop()

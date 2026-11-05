@@ -136,6 +136,10 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
                 Task { @MainActor in await engine.toggle(orientation: orientation) }
             }
             view.onCloseTapped = { [weak self] in self?.confirmClose() }
+            view.onOrientationChange = { [weak self] orientation in
+                guard let engine = self?.live else { return }
+                Task { @MainActor in await engine.setOrientation(orientation) }
+            }
             view.recordedTime = { [weak self] in
                 guard let self = self, self.liveRecording, let at = self.liveStartedAt else { return nil }
                 return Date().timeIntervalSince(at)
@@ -481,6 +485,11 @@ final class GameCameraView: UIView {
     var onRecordTapped: (() -> Void)?
     var onCloseTapped: (() -> Void)?
     var recordedTime: (() -> Double?)?
+    /// Called when the phone is turned, so the live stream turns with it.
+    var onOrientationChange: ((AVCaptureVideoOrientation) -> Void)?
+    private var heldOrientation: AVCaptureVideoOrientation? // from the motion sensor
+    private var lastReported: AVCaptureVideoOrientation?
+    private var rotationObserver: NSObjectProtocol?
 
     private let previewLayer: AVCaptureVideoPreviewLayer?
     private let previewView: UIView?
@@ -515,6 +524,18 @@ final class GameCameraView: UIView {
             addSubview(preview)
         }
         UIDevice.current.isBatteryMonitoringEnabled = true
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        heldOrientation = GameCameraView.videoOrientation(for: UIDevice.current.orientation)
+        rotationObserver = NotificationCenter.default.addObserver(
+            forName: UIDevice.orientationDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self,
+                      let held = GameCameraView.videoOrientation(for: UIDevice.current.orientation) else { return }
+                self.heldOrientation = held
+                self.reportOrientation()
+            }
+        }
         buildUI()
         ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
         tick()
@@ -525,10 +546,39 @@ final class GameCameraView: UIView {
     func stop() {
         ticker?.invalidate()
         ticker = nil
+        if let rotationObserver {
+            NotificationCenter.default.removeObserver(rotationObserver)
+            UIDevice.current.endGeneratingDeviceOrientationNotifications()
+        }
+        rotationObserver = nil
     }
 
-    /// Matches the recording to how the screen is turned (landscape for most games).
+    /// The device's sensor reading as a video orientation. Flat or unknown gives nil.
+    /// (The device's "landscape left" is the video's "landscape right".)
+    static func videoOrientation(for device: UIDeviceOrientation) -> AVCaptureVideoOrientation? {
+        switch device {
+        case .portrait: return .portrait
+        case .portraitUpsideDown: return .portraitUpsideDown
+        case .landscapeLeft: return .landscapeRight
+        case .landscapeRight: return .landscapeLeft
+        default: return nil
+        }
+    }
+
+    /// Matches the video to how the phone is held, even if the screen didn't rotate.
     var videoOrientation: AVCaptureVideoOrientation {
+        heldOrientation ?? screenOrientation
+    }
+
+    private func reportOrientation() {
+        let now = videoOrientation
+        guard now != lastReported else { return }
+        lastReported = now
+        onOrientationChange?(now)
+    }
+
+    /// How the screen is turned, for the on-screen preview.
+    private var screenOrientation: AVCaptureVideoOrientation {
         switch window?.windowScene?.interfaceOrientation ?? .landscapeRight {
         case .portrait: return .portrait
         case .portraitUpsideDown: return .portraitUpsideDown
@@ -542,8 +592,9 @@ final class GameCameraView: UIView {
         previewLayer?.frame = bounds
         previewView?.frame = bounds
         if let connection = previewLayer?.connection, connection.isVideoOrientationSupported {
-            connection.videoOrientation = videoOrientation
+            connection.videoOrientation = screenOrientation
         }
+        reportOrientation()
     }
 
     private func style(_ label: UILabel, size: CGFloat, weight: UIFont.Weight) {
