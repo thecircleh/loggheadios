@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ClipStitcher } from 'loggerhead-clip-stitcher';
 import { useAuth } from './AuthContext';
 import HighlightReel from './HighlightReel';
+import { trackFeature } from '../utils/featureUsage';
 import {
   useClipPicker, pickMessage, PickProgress, MakingProgress, VideoResult, cloudName, formatDuration, styles,
 } from './clipStitcherShared';
@@ -198,6 +199,7 @@ const helpStyles = {
 };
 
 function StitchClips() {
+  const { token } = useAuth();
   const [clips, setClips] = useState([]);
   const [sorted, setSorted] = useState(true); // false once the user reorders by hand
   const [stitching, setStitching] = useState(false);
@@ -256,6 +258,7 @@ function StitchClips() {
       listenerRef.current = await ClipStitcher.addListener('progress', ({ progress: p }) => setProgress(p || 0));
       const res = await ClipStitcher.stitch({ ids: clips.map((c) => c.id) });
       setResult(res);
+      trackFeature(token, 'stitch', { durationMs: res?.durationMs || 0, detail: `${clips.length} clips` });
     } catch (err) {
       if (err?.code !== 'CANCELLED') setMsg(err?.message || "Couldn't make the video.");
     } finally {

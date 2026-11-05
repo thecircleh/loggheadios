@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core';
 import { ClipStitcher } from 'loggerhead-clip-stitcher';
 import { useAuth } from './AuthContext';
 import { getApiUrl } from '../utils/getApiUrl';
+import { trackFeature } from '../utils/featureUsage';
 import {
   PLAY_TYPES, DEFAULT_TYPES, LENGTHS,
   activeStats, reelPlayers, reelPlays, placePlays, reelSegments, whyNothingPlaced, playerLabel,
@@ -213,6 +214,7 @@ export default function HighlightReel() {
       progressRef.current = await ClipStitcher.addListener('progress', ({ progress: p }) => setProgress(p || 0));
       const res = await ClipStitcher.makeReel({ segments: reelSegments(placed, captions) });
       setResult(res);
+      trackFeature(token, 'highlight', { durationMs: res?.durationMs || 0, detail: `${placed.length} plays` });
     } catch (err) {
       if (err?.code !== 'CANCELLED') setMsg(err?.message || "Couldn't make the reel.");
     } finally {

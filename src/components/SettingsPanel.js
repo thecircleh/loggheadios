@@ -1656,6 +1656,8 @@ if (isDup) {
   { headers: { Authorization: `Bearer ${token}` } }
 );
 	  setSavedMatches((prev) => prev.filter((m) => m._id !== matchId));
+      // Deleted the open match: stop pointing at it (and stop autosaving to it).
+      if (String(currentMatchId) === String(matchId)) setCurrentMatchId(null);
       setScheduledMatches((prev) => prev.filter((m) => m._id !== matchId));
     } catch (err) {
       console.error("Failed to delete match", err);

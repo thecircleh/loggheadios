@@ -36,6 +36,20 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl();
 
+// Video features reported by the app (server FeatureUsage).
+const VIDEO_FEATURES = [
+  { key: "stream", label: "Streaming", icon: "🔴", bg: "#FEE2E2", border: "#FCA5A5", color: "#991B1B" },
+  { key: "film", label: "Filming", icon: "🎥", bg: "#E0E7FF", border: "#A5B4FC", color: "#3730A3" },
+  { key: "highlight", label: "Highlights", icon: "⭐", bg: "#FEF3C7", border: "#FCD34D", color: "#92400E" },
+  { key: "stitch", label: "Stitching", icon: "🧵", bg: "#DCFCE7", border: "#86EFAC", color: "#166534" },
+];
+const featureCount = (u, key) => u.featureUsage?.[key]?.count || 0;
+const videoUseTotal = (u) => VIDEO_FEATURES.reduce((n, f) => n + featureCount(u, f.key), 0);
+const formatHours = (ms) => {
+  const min = Math.round((ms || 0) / 60000);
+  return min < 60 ? `${min} min` : `${(min / 60).toFixed(1)} hr`;
+};
+
 const normalizeTeams = (teams) => {
   if (!teams) return [];
   if (Array.isArray(teams)) return teams.filter(Boolean);
@@ -161,6 +175,7 @@ const BetaAdminPage = ({ isMobile = false, isNative = false }) => {
     activityStatus: "all",
     hasTeams: "all",
     hasMatches: "all",
+    videoFeature: "all",
     emailConsent: "all",
     searchEmail: "",
     volleyballRole: "all",
@@ -399,6 +414,13 @@ const BetaAdminPage = ({ isMobile = false, isNative = false }) => {
       });
     }
 
+    if (filters.videoFeature && filters.videoFeature !== "all") {
+      filtered = filtered.filter((u) =>
+        filters.videoFeature === "any" ? videoUseTotal(u) > 0
+          : filters.videoFeature === "none" ? videoUseTotal(u) === 0
+          : featureCount(u, filters.videoFeature) > 0);
+    }
+
     if (filters.emailConsent !== "all") {
       filtered = filtered.filter((u) => {
         return filters.emailConsent === "yes" ? u.consentToEmails : !u.consentToEmails;
@@ -472,6 +494,9 @@ const BetaAdminPage = ({ isMobile = false, isNative = false }) => {
       } else if (sortKey === "matchesCount") {
         aVal = a.matchesCount || 0;
         bVal = b.matchesCount || 0;
+      } else if (sortKey === "videoUse") {
+        aVal = videoUseTotal(a);
+        bVal = videoUseTotal(b);
       } else {
         return 0;
       }
@@ -974,6 +999,46 @@ const handleSendEmails = async () => {
         </div>
       </div>
 
+      {/* Video feature use (click a card to filter the table) */}
+      <div style={{ marginBottom: 30 }}>
+        <h3 style={{ margin: "0 0 10px" }}>🎬 Video features</h3>
+        <div style={{ display: "flex", gap: 15, flexWrap: "wrap" }}>
+          {VIDEO_FEATURES.map((f) => {
+            const usersUsing = users.filter((u) => featureCount(u, f.key) > 0);
+            const uses = users.reduce((n, u) => n + featureCount(u, f.key), 0);
+            const weekAgo = dayjs().subtract(7, "day");
+            const thisWeek = usersUsing.filter((u) => dayjs(u.featureUsage[f.key].lastUsed).isAfter(weekAgo)).length;
+            const premium = usersUsing.filter((u) => u.subscription?.status === "active").length;
+            const totalMs = users.reduce((n, u) => n + (u.featureUsage?.[f.key]?.totalMs || 0), 0);
+            const active = filters.videoFeature === f.key;
+            return (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilters({ ...filters, videoFeature: active ? "all" : f.key })}
+                title="Show these users in the table"
+                style={{
+                  flex: 1, minWidth: 160, padding: 15, borderRadius: 8, textAlign: "left", cursor: "pointer",
+                  backgroundColor: f.bg, border: `2px solid ${active ? f.color : f.border}`,
+                }}
+              >
+                <div style={{ fontSize: 12, color: "#555", marginBottom: 4 }}>{f.icon} {f.label}</div>
+                <div style={{ fontSize: 24, fontWeight: "bold", color: f.color }}>
+                  {usersUsing.length} <span style={{ fontSize: 13, fontWeight: 600 }}>user{usersUsing.length === 1 ? "" : "s"}</span>
+                </div>
+                <div style={{ fontSize: 12, color: "#444", marginTop: 4 }}>
+                  {uses} use{uses === 1 ? "" : "s"} · {thisWeek} active this week
+                </div>
+                <div style={{ fontSize: 12, color: "#444" }}>
+                  {premium} of {stats.subscribers} Premium
+                  {f.key === "stream" && totalMs > 0 ? ` · ${formatHours(totalMs)} streamed` : ""}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Data Loading Section */}
       <div
         style={{
@@ -1203,6 +1268,22 @@ const handleSendEmails = async () => {
               <option value="all">All</option>
               <option value="yes">Has Matches</option>
               <option value="no">No Matches</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>
+              Video Features:
+            </label>
+            <select
+              value={filters.videoFeature}
+              onChange={(e) => setFilters({ ...filters, videoFeature: e.target.value })}
+              style={selectStyle}
+            >
+              <option value="all">All</option>
+              <option value="any">Used any</option>
+              {VIDEO_FEATURES.map((f) => <option key={f.key} value={f.key}>Used {f.label}</option>)}
+              <option value="none">Used none</option>
             </select>
           </div>
 
@@ -1783,6 +1864,7 @@ const handleSendEmails = async () => {
                   <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("createdAt")}>Registered</th>
                   <th style={{ border: "1px solid #ccc", padding: 8 }}>Teams</th>
                   <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("matchesCount")}>Matches</th>
+                  <th style={{ border: "1px solid #ccc", padding: 8, cursor: "pointer" }} onClick={() => handleSort("videoUse")}>Video {sortKey === "videoUse" && (sortDirection === "desc" ? "↓" : "↑")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1840,6 +1922,27 @@ const handleSendEmails = async () => {
                         })()}
                       </td>
                       <td style={{ border: "1px solid #ccc", padding: 8, textAlign: "center" }}>{u.matchesCount || 0}</td>
+                      <td style={{ border: "1px solid #ccc", padding: 8 }}>
+                        {videoUseTotal(u) === 0 ? (
+                          <span style={{ color: "#ccc", fontSize: 12 }}>—</span>
+                        ) : (
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                            {VIDEO_FEATURES.filter((f) => featureCount(u, f.key) > 0).map((f) => {
+                              const fu = u.featureUsage[f.key];
+                              const tip = `${f.label}: ${fu.count} time${fu.count === 1 ? "" : "s"}, last ${dayjs(fu.lastUsed).format("YYYY-MM-DD")}`
+                                + (f.key === "stream" && fu.totalMs ? `, ${formatHours(fu.totalMs)} total` : "");
+                              return (
+                                <span key={f.key} title={tip} style={{
+                                  fontSize: 11, padding: "2px 7px", borderRadius: 99, fontWeight: 700, whiteSpace: "nowrap",
+                                  background: f.bg, border: `1px solid ${f.border}`, color: f.color,
+                                }}>
+                                  {f.icon} {fu.count}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}

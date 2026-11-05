@@ -8,6 +8,7 @@ import { getApiUrl } from '../utils/getApiUrl';
 import { VideoResult, isAndroid, styles } from './clipStitcherShared';
 import { REEL_HANDOFF_KEY } from './HighlightReel';
 import { QUALITIES, checkConnection, deviceWarnings } from '../utils/streamCheck';
+import { trackFeature, trackFeatureLength } from '../utils/featureUsage';
 
 const API_URL = getApiUrl();
 const isNative = () => !!window.Capacitor?.isNativePlatform?.();
@@ -62,6 +63,8 @@ export default function GameCameraPage() {
   const [showKey, setShowKey] = useState(false);
   const [phoneKeyOpen, setPhoneKeyOpen] = useState(false);
   const [live, setLive] = useState(null); // { state, message }
+  const streamUsageRef = useRef(null); // { id, startedAt } while a stream is going, for admin usage
+  const streamPlatformRef = useRef('');
   const [accountKeys, setAccountKeys] = useState({}); // keys saved on the website: { youtube: { last4 } }
   const [netCheck, setNetCheck] = useState(null); // { uploadMbps, rttMs, quality, at }, or false if it failed
   const [checking, setChecking] = useState(false);
@@ -209,6 +212,7 @@ export default function GameCameraPage() {
           const rec = { ...e, markers: markersRef.current, matchId: linkRef.current?.matchId };
           markersRef.current = [];
           setRecordings((prev) => [...prev, rec]);
+          trackFeature(token, 'film', { durationMs: e.durationMs || 0 });
           if (e.message) setMsg(e.message);
           if (rec.matchId) {
             axios.post(`${API_URL}/api/camera/recordings`, {
@@ -222,7 +226,23 @@ export default function GameCameraPage() {
         }
       }));
       handles.push(await GameCamera.addListener('closed', () => setCameraOpen(false)));
-      handles.push(await GameCamera.addListener('live', (e) => setLive(e)));
+      handles.push(await GameCamera.addListener('live', (e) => {
+        setLive(e);
+        // Admin usage: one row per stream, with its length once it ends.
+        const u = streamUsageRef.current;
+        if (e.state === 'live' && !u) {
+          const row = { id: null, startedAt: Date.now() };
+          streamUsageRef.current = row;
+          trackFeature(token, 'stream', { detail: streamPlatformRef.current }).then((id) => {
+            row.id = id;
+            if (row.endedAt) trackFeatureLength(token, id, row.endedAt - row.startedAt);
+          });
+        } else if ((e.state === 'ended' || e.state === 'failed') && u) {
+          streamUsageRef.current = null;
+          u.endedAt = Date.now();
+          trackFeatureLength(token, u.id, u.endedAt - u.startedAt);
+        }
+      }));
     })();
     return () => handles.forEach((h) => h?.remove?.());
   }, [token]);
@@ -250,6 +270,7 @@ export default function GameCameraPage() {
     ? streamTarget.url.trim()
     : STREAM_TARGETS[streamTarget.platform]?.url || '';
   const streaming = streamTarget.on;
+  streamPlatformRef.current = streamTarget.platform;
   const savedKey = accountKeys[streamTarget.platform]; // { last4 } when saved on the website
 
   const runCheck = async () => {

@@ -4367,7 +4367,19 @@ setSubstitutionLog(match.substitutionLog || []);
 });
       } catch (err) {
         console.error("Failed to load match:", err);
-        alert(`Failed to load match with ID: ${currentMatchId}. Clearing data.`);
+        if (err?.response?.status === 404) {
+          // The match was deleted. Forget it quietly so it isn't retried on every launch.
+          try {
+            await axios.put(`${API_URL}/api/users/${user.id}/match-id`, { currentMatchId: null }, {
+              headers: { Authorization: `Bearer ${token}` },
+              withCredentials: true,
+            });
+          } catch (e) {
+            console.error("Failed to clear deleted match from user profile:", e);
+          }
+        } else {
+          alert(`Failed to load match with ID: ${currentMatchId}. Clearing data.`);
+        }
         clearAllMatchState();
       } finally {
         setLoadingMatch(false);
