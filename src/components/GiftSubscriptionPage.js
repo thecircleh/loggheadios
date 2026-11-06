@@ -36,7 +36,7 @@ export default function GiftSubscriptionPage() {
         </select>
         {quantity > 1 && (
           <span style={{ marginLeft: 12, color: "#6B7280", fontSize: 14 }}>
-            ${(59.99 * quantity).toFixed(2)} total
+            ${(39.99 * quantity).toFixed(2)} total
           </span>
         )}
       </div>

@@ -41,7 +41,7 @@ const subscriptionOptions = [
         {
           key: "monthly",
           label: "Monthly",
-          priceText: "$7.99",
+          priceText: "$4.99",
           subText: "Recurring monthly access for regular logging.",
           badge: "Most popular",
           featured: true,
@@ -56,7 +56,7 @@ const subscriptionOptions = [
         {
           key: "sixMonth",
           label: "6 Month",
-          priceText: "$39.99",
+          priceText: "$24.99",
           subText: "Recurring season-style access with less hassle.",
           badge: "Season",
           priceId: stripePrices.sixMonth,
@@ -70,7 +70,7 @@ const subscriptionOptions = [
         {
           key: "annual",
           label: "Annual",
-          priceText: "$59.99",
+          priceText: "$39.99",
           subText: "Recurring annual access. Lowest long-term cost.",
           badge: "Best value",
           priceId: stripePrices.annual,
@@ -84,9 +84,9 @@ const subscriptionOptions = [
 const getWeeklyAnchor = (planKey) => {
   if (planKey === "daily") return "Costly Weekly";	
   if (planKey === "weekly") return "= $2.49/week";
-  if (planKey === "monthly") return "≈ $1.99/week";
-  if (planKey === "sixMonth") return "≈ $1.54/week";
-  if (planKey === "annual") return "≈ $1.15/week";
+  if (planKey === "monthly") return "≈ $1.15/week";
+  if (planKey === "sixMonth") return "≈ $0.96/week";
+  if (planKey === "annual") return "≈ $0.77/week";
   return "";
 };
 
@@ -375,7 +375,7 @@ const SubscriptionButtons = ({ isNative }) => {
   const cheapestRecurringPlan = useMemo(() => {
     if (stripePrices?.daily) return { price: 1.49, label: "Daily" };
     if (stripePrices?.weekly) return { price: 2.49, label: "Weekly" };
-    if (stripePrices?.monthly) return { price: 7.99, label: "Monthly" };
+    if (stripePrices?.monthly) return { price: 4.99, label: "Monthly" };
     return null;
   }, []);
 
@@ -707,7 +707,7 @@ const premiumValueStack = useMemo(() => {
             onClick={() => purchase(APPLE_PRODUCT_IDS.giftAnnual)}
             style={{ width: "100%", padding: "12px 14px", background: "#F5A623", color: "#fff", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 700, cursor: (purchasing || !initialized) ? "default" : "pointer", opacity: (purchasing || !initialized) ? 0.6 : 1 }}
           >
-            {purchasing ? "Processing…" : !initialized ? "Loading…" : `Gift Annual — ${storeProducts[APPLE_PRODUCT_IDS.giftAnnual]?.price ?? "$59.99"}`}
+            {purchasing ? "Processing…" : !initialized ? "Loading…" : `Gift Annual — ${storeProducts[APPLE_PRODUCT_IDS.giftAnnual]?.price ?? "$39.99"}`}
           </button>
         </div>
       </div>
@@ -1032,7 +1032,7 @@ const premiumValueStack = useMemo(() => {
     </select>
     {giftQuantity > 1 && (
       <span style={{ marginLeft: 10, fontSize: 13, color: "#6B7280" }}>
-        ${(59.99 * giftQuantity).toFixed(2)} total
+        ${(39.99 * giftQuantity).toFixed(2)} total
       </span>
     )}
   </div>
@@ -1052,7 +1052,7 @@ const premiumValueStack = useMemo(() => {
       </div>
 
       <div style={styles.price}>
-        ${giftQuantity > 1 ? `${(59.99 * giftQuantity).toFixed(2)}` : "59.99"}
+        ${giftQuantity > 1 ? `${(39.99 * giftQuantity).toFixed(2)}` : "39.99"}
       </div>
     </div>
   </button>

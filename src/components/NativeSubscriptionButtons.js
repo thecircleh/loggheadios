@@ -17,7 +17,7 @@ const NativeSubscriptionButtons = () => {
   const { storeProducts, purchase, restore, purchasing, restoring, error, initialized } = useAppleIAP();
   const [selected, setSelected] = useState('weekly');
 
-  const giftPrice = storeProducts[PRODUCT_IDS.giftAnnual]?.price ?? '$59.99';
+  const giftPrice = storeProducts[PRODUCT_IDS.giftAnnual]?.price ?? '$39.99';
 
   const GiftSection = () => (
     <div style={s.giftSection}>
