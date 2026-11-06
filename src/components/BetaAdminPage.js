@@ -12,6 +12,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import dayjs from "dayjs";
+import StreamQualityPanel from "./StreamQualityPanel";
 import relativeTime from "dayjs/plugin/relativeTime";
 
 dayjs.extend(relativeTime);
@@ -1038,6 +1039,8 @@ const handleSendEmails = async () => {
           })}
         </div>
       </div>
+
+      <StreamQualityPanel apiUrl={API_URL} token={token} />
 
       {/* Data Loading Section */}
       <div

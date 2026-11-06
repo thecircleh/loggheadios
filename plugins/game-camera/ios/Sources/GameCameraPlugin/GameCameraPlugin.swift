@@ -2,6 +2,7 @@ import Foundation
 import Capacitor
 import AVFoundation
 import UIKit
+import Network
 
 /// Full-screen game camera shown over the app. The web view keeps running underneath, so the
 /// live score from the logging phone keeps arriving and is shown on the camera screen.
@@ -16,6 +17,8 @@ import UIKit
 @objc(GameCameraPlugin)
 public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputRecordingDelegate {
     public let identifier = "GameCameraPlugin"
+    /// Wi-Fi or cellular, for the stream quality log.
+    private let pathMonitor = NWPathMonitor()
     public let jsName = "GameCamera"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "open", returnType: CAPPluginReturnPromise),
@@ -193,6 +196,8 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
             if level == "poor" { text += " · weak connection" }
             if hot { text += " · phone hot" }
             self.cameraView?.setLiveStatus(text, color: color)
+            // Once a second while live, for the stream quality log.
+            self.notifyListeners("health", data: ["sentBps": sent, "level": level, "hot": hot])
         }
         engine.onRecordingStarted = { [weak self] at in
             self?.liveRecording = true
@@ -365,7 +370,21 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
     // MARK: - Checks before filming, and recovery
 
     /// Battery, free space and heat, for the checks before filming.
+    public override func load() {
+        pathMonitor.start(queue: DispatchQueue.global(qos: .utility))
+    }
+
+    /// "wifi", "cellular", "other", "none" or "unknown": what the phone is using right now.
+    private func networkType() -> String {
+        let path = pathMonitor.currentPath
+        if path.status != .satisfied { return path.status == .unsatisfied ? "none" : "unknown" }
+        if path.usesInterfaceType(.wifi) { return "wifi" }
+        if path.usesInterfaceType(.cellular) { return "cellular" }
+        return "other"
+    }
+
     @objc func deviceStatus(_ call: CAPPluginCall) {
+        let network = networkType()
         DispatchQueue.main.async {
             UIDevice.current.isBatteryMonitoringEnabled = true
             let level = UIDevice.current.batteryLevel
@@ -387,7 +406,8 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
                 "battery": level >= 0 ? Double(level) : -1,
                 "charging": state == .charging || state == .full,
                 "freeBytes": free,
-                "thermal": thermal
+                "thermal": thermal,
+                "network": network
             ])
         }
     }

@@ -76,6 +76,7 @@ import ShellSlideGame from "./components/ShellSlideGame";
 import GemTrayGame from "./components/GemTrayGame";
 import RotationTrainerGame from "./components/RotationTrainerGame";
 import { initPush } from "./utils/pushNotifications";
+import { startClarity, identifyClarityUser } from "./utils/clarity";
 import { noteAppOpened, noteHappyMoment } from "./utils/appReview";
 import BrainBreakHub, { SubscriberGame } from "./components/BrainBreakHub";
 import ClipStitcherPage from "./components/ClipStitcherPage";
@@ -95,7 +96,7 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl(); 
 // Shown next to the logo; keep in step with APP_VERSION in codemagic.yaml.
-const APP_VERSION = "4.0.0";
+const APP_VERSION = "4.1.0";
 const AUTO_SAVE_DELAY = 5000;
 const PERIODIC_SAVE_INTERVAL = 300000;
 
@@ -719,6 +720,11 @@ function AppContent({ matchSettings, setMatchSettings }) {
   const { enqueue: enqueueOffline, pendingCount: offlinePending, isOnline } =
     useOfflineActionQueue({ token, enabled: !!hasPremium });
   const navigate = useNavigate();
+
+  // Microsoft Clarity: website only, started after the first render (see utils/clarity.js).
+  useEffect(() => {
+    startClarity().then(() => identifyClarityUser(user));
+  }, [user]);
 
   // Push notifications: refresh this device's registration if the user opted in,
   // and open the right screen when a notification is tapped.

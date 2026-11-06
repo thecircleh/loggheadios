@@ -9,6 +9,7 @@ import { VideoResult, isAndroid, styles } from './clipStitcherShared';
 import { REEL_HANDOFF_KEY } from './HighlightReel';
 import { QUALITIES, checkConnection, deviceWarnings } from '../utils/streamCheck';
 import { trackFeature, trackFeatureLength } from '../utils/featureUsage';
+import { createStreamLog } from '../utils/streamQuality';
 
 const API_URL = getApiUrl();
 const isNative = () => !!window.Capacitor?.isNativePlatform?.();
@@ -63,7 +64,8 @@ export default function GameCameraPage() {
   const [showKey, setShowKey] = useState(false);
   const [phoneKeyOpen, setPhoneKeyOpen] = useState(false);
   const [live, setLive] = useState(null); // { state, message }
-  const streamUsageRef = useRef(null); // { id, startedAt } while a stream is going, for admin usage
+  const streamUsageRef = useRef(null); // { id, log } while a stream is going, for admin usage
+  const streamPlanRef = useRef(null); // quality, connection check and network when the camera opened
   const streamPlatformRef = useRef('');
   const [accountKeys, setAccountKeys] = useState({}); // keys saved on the website: { youtube: { last4 } }
   const [netCheck, setNetCheck] = useState(null); // { uploadMbps, rttMs, quality, at }, or false if it failed
@@ -225,24 +227,47 @@ export default function GameCameraPage() {
           setMsg(e.message || 'The recording stopped.');
         }
       }));
-      handles.push(await GameCamera.addListener('closed', () => setCameraOpen(false)));
+      handles.push(await GameCamera.addListener('closed', () => {
+        setCameraOpen(false);
+        // Camera closed mid-stream: save what we have and start fresh next time.
+        const row = streamUsageRef.current;
+        if (row) {
+          row.log.onLive('ended');
+          saveStream(row);
+          streamUsageRef.current = null;
+        }
+      }));
+      // Admin usage + quality log: one row per stream (including ones that never connected),
+      // saved on every change, every minute and when it ends.
+      const saveStream = (row) => {
+        if (!row.id) return;
+        const stats = row.log.summary();
+        trackFeatureLength(token, row.id, stats.liveMs, stats);
+      };
       handles.push(await GameCamera.addListener('live', (e) => {
         setLive(e);
-        // Admin usage: one row per stream, with its length once it ends.
-        const u = streamUsageRef.current;
-        if (e.state === 'live' && !u) {
-          const row = { id: null, startedAt: Date.now() };
+        let row = streamUsageRef.current;
+        if (!row && e.state !== 'ended') {
+          row = { id: null, log: createStreamLog(streamPlanRef.current || {}), done: false };
           streamUsageRef.current = row;
           trackFeature(token, 'stream', { detail: streamPlatformRef.current }).then((id) => {
             row.id = id;
-            if (row.endedAt) trackFeatureLength(token, id, row.endedAt - row.startedAt);
+            saveStream(row);
           });
-        } else if ((e.state === 'ended' || e.state === 'failed') && u) {
-          streamUsageRef.current = null;
-          u.endedAt = Date.now();
-          trackFeatureLength(token, u.id, u.endedAt - u.startedAt);
         }
+        if (!row) return;
+        row.log.onLive(e.state);
+        saveStream(row);
+        if (e.state === 'ended') streamUsageRef.current = null;
       }));
+      handles.push(await GameCamera.addListener('health', (e) => {
+        streamUsageRef.current?.log.onHealth(e);
+      }));
+      // Every minute, so a stream cut off by a crash or dead battery still leaves a record.
+      const timer = setInterval(() => {
+        if (streamUsageRef.current) saveStream(streamUsageRef.current);
+      }, 60000);
+      handles.push({ remove: () => clearInterval(timer) });
     })();
     return () => handles.forEach((h) => h?.remove?.());
   }, [token]);
@@ -289,9 +314,12 @@ export default function GameCameraPage() {
     // Quality: what they picked, or what the connection check says (checked again if stale).
     let quality = streamTarget.quality && streamTarget.quality !== 'auto' ? streamTarget.quality : null;
     const warnings = [];
+    // The latest connection check, for the stream quality log.
+    let checkUsed = netCheck && Date.now() - netCheck.at < CHECK_FRESH_MS ? netCheck : null;
     if (streaming && !quality) {
-      let result = netCheck && Date.now() - netCheck.at < CHECK_FRESH_MS ? netCheck : null;
+      let result = checkUsed;
       if (!result && !force) result = await runCheck();
+      checkUsed = result || null;
       if (result?.quality === 'too-slow') {
         warnings.push(`The upload here is only ${result.uploadMbps} Mbps, too slow for a steady stream. Turn off Wi-Fi to use cellular and check again, or film without streaming. If you go ahead, it streams at the lowest quality.`);
       }
@@ -320,6 +348,16 @@ export default function GameCameraPage() {
         ? 'Add your stream key first: on your computer, save it at ui.loggerhead.app/profile › Live streaming.'
         : 'Enter the stream server URL first.');
       return;
+    }
+    if (streaming) {
+      let network = 'unknown';
+      try { network = (await GameCamera.deviceStatus()).network || 'unknown'; } catch {}
+      streamPlanRef.current = {
+        quality: quality || 'medium',
+        picked: streamTarget.quality && streamTarget.quality !== 'auto' ? 'manual' : 'auto',
+        check: checkUsed,
+        network,
+      };
     }
     try {
       await GameCamera.open(streaming ? { stream: { url: streamUrl, key, quality: quality || 'medium' } } : undefined);

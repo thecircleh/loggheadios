@@ -22,6 +22,16 @@ export interface DeviceStatus {
   /** Free storage in bytes, or -1 if unknown. */
   freeBytes: number;
   thermal: 'nominal' | 'fair' | 'serious' | 'critical';
+  /** What the phone is using for internet right now. */
+  network?: 'wifi' | 'cellular' | 'other' | 'none' | 'unknown';
+}
+
+/** Sent about once a second while live: the same reading as the badge on the camera screen. */
+export interface HealthEvent {
+  /** Bits per second actually going out. */
+  sentBps: number;
+  level: 'good' | 'fair' | 'poor';
+  hot: boolean;
 }
 
 export interface LiveEvent {
@@ -52,6 +62,7 @@ export interface GameCameraPlugin {
   mark(): Promise<{ recording: boolean; positionMs: number }>;
   addListener(eventName: 'recording', listener: (e: RecordingEvent) => void): Promise<PluginListenerHandle>;
   addListener(eventName: 'live', listener: (e: LiveEvent) => void): Promise<PluginListenerHandle>;
+  addListener(eventName: 'health', listener: (e: HealthEvent) => void): Promise<PluginListenerHandle>;
   addListener(eventName: 'closed', listener: () => void): Promise<PluginListenerHandle>;
 }
 

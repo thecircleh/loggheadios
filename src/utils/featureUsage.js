@@ -23,9 +23,9 @@ export async function trackFeature(token, feature, { durationMs = 0, detail = ''
   }
 }
 
-// Sets the length on an earlier row (a stream, when it ends).
-export function trackFeatureLength(token, usageId, durationMs) {
+// Sets the length (and, for a stream, its quality log) on an earlier row.
+export function trackFeatureLength(token, usageId, durationMs, stats) {
   if (!token || !usageId) return;
-  axios.patch(`${API_URL}/api/users/feature-usage/${usageId}`, { durationMs },
+  axios.patch(`${API_URL}/api/users/feature-usage/${usageId}`, { durationMs, ...(stats ? { stats } : {}) },
     { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }).catch(() => {});
 }

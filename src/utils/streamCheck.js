@@ -26,19 +26,27 @@ export function pickQuality(uploadMbps, rttMs) {
 
 /**
  * Measures the delay to the Loggerhead server and the upload speed (about 6 seconds).
- * Returns { uploadMbps, rttMs, quality }, or null if the check couldn't run.
+ * Returns { uploadMbps, rttMs, jitterMs, pingLoss, quality }, or null if the check couldn't run.
  */
 export async function checkConnection(apiUrl, token) {
   const headers = { Authorization: `Bearer ${token}` };
   try {
+    const PINGS = 5;
     const rtts = [];
-    for (let i = 0; i < 5; i += 1) {
+    for (let i = 0; i < PINGS; i += 1) {
       const t = performance.now();
-      // eslint-disable-next-line no-await-in-loop
-      await axios.get(`${apiUrl}/api/camera/ping`, { headers, timeout: 5000 });
-      rtts.push(performance.now() - t);
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await axios.get(`${apiUrl}/api/camera/ping`, { headers, timeout: 3000 });
+        rtts.push(performance.now() - t);
+      } catch {
+        // A lost or very late ping: counted below, for the stream quality log.
+      }
     }
+    if (!rtts.length) return null;
     const rttMs = Math.round(median(rtts));
+    const jitterMs = Math.round(Math.max(...rtts) - Math.min(...rtts)); // how much the delay swings
+    const pingLoss = Math.round(((PINGS - rtts.length) / PINGS) * 100) / 100; // 0–1
 
     // Random bytes, so nothing along the way can compress them.
     const chunk = new Uint8Array(1024 * 1024);
@@ -55,7 +63,7 @@ export async function checkConnection(apiUrl, token) {
     }
     const seconds = (performance.now() - start) / 1000;
     const uploadMbps = Math.round(((bytes * 8) / seconds / 1e6) * 10) / 10;
-    return { uploadMbps, rttMs, quality: pickQuality(uploadMbps, rttMs), at: Date.now() };
+    return { uploadMbps, rttMs, jitterMs, pingLoss, quality: pickQuality(uploadMbps, rttMs), at: Date.now() };
   } catch {
     return null;
   }

@@ -263,6 +263,12 @@ public class GameCameraPlugin extends Plugin {
             if ("poor".equals(level)) text += " · weak connection";
             if (hot) text += " · phone hot";
             setLiveBadge(text, color);
+            // Once a second while live, for the stream quality log.
+            JSObject data = new JSObject();
+            data.put("sentBps", sentBitsPerSecond);
+            data.put("level", level);
+            data.put("hot", hot);
+            notifyListeners("health", data);
         }
 
         @Override
@@ -412,7 +418,26 @@ public class GameCameraPlugin extends Plugin {
             else if (t >= android.os.PowerManager.THERMAL_STATUS_MODERATE) thermal = "fair";
         }
         ret.put("thermal", thermal);
+        ret.put("network", networkType());
         call.resolve(ret);
+    }
+
+    /** "wifi", "cellular", "other", "none" or "unknown": what the phone is using right now. */
+    private String networkType() {
+        try {
+            android.net.ConnectivityManager cm =
+                (android.net.ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return "unknown";
+            android.net.Network net = cm.getActiveNetwork();
+            if (net == null) return "none";
+            android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(net);
+            if (caps == null) return "unknown";
+            if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) return "wifi";
+            if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)) return "cellular";
+            return "other";
+        } catch (Exception e) {
+            return "unknown";
+        }
     }
 
     /** Videos left behind when the app closed mid-recording, finished and ready to save. */
