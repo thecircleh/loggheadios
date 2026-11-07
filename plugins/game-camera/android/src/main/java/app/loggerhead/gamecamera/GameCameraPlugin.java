@@ -255,13 +255,14 @@ public class GameCameraPlugin extends Plugin {
         }
 
         @Override
-        public void onHealth(long sentBitsPerSecond, String level, boolean hot) {
+        public void onHealth(long sentBitsPerSecond, String level, boolean hot, String missing) {
             if (!"live".equals(liveState)) return;
             int color = "good".equals(level) ? Color.rgb(74, 222, 128)
                 : "fair".equals(level) ? Color.rgb(250, 204, 21) : Color.rgb(248, 113, 113);
             String text = String.format(Locale.US, "● LIVE · %.1f Mbps", sentBitsPerSecond / 1_000_000.0);
             if ("poor".equals(level)) text += " · weak connection";
             if (hot) text += " · phone hot";
+            if (missing != null && !missing.isEmpty()) text += " · " + missing;
             setLiveBadge(text, color);
             // Once a second while live, for the stream quality log.
             JSObject data = new JSObject();

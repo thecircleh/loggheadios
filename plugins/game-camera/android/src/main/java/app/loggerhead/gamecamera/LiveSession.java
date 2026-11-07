@@ -40,8 +40,9 @@ final class LiveSession implements ConnectChecker {
         /** The local copy is being turned into an MP4 (can take a minute for a long match). */
         void onRecordingFinishing();
         void onRecordingStopped(File file, long durationMs, String error);
-        /** Every second while live: what's actually being sent, and good | fair | poor. */
-        void onHealth(long sentBitsPerSecond, String level, boolean hot);
+        /** Every second while live: what's actually being sent, and good | fair | poor.
+         *  missing: "" normally, or "no sound" / "no video" if that part has stopped arriving. */
+        void onHealth(long sentBitsPerSecond, String level, boolean hot, String missing);
     }
 
     /** Stream size and bitrate, picked by the connection check before going live. */
@@ -89,6 +90,13 @@ final class LiveSession implements ConnectChecker {
     private long startElapsed;
     private String recordError;
     private Object thermalListener;
+    // For spotting a stream that sends video but no sound (or the reverse).
+    private long liveSince;
+    private long lastAudioFrames = -1;
+    private long lastVideoFrames = -1;
+    private long audioSeenAt;
+    private long videoSeenAt;
+    private static final long MISSING_AFTER_MS = 5000;
 
     // Some tablets' encoders ignore the 2-second keyframe setting and send one keyframe at the
     // start only. YouTube then sits on "Preparing stream". Ask for one every 2 seconds.
@@ -292,6 +300,12 @@ final class LiveSession implements ConnectChecker {
     @Override
     public void onConnectionSuccess() {
         connected = true;
+        long now = SystemClock.elapsedRealtime();
+        liveSince = now;
+        audioSeenAt = now;
+        videoSeenAt = now;
+        lastAudioFrames = -1;
+        lastVideoFrames = -1;
         main.post(() -> events.onLive("live", ""));
     }
 
@@ -338,6 +352,25 @@ final class LiveSession implements ConnectChecker {
         else if (congestion > 20f || videoBitrate < quality.bitrate * 0.7) level = "fair";
         else level = "good";
         boolean hot = heatFactor < 1f;
-        main.post(() -> events.onHealth(sent, level, hot));
+        String missing = missingPart();
+        main.post(() -> events.onHealth(sent, level, hot, missing));
+    }
+
+    private String missingPart() {
+        long now = SystemClock.elapsedRealtime();
+        try {
+            long audio = stream.getStreamClient().getSentAudioFrames();
+            long video = stream.getStreamClient().getSentVideoFrames();
+            if (audio != lastAudioFrames) audioSeenAt = now;
+            if (video != lastVideoFrames) videoSeenAt = now;
+            lastAudioFrames = audio;
+            lastVideoFrames = video;
+        } catch (Exception e) {
+            return "";
+        }
+        if (now - liveSince < MISSING_AFTER_MS) return "";
+        if (now - videoSeenAt > MISSING_AFTER_MS) return "no video";
+        if (now - audioSeenAt > MISSING_AFTER_MS) return "no sound";
+        return "";
     }
 }
