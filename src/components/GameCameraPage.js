@@ -530,8 +530,9 @@ export default function GameCameraPage() {
                   <p style={{ ...styles.muted, fontSize: 12 }}>
                     Game day: tap the red button on the camera. YouTube starts the stream by itself within about
                     30 seconds; share the watch link from YouTube Studio. Once, in YouTube Studio's stream
-                    settings: set <strong>Stream latency</strong> to <strong>Normal</strong> and turn
-                    off <strong>Auto-stop</strong>, so gym Wi-Fi hiccups don't end the broadcast.
+                    settings: set <strong>Stream latency</strong> to <strong>Normal</strong> and, if you see it, turn
+                    off <strong>Auto-stop</strong>, so gym Wi-Fi hiccups don't end the broadcast. Use the Go live
+                    page's stream, not a scheduled one: it goes live without anyone clicking Go live.
                   </p>
                 )}
               </>
@@ -548,8 +549,9 @@ export default function GameCameraPage() {
                   <li>Choose <strong>Streaming software</strong> (not Webcam or Mobile). Set it to <strong>Unlisted</strong> so only
                     people with the link can watch, a good choice for kids' games.</li>
                   <li>In the stream settings, set <strong>Stream latency</strong> to <strong>Normal</strong> (not Low or
-                    Ultra-low): YouTube then buffers through gym Wi-Fi hiccups. Turn off <strong>Auto-stop</strong>, so a
-                    dropped connection rejoins the same broadcast instead of ending it.</li>
+                    Ultra-low): YouTube then buffers through gym Wi-Fi hiccups. Stay on this page rather than
+                    scheduling a stream: it goes live by itself when your phone starts sending, so nobody has to click Go live.
+                    If you see <strong>Auto-stop</strong>, turn it off, so a dropped connection rejoins the same broadcast instead of ending it.</li>
                   <li>Use the <strong>Default stream key</strong>, and leave <strong>manual settings off</strong> so YouTube
                     detects the resolution itself: Loggerhead raises and lowers the quality as the Wi-Fi changes. If you do
                     turn manual settings on, pick <strong>RTMP</strong> (not HLS) and <strong>Variable</strong> bitrate.</li>

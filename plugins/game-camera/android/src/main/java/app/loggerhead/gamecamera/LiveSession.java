@@ -13,7 +13,6 @@ import com.pedro.common.ConnectChecker;
 import com.pedro.common.StreamingStatsReport;
 import com.pedro.encoder.input.gl.render.filters.object.ImageFilterRender;
 import com.pedro.encoder.input.sources.audio.MicrophoneSource;
-import com.pedro.encoder.input.sources.audio.NoAudioSource;
 import com.pedro.encoder.input.sources.video.Camera2Source;
 import com.pedro.library.base.recording.RecordController;
 import com.pedro.library.rtmp.RtmpStream;
@@ -91,6 +90,20 @@ final class LiveSession implements ConnectChecker {
     private String recordError;
     private Object thermalListener;
 
+    // Some tablets' encoders ignore the 2-second keyframe setting and send one keyframe at the
+    // start only. YouTube then sits on "Preparing stream". Ask for one every 2 seconds.
+    private static final long KEYFRAME_EVERY_MS = 2000;
+    private final Runnable keyframeTick = new Runnable() {
+        @Override
+        public void run() {
+            if (!wantLive) return;
+            try {
+                if (stream.isStreaming()) stream.requestKeyframe();
+            } catch (Exception ignored) {}
+            main.postDelayed(this, KEYFRAME_EVERY_MS);
+        }
+    };
+
     LiveSession(Context context, String endpoint, Quality quality, boolean withAudio, Events events) {
         this.endpoint = endpoint;
         this.context = context;
@@ -98,7 +111,7 @@ final class LiveSession implements ConnectChecker {
         this.events = events;
         this.videoBitrate = quality.bitrate;
         stream = new RtmpStream(context, this, new Camera2Source(context),
-            withAudio ? new MicrophoneSource() : new NoAudioSource());
+            withAudio ? new MicrophoneSource() : new SilentAudioSource());
         bitrateAdapter = new QueueAwareBitrateAdapter(quality.bitrate + AUDIO_BITRATE, MIN_VIDEO_BITRATE + AUDIO_BITRATE,
             bitrate -> applyBitrate(bitrate - AUDIO_BITRATE));
     }
@@ -226,6 +239,8 @@ final class LiveSession implements ConnectChecker {
         });
         events.onLive("connecting", "");
         stream.startStream(endpoint);
+        main.removeCallbacks(keyframeTick);
+        main.postDelayed(keyframeTick, KEYFRAME_EVERY_MS);
     }
 
     private void onRecordStatus(RecordController.Status status) {
@@ -251,6 +266,7 @@ final class LiveSession implements ConnectChecker {
     /** Ends the stream and finishes the local copy. */
     void stop() {
         wantLive = false;
+        main.removeCallbacks(keyframeTick);
         connected = false;
         if (stream.isStreaming()) stream.stopStream();
         if (stream.isRecording()) stream.stopRecord();
@@ -259,6 +275,7 @@ final class LiveSession implements ConnectChecker {
 
     void release() {
         wantLive = false;
+        main.removeCallbacks(keyframeTick);
         stopWatchingHeat();
         try {
             stream.release();
