@@ -23,7 +23,7 @@ workflows:
         XCODE_SCHEME: "App"
         BUNDLE_ID: "com.loggerheadstat.app"
         REACT_APP_API_URL: "https://api.loggerhead.app"
-        APP_VERSION: "4.2.0"
+        APP_VERSION: "4.3.0"
       node: v22.0.0
       xcode: latest # HaishinKit (live streaming) needs Xcode 26+
 
@@ -299,7 +299,7 @@ workflows:
       vars:
         PACKAGE_NAME: "com.loggerheadstat.app"
         REACT_APP_API_URL: "https://api.loggerhead.app"
-        APP_VERSION: "4.2.1"
+        APP_VERSION: "4.3.0"
       node: v22.0.0
       java: 21
 

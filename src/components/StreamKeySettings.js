@@ -2,8 +2,102 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from './AuthContext';
 import { getApiUrl } from '../utils/getApiUrl';
+import { connectYouTube, disconnectYouTube, youtubeStatus } from '../utils/youtube';
 
 const API_URL = getApiUrl();
+const muted = { fontSize: 12, color: 'var(--text-muted, #6b7280)' };
+
+// Connect YouTube: the easy way. Loggerhead starts and ends each broadcast itself.
+function YouTubeConnect({ token }) {
+  const [status, setStatus] = useState(null); // { connected, channelTitle }
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get('youtube');
+      if (q === 'connected') return 'YouTube connected.';
+      if (q === 'failed') return "YouTube wasn't connected. Try again.";
+    } catch {}
+    return '';
+  });
+
+  const load = React.useCallback(() => {
+    youtubeStatus(token).then(setStatus).catch(() => setStatus({ connected: false }));
+  }, [token]);
+
+  const boxRef = React.useRef(null);
+  useEffect(() => {
+    // Back from Google's sign-in on the website: show this section.
+    if (msg) boxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    load();
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [load]);
+
+  const connect = async () => {
+    setBusy(true);
+    setMsg('');
+    try {
+      await connectYouTube(token, load);
+    } catch (err) {
+      setMsg(err?.response?.data?.message || "Couldn't open YouTube sign-in. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disconnect = async () => {
+    setBusy(true);
+    setMsg('');
+    try {
+      await disconnectYouTube(token);
+      setStatus({ connected: false });
+      setMsg('YouTube disconnected. Loggerhead no longer has access to your channel.');
+    } catch {
+      setMsg("Couldn't disconnect. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div ref={boxRef} style={{ padding: '10px 0', borderTop: '1px solid var(--border, #e5e7eb)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+        <strong>Connect YouTube <span style={{ fontWeight: 500, ...muted }}>(easiest)</span></strong>
+        <span style={{ fontSize: 13, color: status?.connected ? '#166534' : 'var(--text-muted, #6b7280)' }}>
+          {status === null ? '…' : status.connected ? `✓ ${status.channelTitle || 'Connected'}` : 'Not connected'}
+        </span>
+      </div>
+      <p style={{ margin: '4px 0 8px', ...muted }}>
+        Sign in with Google once. Each time you go live, Loggerhead creates the YouTube stream with the
+        match name, starts it, gives you the link to share, and ends it when you stop. No YouTube Studio,
+        no stream key.
+      </p>
+      {status?.connected ? (
+        <button type="button" disabled={busy} onClick={disconnect}
+          style={{ background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: 14, padding: 0 }}>
+          {busy ? 'Disconnecting…' : 'Disconnect YouTube'}
+        </button>
+      ) : (
+        <button type="button" className="primary-button" style={{ width: 'auto' }} disabled={busy || status === null} onClick={connect}>
+          {busy ? 'Opening…' : 'Connect YouTube'}
+        </button>
+      )}
+      {msg && <p style={{ margin: '6px 0 0', fontSize: 13 }}>{msg}</p>}
+      <p style={{ margin: '8px 0 0', ...muted }}>
+        Loggerhead only uses this to create, start and end your live streams. By connecting, you agree to
+        the <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener noreferrer">YouTube Terms of Service</a>.
+        See our <a href="https://www.loggerhead.app/privacy" target="_blank" rel="noopener noreferrer">privacy policy</a> and
+        the <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google Privacy Policy</a>.
+        You can also remove access at myaccount.google.com/permissions. First time streaming? Verify your
+        phone at youtube.com/verify a day before.
+      </p>
+    </div>
+  );
+}
 
 const PLATFORMS = [
   {
@@ -54,9 +148,11 @@ export default function StreamKeySettings() {
     <div className="card" style={{ marginTop: 14 }}>
       <h3 style={{ margin: '0 0 4px' }}>🔴 Live streaming</h3>
       <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-muted, #6b7280)' }}>
-        Stream keys are long, so paste them here from your computer. When you film a match in the
-        Loggerhead app and go live, your phone uses the saved key.
+        Connect your YouTube channel, or save a stream key. When you film a match in the Loggerhead
+        app and go live, your phone uses them.
       </p>
+      <YouTubeConnect token={token} />
+      <p style={{ margin: '10px 0 0', fontSize: 13, fontWeight: 700 }}>Or use a stream key</p>
       {PLATFORMS.map((p) => {
         const current = saved?.[p.key];
         return (

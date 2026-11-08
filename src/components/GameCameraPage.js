@@ -10,6 +10,12 @@ import { REEL_HANDOFF_KEY } from './HighlightReel';
 import { QUALITIES, checkConnection, deviceWarnings } from '../utils/streamCheck';
 import { trackFeature, trackFeatureLength } from '../utils/featureUsage';
 import { createStreamLog } from '../utils/streamQuality';
+import {
+  YT_PRIVACY, broadcastStatus, connectYouTube, createBroadcast, endBroadcast, shareLink, youtubeStatus,
+} from '../utils/youtube';
+
+const YT_CHECK_MS = 45000; // while live: is the broadcast still on YouTube (ended in Studio)?
+const YT_DONE = ['complete', 'revoked', 'deleted'];
 
 const API_URL = getApiUrl();
 const isNative = () => !!window.Capacitor?.isNativePlatform?.();
@@ -72,6 +78,14 @@ export default function GameCameraPage() {
   const [checking, setChecking] = useState(false);
   const [preflight, setPreflight] = useState(null); // warnings to confirm before opening the camera
   const [finishing, setFinishing] = useState(false);
+  // Connect YouTube: Loggerhead makes the broadcast (see utils/youtube.js).
+  const [yt, setYt] = useState(null); // { connected, channelTitle }
+  const [ytTitle, setYtTitle] = useState('');
+  const [broadcast, setBroadcast] = useState(null); // { broadcastId, url, key, watchUrl, title, privacy }
+  const [ytBusy, setYtBusy] = useState(false);
+  const [ytMsg, setYtMsg] = useState('');
+  const broadcastRef = useRef(null); // the broadcast this camera session is sending to
+  const ytSessionRef = useRef(null); // { title, privacy } while the camera streams through Connect YouTube
 
   // Videos left behind when the app closed mid-recording (crash, dead battery): offer them.
   useEffect(() => {
@@ -94,6 +108,9 @@ export default function GameCameraPage() {
       axios.get(`${API_URL}/api/camera/stream-keys`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 })
         .then(({ data }) => { if (!cancelled) setAccountKeys(data || {}); })
         .catch(() => {});
+      youtubeStatus(token)
+        .then((data) => { if (!cancelled) setYt(data); })
+        .catch(() => { if (!cancelled) setYt((prev) => prev || { connected: false }); });
     };
     load();
     // Check again when they come back from saving the key on their computer.
@@ -201,6 +218,27 @@ export default function GameCameraPage() {
   useEffect(() => {
     if (!isNative()) return undefined;
     const handles = [];
+    // Connect YouTube: end the broadcast when the stream stops (a broadcast that never went live
+    // is deleted), and make a fresh one if they go live again with the camera still open. The
+    // phone keeps the same stream key, so the new broadcast picks it up.
+    const finishBroadcast = () => {
+      const b = broadcastRef.current;
+      broadcastRef.current = null;
+      setBroadcast(null);
+      if (b?.broadcastId) endBroadcast(token, b.broadcastId).catch(() => {});
+    };
+    const reopenBroadcast = () => {
+      const session = ytSessionRef.current;
+      if (!session || broadcastRef.current) return;
+      broadcastRef.current = { pending: true };
+      createBroadcast(token, session).then((b) => {
+        broadcastRef.current = b;
+        setBroadcast(b);
+      }).catch((err) => {
+        broadcastRef.current = null;
+        setYtMsg(err?.response?.data?.message || "Couldn't start a new YouTube stream.");
+      });
+    };
     (async () => {
       handles.push(await GameCamera.addListener('recording', (e) => {
         if (e.state === 'started') {
@@ -229,6 +267,8 @@ export default function GameCameraPage() {
       }));
       handles.push(await GameCamera.addListener('closed', () => {
         setCameraOpen(false);
+        finishBroadcast();
+        ytSessionRef.current = null;
         // Camera closed mid-stream: save what we have and start fresh next time.
         const row = streamUsageRef.current;
         if (row) {
@@ -246,6 +286,8 @@ export default function GameCameraPage() {
       };
       handles.push(await GameCamera.addListener('live', (e) => {
         setLive(e);
+        if (e.state === 'connecting') reopenBroadcast();
+        if (e.state === 'ended') finishBroadcast();
         let row = streamUsageRef.current;
         if (!row && e.state !== 'ended') {
           row = { id: null, log: createStreamLog(streamPlanRef.current || {}), done: false };
@@ -284,6 +326,71 @@ export default function GameCameraPage() {
     } : { title: '', subtitle: '', status: '' }).catch(() => {});
   }, [cameraOpen, link, score, connected]);
 
+  // While live through Connect YouTube: notice if the broadcast is ended in YouTube Studio.
+  const liveState = live?.state;
+  useEffect(() => {
+    if (liveState !== 'live' && liveState !== 'reconnecting') return undefined;
+    const timer = setInterval(async () => {
+      const b = broadcastRef.current;
+      if (!b?.broadcastId) return;
+      try {
+        const status = await broadcastStatus(token, b.broadcastId);
+        if (!YT_DONE.includes(status) || broadcastRef.current !== b) return;
+        broadcastRef.current = null;
+        setBroadcast(null);
+        ytSessionRef.current = null; // don't start a new one by itself
+        setYtMsg('The stream was ended on YouTube. Viewers no longer see it. Tap the red button to stop sending; the recording on this phone is fine.');
+        GameCamera.showPlay({ text: 'YouTube ended this stream · tap the red button to stop' }).catch(() => {});
+      } catch {}
+    }, YT_CHECK_MS);
+    return () => clearInterval(timer);
+  }, [liveState, token]);
+
+  // Leaving the page with a broadcast that never went live: remove it from the channel.
+  const pendingRef = useRef(null);
+  pendingRef.current = broadcast;
+  useEffect(() => () => {
+    if (pendingRef.current && !broadcastRef.current) endBroadcast(token, pendingRef.current.broadcastId).catch(() => {});
+  }, [token]);
+
+  const defaultYtTitle = () => {
+    const day = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return link ? `${link.teamName || 'Us'} vs ${link.opponentName || 'Them'} · ${day}` : `Volleyball live · ${day}`;
+  };
+
+  // Make the YouTube broadcast now (before the camera opens), so the link can be shared first.
+  const getBroadcast = async () => {
+    if (broadcast) return broadcast;
+    setYtBusy(true);
+    setYtMsg('');
+    try {
+      const b = await createBroadcast(token, { title: ytTitle.trim() || defaultYtTitle(), privacy: streamTarget.ytPrivacy || 'unlisted' });
+      setBroadcast(b);
+      return b;
+    } catch (err) {
+      const data = err?.response?.data || {};
+      if (data.code === 'YT_RECONNECT' || data.code === 'YT_NOT_CONNECTED') setYt({ connected: false });
+      setYtMsg(data.message || "Couldn't create the YouTube stream. Check your connection, or use your stream key.");
+      return null;
+    } finally {
+      setYtBusy(false);
+    }
+  };
+
+  const shareBroadcast = async (b) => {
+    const how = await shareLink(b.watchUrl, b.title);
+    if (how === 'copied') setYtMsg('Link copied.');
+  };
+
+  const startConnect = async () => {
+    setYtMsg('');
+    try {
+      await connectYouTube(token, () => youtubeStatus(token).then(setYt).catch(() => {}));
+    } catch (err) {
+      setYtMsg(err?.response?.data?.message || "Couldn't open YouTube sign-in.");
+    }
+  };
+
   const updateStream = (patch) => {
     setStreamTarget((prev) => {
       const next = { ...prev, ...patch };
@@ -297,6 +404,11 @@ export default function GameCameraPage() {
   const streaming = streamTarget.on;
   streamPlatformRef.current = streamTarget.platform;
   const savedKey = accountKeys[streamTarget.platform]; // { last4 } when saved on the website
+  // Connect YouTube is used unless they chose to use a stream key instead.
+  const ytConnected = streamTarget.platform === 'youtube' && !!yt?.connected;
+  const ytMode = ytConnected && !streamTarget.useKey;
+  const useYtConnect = streaming && ytMode;
+  if (useYtConnect) streamPlatformRef.current = 'youtube-connect';
 
   const runCheck = async () => {
     setChecking(true);
@@ -333,7 +445,15 @@ export default function GameCameraPage() {
       }
     }
     let key = streamTarget.key.trim();
-    if (streaming && !key && savedKey) {
+    let url = streamUrl;
+    if (useYtConnect) {
+      const b = await getBroadcast();
+      if (!b) return;
+      broadcastRef.current = b;
+      ytSessionRef.current = { title: b.title, privacy: b.privacy };
+      url = b.url;
+      key = b.key;
+    } else if (streaming && !key && savedKey) {
       try {
         const { data } = await axios.get(`${API_URL}/api/camera/stream-keys/${streamTarget.platform}`,
           { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
@@ -343,8 +463,8 @@ export default function GameCameraPage() {
         return;
       }
     }
-    if (streaming && (!key || !streamUrl)) {
-      setMsg(streamUrl
+    if (streaming && (!key || !url)) {
+      setMsg(url
         ? 'Add your stream key first: on your computer, save it at ui.loggerhead.app/profile › Live streaming.'
         : 'Enter the stream server URL first.');
       return;
@@ -360,10 +480,13 @@ export default function GameCameraPage() {
       };
     }
     try {
-      await GameCamera.open(streaming ? { stream: { url: streamUrl, key, quality: quality || 'medium' } } : undefined);
+      await GameCamera.open(streaming ? { stream: { url, key, quality: quality || 'medium' } } : undefined);
       setCameraOpen(true);
     } catch (err) {
       setMsg(err?.message || "Couldn't open the camera.");
+      // The broadcast stays for the next try; nothing was sent to it.
+      broadcastRef.current = null;
+      ytSessionRef.current = null;
     }
   };
 
@@ -520,7 +643,71 @@ export default function GameCameraPage() {
                 </button>
               ))}
             </div>
-            {streamTarget.platform !== 'other' && savedKey && (
+            {ytMode && (
+              <div style={{ marginTop: 10 }}>
+                <p style={{ ...styles.muted, fontSize: 13, color: '#166534', fontWeight: 700, margin: 0 }}>
+                  ✓ Connected to YouTube{yt.channelTitle ? ` (${yt.channelTitle})` : ''}. Loggerhead creates and
+                  ends the stream for you.
+                </p>
+                {broadcast ? (
+                  <div style={{ border: '1px solid var(--border, #d1d5db)', borderRadius: 10, padding: '10px 12px', marginTop: 10 }}>
+                    <div style={{ fontWeight: 700 }}>{broadcast.title}</div>
+                    <div style={{ ...styles.muted, fontSize: 12, margin: '2px 0 6px' }}>
+                      {YT_PRIVACY[broadcast.privacy] || broadcast.privacy} · {broadcast.watchUrl}
+                    </div>
+                    <button type="button" className="primary-button" style={{ width: 'auto' }} onClick={() => shareBroadcast(broadcast)}>
+                      Share the watch link
+                    </button>
+                    <p style={{ ...styles.muted, fontSize: 12, margin: '6px 0 0' }}>
+                      The link works now: it shows "starting soon" until you go live.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 700, marginTop: 10 }}>
+                      Stream title
+                      <input value={ytTitle} onChange={(e) => setYtTitle(e.target.value)} placeholder={defaultYtTitle()} maxLength={100}
+                        style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 4, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)', fontWeight: 400 }} />
+                    </label>
+                    <label style={{ display: 'block', fontSize: 13, fontWeight: 700, marginTop: 8 }}>
+                      Who can watch{' '}
+                      <select value={streamTarget.ytPrivacy || 'unlisted'} onChange={(e) => updateStream({ ytPrivacy: e.target.value })}
+                        style={{ marginLeft: 6, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border, #d1d5db)' }}>
+                        {Object.entries(YT_PRIVACY).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                      </select>
+                    </label>
+                    <button type="button" style={{ ...styles.link, fontSize: 13, marginTop: 8 }} disabled={ytBusy} onClick={getBroadcast}>
+                      {ytBusy ? 'Creating the YouTube stream…' : 'Get the watch link now (to share before the game)'}
+                    </button>
+                  </>
+                )}
+                {ytMsg && <p style={{ ...styles.muted, fontSize: 13, margin: '6px 0 0' }}>{ytMsg}</p>}
+                <button type="button" style={{ ...styles.link, fontSize: 12, marginTop: 6 }} onClick={() => updateStream({ useKey: true })}>
+                  Use my stream key instead
+                </button>
+              </div>
+            )}
+            {streamTarget.platform === 'youtube' && !ytMode && (
+              <div style={{ marginTop: 10 }}>
+                {ytConnected ? (
+                  <button type="button" style={{ ...styles.link, fontSize: 13 }} onClick={() => updateStream({ useKey: false })}>
+                    Use Connect YouTube instead (no stream key)
+                  </button>
+                ) : yt && (
+                  <>
+                    <button type="button" className="primary-button" style={{ width: 'auto' }} onClick={startConnect}>
+                      Connect YouTube (easiest)
+                    </button>
+                    <p style={{ ...styles.muted, fontSize: 12, margin: '4px 0 0' }}>
+                      Sign in with Google once. Loggerhead then creates each stream, gives you the link to share and
+                      ends it when you stop. No YouTube Studio or stream key. Or set up a stream key below.
+                    </p>
+                  </>
+                )}
+                {ytMsg && <p style={{ ...styles.muted, fontSize: 13, margin: '6px 0 0' }}>{ytMsg}</p>}
+              </div>
+            )}
+            {!ytMode && streamTarget.platform !== 'other' && savedKey && (
               <>
                 <p style={{ ...styles.muted, fontSize: 13, color: '#166534', fontWeight: 700, margin: '10px 0 0' }}>
                   ✓ Using the {STREAM_TARGETS[streamTarget.platform].label} key saved on your account (ends in {savedKey.last4}).
@@ -539,7 +726,7 @@ export default function GameCameraPage() {
                 )}
               </>
             )}
-            {streamTarget.platform === 'youtube' && !savedKey && (
+            {!ytMode && streamTarget.platform === 'youtube' && !savedKey && (
               <>
                 <p style={{ ...styles.muted, fontSize: 13, fontWeight: 700, margin: '10px 0 0' }}>
                   One-time setup, on your computer (stream keys are long, so don't type them on the phone):
@@ -568,7 +755,7 @@ export default function GameCameraPage() {
                 placeholder="Server URL (rtmp:// or rtmps://)" autoCapitalize="off" autoCorrect="off" spellCheck={false}
                 style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)' }} />
             )}
-            {(streamTarget.platform === 'other' || phoneKeyOpen || streamTarget.key.trim()) ? (
+            {ytMode ? null : (streamTarget.platform === 'other' || phoneKeyOpen || streamTarget.key.trim()) ? (
               <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
                 <input value={streamTarget.key} onChange={(e) => updateStream({ key: e.target.value })}
                   type="text" name="stream-key" autoComplete="off"
