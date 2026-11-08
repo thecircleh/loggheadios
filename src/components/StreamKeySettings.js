@@ -25,10 +25,11 @@ function YouTubeConnect({ token }) {
   }, [token]);
 
   const boxRef = React.useRef(null);
+  const backFromGoogle = React.useRef(!!msg);
   useEffect(() => {
     // Back from Google's sign-in on the website: show this section.
-    if (msg) boxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (backFromGoogle.current) boxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
 
   useEffect(() => {
     load();
