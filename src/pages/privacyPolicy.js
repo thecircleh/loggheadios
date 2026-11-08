@@ -1,23 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React from 'react';
+import LegalRedirect from './LegalRedirect';
 
-const PrivacyPolicy = () => {
-  const [html, setHtml] = useState('');
-
-  useEffect(() => {
-    fetch('/privacy_policy.html')
-      .then(res => res.text())
-      .then(setHtml)
-      .catch(err => console.error('Failed to load privacy policy:', err));
-  }, []);
-
-  return (
-    <div style={{ padding: '20px', paddingTop: 'calc(20px + env(safe-area-inset-top, 0px))' }}>
-      <div dangerouslySetInnerHTML={{ __html: html }} />
-
-
-    </div>
-  );
-};
+const PrivacyPolicy = () => <LegalRedirect url="https://www.loggerhead.app/privacy" title="Privacy Policy" />;
 
 export default PrivacyPolicy;

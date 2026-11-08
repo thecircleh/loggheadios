@@ -32,7 +32,9 @@ export function judgeStream(st) {
   const thin = (c && c.uploadMbps < LOW_UPLOAD_MBPS) || (st.avgKbps && st.targetKbps && st.avgKbps < st.targetKbps * 0.6);
   const helps = [];
   if (struggling && delayed) helps.push("SRT");
-  if (struggling && thin) helps.push("Bonding");
+  // Short on upload: on Wi-Fi, bonding adds cellular. Already on cellular (no Wi-Fi there), the
+  // only add-on is a second carrier, like a hotspot from a different carrier.
+  if (struggling && thin) helps.push(st.network === "cellular" ? "A 2nd carrier" : "Bonding");
   return { healthy: !struggling, tags, helps, poorShare, delayed, thin };
 }
 
@@ -76,6 +78,7 @@ export default function StreamQualityPanel({ apiUrl, token }) {
   const struggling = withData.length - healthy;
   const srt = count((s) => s.verdict.helps.includes("SRT"));
   const bonding = count((s) => s.verdict.helps.includes("Bonding"));
+  const secondCarrier = count((s) => s.verdict.helps.includes("A 2nd carrier"));
   const never = count((s) => !s.stats.reachedLive);
   const dropped = count((s) => (s.stats.reconnects || 0) > 0);
   const hot = count((s) => (s.stats.hotMs || 0) > 60000);
@@ -99,8 +102,9 @@ export default function StreamQualityPanel({ apiUrl, token }) {
       <p style={{ fontSize: 13, color: "#555", margin: "6px 0 14px" }}>
         Each stream records the connection check (upload, delay, jitter, lost pings) and how it held up:
         time on a green, yellow or red badge, dropouts and actual upload. <strong>SRT</strong> helps streams that
-        struggled on long-delay or lossy networks; <strong>bonding</strong> (adding cellular) helps streams that ran
-        out of upload. Streams from app versions before this log show as "No data".
+        struggled on long-delay or lossy networks. For streams that ran out of upload, <strong>bonding</strong>
+        (adding cellular) helps on Wi-Fi, and <strong>a 2nd carrier</strong> (like a hotspot on a different
+        carrier) helps on cellular. Streams from app versions before this log show as "No data".
       </p>
 
       {error && <p style={{ color: "#b91c1c" }}>Couldn't load streams: {error}</p>}
@@ -131,7 +135,12 @@ export default function StreamQualityPanel({ apiUrl, token }) {
             <div style={tile("#FCE7F3")}>
               <div style={{ fontSize: 12, color: "#555" }}>Bonding would help</div>
               <div style={{ fontSize: 24, fontWeight: 800, color: "#9D174D" }}>{bonding}</div>
-              <div style={{ fontSize: 12, color: "#444" }}>struggled with too little upload</div>
+              <div style={{ fontSize: 12, color: "#444" }}>on Wi-Fi, struggled with too little upload</div>
+            </div>
+            <div style={tile("#EDE9FE")}>
+              <div style={{ fontSize: 12, color: "#555" }}>A 2nd carrier would help</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: "#5B21B6" }}>{secondCarrier}</div>
+              <div style={{ fontSize: 12, color: "#444" }}>on cellular, struggled with too little upload</div>
             </div>
           </div>
 
