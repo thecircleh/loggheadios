@@ -529,7 +529,9 @@ export default function GameCameraPage() {
                 {streamTarget.platform === 'youtube' && (
                   <p style={{ ...styles.muted, fontSize: 12 }}>
                     Game day: tap the red button on the camera. YouTube starts the stream by itself within about
-                    30 seconds; share the watch link from YouTube Studio. Once, in YouTube Studio's stream
+                    30 seconds, and nobody needs YouTube Studio open during the match. Sharing: a Public stream is
+                    always at youtube.com/@yourchannel/live; for an Unlisted one, copy its share link from the Go live
+                    page before the match (each new stream gets a new link). Once, in YouTube Studio's stream
                     settings: set <strong>Stream latency</strong> to <strong>Normal</strong> and, if you see it, turn
                     off <strong>Auto-stop</strong>, so gym Wi-Fi hiccups don't end the broadcast. Use the Go live
                     page's stream, not a scheduled one: it goes live without anyone clicking Go live.
