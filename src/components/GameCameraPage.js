@@ -218,18 +218,17 @@ export default function GameCameraPage() {
   useEffect(() => {
     if (!isNative()) return undefined;
     const handles = [];
-    // Connect YouTube: end the broadcast when the stream stops (a broadcast that never went live
-    // is deleted), and make a fresh one if they go live again with the camera still open. The
-    // phone keeps the same stream key, so the new broadcast picks it up.
+    // Connect YouTube: stopping and going live again with the camera still open rejoins the same
+    // broadcast (Auto-stop is off), so viewers keep the same link through breaks between sets.
+    // Closing the camera ends it (a broadcast that never went live is deleted). If it was ended
+    // on YouTube in the meantime, going live again makes a fresh one.
     const finishBroadcast = () => {
       const b = broadcastRef.current;
       broadcastRef.current = null;
       setBroadcast(null);
       if (b?.broadcastId) endBroadcast(token, b.broadcastId).catch(() => {});
     };
-    const reopenBroadcast = () => {
-      const session = ytSessionRef.current;
-      if (!session || broadcastRef.current) return;
+    const newBroadcast = (session) => {
       broadcastRef.current = { pending: true };
       createBroadcast(token, session).then((b) => {
         broadcastRef.current = b;
@@ -238,6 +237,19 @@ export default function GameCameraPage() {
         broadcastRef.current = null;
         setYtMsg(err?.response?.data?.message || "Couldn't start a new YouTube stream.");
       });
+    };
+    const reopenBroadcast = () => {
+      const session = ytSessionRef.current;
+      if (!session) return;
+      const b = broadcastRef.current;
+      if (!b) { newBroadcast(session); return; }
+      if (!b.broadcastId) return; // still being created
+      broadcastStatus(token, b.broadcastId).then((status) => {
+        if (YT_DONE.includes(status) && broadcastRef.current === b) {
+          setYtMsg('The last stream was ended on YouTube, so this is a new one with a new link.');
+          newBroadcast(session);
+        }
+      }).catch(() => {});
     };
     (async () => {
       handles.push(await GameCamera.addListener('recording', (e) => {
@@ -287,7 +299,9 @@ export default function GameCameraPage() {
       handles.push(await GameCamera.addListener('live', (e) => {
         setLive(e);
         if (e.state === 'connecting') reopenBroadcast();
-        if (e.state === 'ended') finishBroadcast();
+        if (e.state === 'ended' && broadcastRef.current?.broadcastId) {
+          GameCamera.showPlay({ text: 'Paused · go live again for the same YouTube link · close the camera to end the stream' }).catch(() => {});
+        }
         let row = streamUsageRef.current;
         if (!row && e.state !== 'ended') {
           row = { id: null, log: createStreamLog(streamPlanRef.current || {}), done: false };
@@ -338,8 +352,8 @@ export default function GameCameraPage() {
         if (!YT_DONE.includes(status) || broadcastRef.current !== b) return;
         broadcastRef.current = null;
         setBroadcast(null);
-        ytSessionRef.current = null; // don't start a new one by itself
-        setYtMsg('The stream was ended on YouTube. Viewers no longer see it. Tap the red button to stop sending; the recording on this phone is fine.');
+        // Reconnects don't make a new one; going live again (red button) does.
+        setYtMsg('The stream was ended on YouTube. Viewers no longer see it. Tap the red button to stop sending; the recording on this phone is fine. Going live again starts a new stream with a new link.');
         GameCamera.showPlay({ text: 'YouTube ended this stream · tap the red button to stop' }).catch(() => {});
       } catch {}
     }, YT_CHECK_MS);
@@ -649,6 +663,10 @@ export default function GameCameraPage() {
                   ✓ Connected to YouTube{yt.channelTitle ? ` (${yt.channelTitle})` : ''}. Loggerhead creates and
                   ends the stream for you.
                 </p>
+                <p style={{ ...styles.muted, fontSize: 12, margin: '4px 0 0' }}>
+                  The red button pauses: go live again (between sets, after a timeout) and it continues the same
+                  stream, so viewers keep the same link. Closing the camera ends the stream on YouTube.
+                </p>
                 {broadcast ? (
                   <div style={{ border: '1px solid var(--border, #d1d5db)', borderRadius: 10, padding: '10px 12px', marginTop: 10 }}>
                     <div style={{ fontWeight: 700 }}>{broadcast.title}</div>
@@ -715,13 +733,13 @@ export default function GameCameraPage() {
                 </p>
                 {streamTarget.platform === 'youtube' && (
                   <p style={{ ...styles.muted, fontSize: 12 }}>
-                    Game day: tap the red button on the camera. YouTube starts the stream by itself within about
-                    30 seconds, and nobody needs YouTube Studio open during the match. Sharing: a Public stream is
-                    always at youtube.com/@yourchannel/live; for an Unlisted one, copy its share link from the Go live
-                    page before the match (each new stream gets a new link). Once, in YouTube Studio's stream
-                    settings: set <strong>Stream latency</strong> to <strong>Normal</strong> and, if you see it, turn
-                    off <strong>Auto-stop</strong>, so gym Wi-Fi hiccups don't end the broadcast. Use the Go live
-                    page's stream, not a scheduled one: it goes live without anyone clicking Go live.
+                    Before each match, schedule the stream in YouTube Studio (Create › Go live › Schedule stream) with
+                    the <strong>Default stream key</strong>, <strong>Auto-start</strong> on, <strong>Auto-stop</strong> off
+                    and <strong>Stream latency</strong> set to <strong>Normal</strong>. Without Auto-start, someone has to
+                    click Go live in Studio. Game day: tap the red button on the camera and YouTube starts the stream
+                    within about 30 seconds. Sharing: copy the scheduled stream's link and text it out before the match
+                    (a Public stream also shows at youtube.com/@yourchannel/live). Connect YouTube does all of this
+                    for you.
                   </p>
                 )}
               </>
@@ -734,13 +752,13 @@ export default function GameCameraPage() {
                 <ol style={{ ...styles.muted, fontSize: 12, paddingLeft: 18 }}>
                   <li><strong>First time only:</strong> open <strong>youtube.com/verify</strong> and verify your phone number.
                     YouTube can take up to 24 hours to turn on live streaming, so do this before game day.</li>
-                  <li>Open <strong>studio.youtube.com</strong> › <strong>Create</strong> › <strong>Go live</strong>.</li>
-                  <li>Choose <strong>Streaming software</strong> (not Webcam or Mobile). Set it to <strong>Unlisted</strong> so only
-                    people with the link can watch, a good choice for kids' games.</li>
-                  <li>In the stream settings, set <strong>Stream latency</strong> to <strong>Normal</strong> (not Low or
-                    Ultra-low): YouTube then buffers through gym Wi-Fi hiccups. Stay on this page rather than
-                    scheduling a stream: it goes live by itself when your phone starts sending, so nobody has to click Go live.
-                    If you see <strong>Auto-stop</strong>, turn it off, so a dropped connection rejoins the same broadcast instead of ending it.</li>
+                  <li>Open <strong>studio.youtube.com</strong> › <strong>Create</strong> › <strong>Go live</strong> ›{' '}
+                    <strong>Schedule stream</strong> (do this for each match). Choose <strong>Streaming software</strong>, and set it
+                    to <strong>Unlisted</strong> so only people with the link can watch, a good choice for kids' games.</li>
+                  <li>In the stream settings, turn <strong>Auto-start</strong> on, so it goes live when your phone starts
+                    sending and nobody has to click Go live. Turn <strong>Auto-stop</strong> off, so a dropped connection
+                    rejoins the same broadcast instead of ending it. Set <strong>Stream latency</strong> to{' '}
+                    <strong>Normal</strong> (not Low or Ultra-low), so YouTube buffers through gym Wi-Fi hiccups.</li>
                   <li>Use the <strong>Default stream key</strong>, and leave <strong>manual settings off</strong> so YouTube
                     detects the resolution itself: Loggerhead raises and lowers the quality as the Wi-Fi changes. If you do
                     turn manual settings on, pick <strong>RTMP</strong> (not HLS) and <strong>Variable</strong> bitrate.</li>
@@ -838,7 +856,9 @@ export default function GameCameraPage() {
           <li>Turn the phone sideways and keep the whole court in view.</li>
           <li>Keep Loggerhead open while filming. A long match uses a lot of battery and storage; a power bank helps.</li>
           <li>{streaming
-            ? 'Tap the red button to go live and start recording; tap again to end the stream.'
+            ? (ytMode
+              ? 'Tap the red button to go live and start recording; tap again to pause. Close the camera to end the stream.'
+              : 'Tap the red button to go live and start recording; tap again to end the stream.')
             : 'Tap the red button to start and stop.'} Each recording is kept on this phone until you save or share it.</li>
         </ul>
       </div>

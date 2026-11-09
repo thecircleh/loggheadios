@@ -104,7 +104,7 @@ const PLATFORMS = [
   {
     key: 'youtube',
     label: 'YouTube',
-    where: 'studio.youtube.com › Create › Go live › Streaming software. Use the Default stream key and leave manual settings off (if you turn them on, pick RTMP and Variable bitrate). In the stream settings, set latency to Normal and turn off Auto-stop if you see it. Do not schedule a stream: this page goes live by itself when your phone starts sending. Then copy the Stream key.',
+    where: 'studio.youtube.com › Create › Go live › Schedule stream › Streaming software. Use the Default stream key and leave manual settings off (if you turn them on, pick RTMP and Variable bitrate). In the stream settings, turn Auto-start on (otherwise someone has to click Go live), Auto-stop off, and latency to Normal. Then copy the Stream key. It stays the same, but schedule a new stream before each match.',
   },
 ];
 
