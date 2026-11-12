@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from './AuthContext';
 import { getApiUrl } from '../utils/getApiUrl';
-import { connectYouTube, disconnectYouTube, youtubeStatus } from '../utils/youtube';
+import { connectYouTube, disconnectYouTube, setFacebookPage, youtubeStatus } from '../utils/youtube';
 
 const API_URL = getApiUrl();
 const muted = { fontSize: 12, color: 'var(--text-muted, #6b7280)' };
@@ -100,6 +100,118 @@ function YouTubeConnect({ token }) {
   );
 }
 
+// Connect Facebook: Loggerhead creates and ends live videos on a Facebook Page they manage.
+function FacebookConnect({ token }) {
+  const [status, setStatus] = useState(null); // { connected, name, pages, pageId, pageName }
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get('facebook');
+      if (q === 'connected') return 'Facebook connected.';
+      if (q === 'failed') return "Facebook wasn't connected. Try again.";
+    } catch {}
+    return '';
+  });
+
+  const load = React.useCallback(() => {
+    youtubeStatus(token, 'facebook').then(setStatus).catch(() => setStatus({ connected: false }));
+  }, [token]);
+
+  const boxRef = React.useRef(null);
+  const backFromFacebook = React.useRef(!!msg);
+  useEffect(() => {
+    if (backFromFacebook.current) boxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
+
+  useEffect(() => {
+    load();
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [load]);
+
+  const connect = async () => {
+    setBusy(true);
+    setMsg('');
+    try {
+      await connectYouTube(token, load, 'facebook');
+    } catch (err) {
+      setMsg(err?.response?.data?.message || "Couldn't open Facebook sign-in. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disconnect = async () => {
+    setBusy(true);
+    setMsg('');
+    try {
+      await disconnectYouTube(token, 'facebook');
+      setStatus({ connected: false });
+      setMsg('Facebook disconnected. Loggerhead no longer has access to your Pages.');
+    } catch {
+      setMsg("Couldn't disconnect. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pickPage = async (pageId) => {
+    setBusy(true);
+    setMsg('');
+    try {
+      setStatus(await setFacebookPage(token, pageId));
+    } catch (err) {
+      setMsg(err?.response?.data?.message || "Couldn't change the Page. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div ref={boxRef} style={{ padding: '10px 0', borderTop: '1px solid var(--border, #e5e7eb)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+        <strong>Connect Facebook</strong>
+        <span style={{ fontSize: 13, color: status?.pageName ? '#166534' : 'var(--text-muted, #6b7280)' }}>
+          {status === null ? '…' : status.pageName ? `✓ ${status.pageName}` : status.connected ? 'Choose a Page' : 'Not connected'}
+        </span>
+      </div>
+      <p style={{ margin: '4px 0 8px', ...muted }}>
+        Stream to a Facebook Page you manage, like your team's or club's Page. Each time you go live,
+        Loggerhead creates the live video with the match name, gives you the link to share, and ends it
+        when you're done. No Live Producer, no Go live click. Facebook only lets Pages with at least 100
+        followers go live from apps.
+      </p>
+      {status?.connected && status.pages?.length > 0 && (
+        <label style={{ display: 'block', fontSize: 13, fontWeight: 700, margin: '0 0 8px' }}>
+          Stream to{' '}
+          <select value={status.pageId || ''} disabled={busy} onChange={(e) => pickPage(e.target.value)}
+            style={{ marginLeft: 6, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border, #d1d5db)' }}>
+            {!status.pageId && <option value="">Choose a Page</option>}
+            {status.pages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+      )}
+      {status?.connected ? (
+        <button type="button" disabled={busy} onClick={disconnect}
+          style={{ background: 'none', border: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: 14, padding: 0 }}>
+          {busy ? 'Working…' : 'Disconnect Facebook'}
+        </button>
+      ) : (
+        <button type="button" className="primary-button" style={{ width: 'auto' }} disabled={busy || status === null} onClick={connect}>
+          {busy ? 'Opening…' : 'Connect Facebook'}
+        </button>
+      )}
+      {msg && <p style={{ margin: '6px 0 0', fontSize: 13 }}>{msg}</p>}
+      <p style={{ margin: '8px 0 0', ...muted }}>
+        Loggerhead only uses this to create, check and end live videos on the Page you choose. See our{' '}
+        <a href="https://www.loggerhead.app/privacy" target="_blank" rel="noopener noreferrer">privacy policy</a>.
+        You can also remove access in Facebook › Settings › Business integrations.
+      </p>
+    </div>
+  );
+}
+
 const PLATFORMS = [
   {
     key: 'youtube',
@@ -149,11 +261,12 @@ export default function StreamKeySettings() {
     <div className="card" style={{ marginTop: 14 }}>
       <h3 style={{ margin: '0 0 4px' }}>🔴 Live streaming</h3>
       <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-muted, #6b7280)' }}>
-        Connect your YouTube channel, or save a stream key. When you film a match in the Loggerhead
-        app and go live, your phone uses them.
+        Connect your YouTube channel or Facebook Page, or save a YouTube stream key. When you film a
+        match in the Loggerhead app and go live, your phone uses them.
       </p>
       <YouTubeConnect token={token} />
-      <p style={{ margin: '10px 0 0', fontSize: 13, fontWeight: 700 }}>Or use a stream key</p>
+      <FacebookConnect token={token} />
+      <p style={{ margin: '10px 0 0', fontSize: 13, fontWeight: 700 }}>Or use a YouTube stream key</p>
       {PLATFORMS.map((p) => {
         const current = saved?.[p.key];
         return (

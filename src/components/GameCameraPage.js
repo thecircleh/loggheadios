@@ -11,19 +11,22 @@ import { QUALITIES, checkConnection, deviceWarnings } from '../utils/streamCheck
 import { trackFeature, trackFeatureLength } from '../utils/featureUsage';
 import { createStreamLog } from '../utils/streamQuality';
 import {
-  YT_PRIVACY, broadcastStatus, connectYouTube, createBroadcast, endBroadcast, shareLink, youtubeStatus,
+  SERVICE_LABEL, YT_PRIVACY, broadcastStatus, connectYouTube, createBroadcast, endBroadcast, setFacebookPage, shareLink,
+  youtubeStatus,
 } from '../utils/youtube';
 
-const YT_CHECK_MS = 45000; // while live: is the broadcast still on YouTube (ended in Studio)?
+const YT_CHECK_MS = 45000; // while live: is the broadcast still on YouTube / Facebook (ended there)?
 const YT_DONE = ['complete', 'revoked', 'deleted'];
 
 const API_URL = getApiUrl();
 const isNative = () => !!window.Capacitor?.isNativePlatform?.();
 const SERVE = '🏐';
 
-// Where to stream. People save the stream key from YouTube Studio on the website (or paste it here).
+// Where to stream. YouTube: Connect YouTube, or the stream key saved on the website (or pasted
+// here). Facebook: Connect Facebook only (a Facebook stream key needs a Go live click in Live Producer).
 const STREAM_TARGETS = {
   youtube: { label: 'YouTube', url: 'rtmps://a.rtmps.youtube.com/live2' },
+  facebook: { label: 'Facebook', url: '' },
   other: { label: 'Other', url: '' },
 };
 const STREAM_KEY = 'lh_stream_target'; // { on, platform, key, url, quality } on this phone only
@@ -80,12 +83,13 @@ export default function GameCameraPage() {
   const [finishing, setFinishing] = useState(false);
   // Connect YouTube: Loggerhead makes the broadcast (see utils/youtube.js).
   const [yt, setYt] = useState(null); // { connected, channelTitle }
+  const [fb, setFb] = useState(null); // Connect Facebook: { connected, pages, pageId, pageName }
   const [ytTitle, setYtTitle] = useState('');
   const [broadcast, setBroadcast] = useState(null); // { broadcastId, url, key, watchUrl, title, privacy }
   const [ytBusy, setYtBusy] = useState(false);
   const [ytMsg, setYtMsg] = useState('');
   const broadcastRef = useRef(null); // the broadcast this camera session is sending to
-  const ytSessionRef = useRef(null); // { title, privacy } while the camera streams through Connect YouTube
+  const ytSessionRef = useRef(null); // { title, privacy, service } while the camera streams through Connect YouTube / Facebook
 
   // Videos left behind when the app closed mid-recording (crash, dead battery): offer them.
   useEffect(() => {
@@ -111,6 +115,9 @@ export default function GameCameraPage() {
       youtubeStatus(token)
         .then((data) => { if (!cancelled) setYt(data); })
         .catch(() => { if (!cancelled) setYt((prev) => prev || { connected: false }); });
+      youtubeStatus(token, 'facebook')
+        .then((data) => { if (!cancelled) setFb(data); })
+        .catch(() => { if (!cancelled) setFb((prev) => prev || { connected: false }); });
     };
     load();
     // Check again when they come back from saving the key on their computer.
@@ -218,19 +225,25 @@ export default function GameCameraPage() {
   useEffect(() => {
     if (!isNative()) return undefined;
     const handles = [];
-    // Connect YouTube: stopping and going live again with the camera still open rejoins the same
-    // broadcast (Auto-stop is off), so viewers keep the same link through breaks between sets.
-    // Closing the camera ends it (a broadcast that never went live is deleted). If it was ended
-    // on YouTube in the meantime, going live again makes a fresh one.
+    // Connect YouTube / Facebook: stopping and going live again with the camera still open rejoins
+    // the same broadcast, so viewers keep the same link through breaks between sets. Closing the
+    // camera ends it (a broadcast that never went live is deleted). If it was ended on YouTube in
+    // the meantime, going live again makes a fresh one (YouTube keeps the same stream key). A new
+    // Facebook live video has a new key the open camera can't switch to, so that needs a reopen.
     const finishBroadcast = () => {
       const b = broadcastRef.current;
       broadcastRef.current = null;
       setBroadcast(null);
-      if (b?.broadcastId) endBroadcast(token, b.broadcastId).catch(() => {});
+      if (b?.broadcastId) endBroadcast(token, b.broadcastId, b.service).catch(() => {});
+    };
+    const fbEnded = () => {
+      setYtMsg('Facebook ended this live video. Close the camera and open it again to start a new one (it gets a new link).');
+      GameCamera.showPlay({ text: 'Facebook ended this live video · close the camera and open it again' }).catch(() => {});
     };
     const newBroadcast = (session) => {
+      if (session.service === 'facebook') { fbEnded(); return; }
       broadcastRef.current = { pending: true };
-      createBroadcast(token, session).then((b) => {
+      createBroadcast(token, session, session.service).then((b) => {
         broadcastRef.current = b;
         setBroadcast(b);
       }).catch((err) => {
@@ -244,9 +257,9 @@ export default function GameCameraPage() {
       const b = broadcastRef.current;
       if (!b) { newBroadcast(session); return; }
       if (!b.broadcastId) return; // still being created
-      broadcastStatus(token, b.broadcastId).then((status) => {
+      broadcastStatus(token, b.broadcastId, b.service).then((status) => {
         if (YT_DONE.includes(status) && broadcastRef.current === b) {
-          setYtMsg('The last stream was ended on YouTube, so this is a new one with a new link.');
+          if (b.service !== 'facebook') setYtMsg('The last stream was ended on YouTube, so this is a new one with a new link.');
           newBroadcast(session);
         }
       }).catch(() => {});
@@ -300,7 +313,8 @@ export default function GameCameraPage() {
         setLive(e);
         if (e.state === 'connecting') reopenBroadcast();
         if (e.state === 'ended' && broadcastRef.current?.broadcastId) {
-          GameCamera.showPlay({ text: 'Paused · go live again for the same YouTube link · close the camera to end the stream' }).catch(() => {});
+          const where = SERVICE_LABEL[broadcastRef.current.service] || 'YouTube';
+          GameCamera.showPlay({ text: `Paused · go live again for the same ${where} link · close the camera to end the stream` }).catch(() => {});
         }
         let row = streamUsageRef.current;
         if (!row && e.state !== 'ended') {
@@ -340,7 +354,7 @@ export default function GameCameraPage() {
     } : { title: '', subtitle: '', status: '' }).catch(() => {});
   }, [cameraOpen, link, score, connected]);
 
-  // While live through Connect YouTube: notice if the broadcast is ended in YouTube Studio.
+  // While live through Connect YouTube / Facebook: notice if the broadcast is ended over there.
   const liveState = live?.state;
   useEffect(() => {
     if (liveState !== 'live' && liveState !== 'reconnecting') return undefined;
@@ -348,13 +362,16 @@ export default function GameCameraPage() {
       const b = broadcastRef.current;
       if (!b?.broadcastId) return;
       try {
-        const status = await broadcastStatus(token, b.broadcastId);
+        const status = await broadcastStatus(token, b.broadcastId, b.service);
         if (!YT_DONE.includes(status) || broadcastRef.current !== b) return;
         broadcastRef.current = null;
         setBroadcast(null);
-        // Reconnects don't make a new one; going live again (red button) does.
-        setYtMsg('The stream was ended on YouTube. Viewers no longer see it. Tap the red button to stop sending; the recording on this phone is fine. Going live again starts a new stream with a new link.');
-        GameCamera.showPlay({ text: 'YouTube ended this stream · tap the red button to stop' }).catch(() => {});
+        const where = SERVICE_LABEL[b.service] || 'YouTube';
+        // Reconnects don't make a new one; going live again (red button) does (YouTube only).
+        setYtMsg(b.service === 'facebook'
+          ? 'The live video was ended on Facebook. Viewers no longer see it. Tap the red button to stop sending; the recording on this phone is fine. To go live again, close the camera and open it again.'
+          : 'The stream was ended on YouTube. Viewers no longer see it. Tap the red button to stop sending; the recording on this phone is fine. Going live again starts a new stream with a new link.');
+        GameCamera.showPlay({ text: `${where} ended this stream · tap the red button to stop` }).catch(() => {});
       } catch {}
     }, YT_CHECK_MS);
     return () => clearInterval(timer);
@@ -364,7 +381,8 @@ export default function GameCameraPage() {
   const pendingRef = useRef(null);
   pendingRef.current = broadcast;
   useEffect(() => () => {
-    if (pendingRef.current && !broadcastRef.current) endBroadcast(token, pendingRef.current.broadcastId).catch(() => {});
+    const p = pendingRef.current;
+    if (p && !broadcastRef.current) endBroadcast(token, p.broadcastId, p.service).catch(() => {});
   }, [token]);
 
   const defaultYtTitle = () => {
@@ -372,19 +390,28 @@ export default function GameCameraPage() {
     return link ? `${link.teamName || 'Us'} vs ${link.opponentName || 'Them'} · ${day}` : `Volleyball live · ${day}`;
   };
 
-  // Make the YouTube broadcast now (before the camera opens), so the link can be shared first.
-  const getBroadcast = async () => {
-    if (broadcast) return broadcast;
+  // Make the broadcast now (before the camera opens), so the link can be shared first.
+  // fromCamera: called by the Open camera button, so the error also shows under that button.
+  const getBroadcast = async (fromCamera = false) => {
+    if (broadcast && broadcast.service === connService) return broadcast;
+    if (broadcast) endBroadcast(token, broadcast.broadcastId, broadcast.service).catch(() => {}); // switched service
     setYtBusy(true);
     setYtMsg('');
     try {
-      const b = await createBroadcast(token, { title: ytTitle.trim() || defaultYtTitle(), privacy: streamTarget.ytPrivacy || 'unlisted' });
+      const b = await createBroadcast(token,
+        { title: ytTitle.trim() || defaultYtTitle(), privacy: streamTarget.ytPrivacy || 'unlisted' }, connService);
       setBroadcast(b);
       return b;
     } catch (err) {
       const data = err?.response?.data || {};
       if (data.code === 'YT_RECONNECT' || data.code === 'YT_NOT_CONNECTED') setYt({ connected: false });
-      setYtMsg(data.message || "Couldn't create the YouTube stream. Check your connection, or use your stream key.");
+      if (data.code === 'FB_RECONNECT' || data.code === 'FB_NOT_CONNECTED') setFb({ connected: false });
+      setBroadcast(null);
+      const text = data.message || (connService === 'facebook'
+        ? "Couldn't create the Facebook live video. Check your connection and try again."
+        : "Couldn't create the YouTube stream. Check your connection, or use your stream key.");
+      setYtMsg(text);
+      if (fromCamera === true) setMsg(text);
       return null;
     } finally {
       setYtBusy(false);
@@ -396,12 +423,22 @@ export default function GameCameraPage() {
     if (how === 'copied') setYtMsg('Link copied.');
   };
 
-  const startConnect = async () => {
+  const startConnect = async (service = 'youtube') => {
+    setYtMsg('');
+    const setStatus = service === 'facebook' ? setFb : setYt;
+    try {
+      await connectYouTube(token, () => youtubeStatus(token, service).then(setStatus).catch(() => {}), service);
+    } catch (err) {
+      setYtMsg(err?.response?.data?.message || `Couldn't open ${SERVICE_LABEL[service]} sign-in.`);
+    }
+  };
+
+  const pickFacebookPage = async (pageId) => {
     setYtMsg('');
     try {
-      await connectYouTube(token, () => youtubeStatus(token).then(setYt).catch(() => {}));
+      setFb(await setFacebookPage(token, pageId));
     } catch (err) {
-      setYtMsg(err?.response?.data?.message || "Couldn't open YouTube sign-in.");
+      setYtMsg(err?.response?.data?.message || "Couldn't change the Page.");
     }
   };
 
@@ -418,11 +455,15 @@ export default function GameCameraPage() {
   const streaming = streamTarget.on;
   streamPlatformRef.current = streamTarget.platform;
   const savedKey = accountKeys[streamTarget.platform]; // { last4 } when saved on the website
-  // Connect YouTube is used unless they chose to use a stream key instead.
+  // Connect YouTube is used unless they chose to use a stream key instead. Facebook is always
+  // Connect Facebook, once a Page is chosen.
   const ytConnected = streamTarget.platform === 'youtube' && !!yt?.connected;
-  const ytMode = ytConnected && !streamTarget.useKey;
+  const isFacebook = streamTarget.platform === 'facebook';
+  const fbReady = isFacebook && !!fb?.connected && !!fb.pageId;
+  const connService = fbReady ? 'facebook' : ytConnected && !streamTarget.useKey ? 'youtube' : null;
+  const ytMode = !!connService; // Loggerhead makes the broadcast (YouTube or Facebook)
   const useYtConnect = streaming && ytMode;
-  if (useYtConnect) streamPlatformRef.current = 'youtube-connect';
+  if (useYtConnect) streamPlatformRef.current = `${connService}-connect`;
 
   const runCheck = async () => {
     setChecking(true);
@@ -461,10 +502,10 @@ export default function GameCameraPage() {
     let key = streamTarget.key.trim();
     let url = streamUrl;
     if (useYtConnect) {
-      const b = await getBroadcast();
+      const b = await getBroadcast(true);
       if (!b) return;
       broadcastRef.current = b;
-      ytSessionRef.current = { title: b.title, privacy: b.privacy };
+      ytSessionRef.current = { title: b.title, privacy: b.privacy, service: b.service };
       url = b.url;
       key = b.key;
     } else if (streaming && !key && savedKey) {
@@ -476,6 +517,10 @@ export default function GameCameraPage() {
         setMsg(err?.response?.data?.message || "Couldn't get your saved stream key. Check your connection.");
         return;
       }
+    }
+    if (streaming && isFacebook && !useYtConnect) {
+      setMsg('Connect Facebook and choose your Page first (above).');
+      return;
     }
     if (streaming && (!key || !url)) {
       setMsg(url
@@ -640,7 +685,7 @@ export default function GameCameraPage() {
         <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, cursor: 'pointer' }}>
           <input type="checkbox" checked={streaming} onChange={(e) => updateStream({ on: e.target.checked })}
             style={{ width: 20, height: 20 }} />
-          Stream this game live on YouTube
+          Stream this game live
         </label>
         {streaming && (
           <>
@@ -660,24 +705,37 @@ export default function GameCameraPage() {
             {ytMode && (
               <div style={{ marginTop: 10 }}>
                 <p style={{ ...styles.muted, fontSize: 13, color: '#166534', fontWeight: 700, margin: 0 }}>
-                  ✓ Connected to YouTube{yt.channelTitle ? ` (${yt.channelTitle})` : ''}. Loggerhead creates and
-                  ends the stream for you.
+                  {connService === 'facebook'
+                    ? `✓ Going live on your Facebook Page ${fb.pageName}. Loggerhead creates and ends the live video for you.`
+                    : `✓ Connected to YouTube${yt.channelTitle ? ` (${yt.channelTitle})` : ''}. Loggerhead creates and ends the stream for you.`}
                 </p>
+                {connService === 'facebook' && fb.pages?.length > 1 && (
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 700, marginTop: 8 }}>
+                    Page{' '}
+                    <select value={fb.pageId} disabled={!!broadcast} onChange={(e) => pickFacebookPage(e.target.value)}
+                      style={{ marginLeft: 6, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border, #d1d5db)' }}>
+                      {fb.pages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </label>
+                )}
                 <p style={{ ...styles.muted, fontSize: 12, margin: '4px 0 0' }}>
                   The red button pauses: go live again (between sets, after a timeout) and it continues the same
-                  stream, so viewers keep the same link. Closing the camera ends the stream on YouTube.
+                  stream, so viewers keep the same link. Closing the camera ends the stream on {SERVICE_LABEL[connService]}.
+                  {connService === 'facebook' ? ' Facebook may end a live video that stays paused for a long time.' : ''}
                 </p>
                 {broadcast ? (
                   <div style={{ border: '1px solid var(--border, #d1d5db)', borderRadius: 10, padding: '10px 12px', marginTop: 10 }}>
                     <div style={{ fontWeight: 700 }}>{broadcast.title}</div>
                     <div style={{ ...styles.muted, fontSize: 12, margin: '2px 0 6px' }}>
-                      {YT_PRIVACY[broadcast.privacy] || broadcast.privacy} · {broadcast.watchUrl}
+                      {broadcast.service === 'facebook' ? `Public on ${broadcast.pageName || fb?.pageName || 'your Page'}` : YT_PRIVACY[broadcast.privacy] || broadcast.privacy} · {broadcast.watchUrl}
                     </div>
                     <button type="button" className="primary-button" style={{ width: 'auto' }} onClick={() => shareBroadcast(broadcast)}>
                       Share the watch link
                     </button>
                     <p style={{ ...styles.muted, fontSize: 12, margin: '6px 0 0' }}>
-                      The link works now: it shows "starting soon" until you go live.
+                      {broadcast.service === 'facebook'
+                        ? 'The link works now. The video plays on your Page once you go live.'
+                        : 'The link works now: it shows "starting soon" until you go live.'}
                     </p>
                   </div>
                 ) : (
@@ -687,22 +745,57 @@ export default function GameCameraPage() {
                       <input value={ytTitle} onChange={(e) => setYtTitle(e.target.value)} placeholder={defaultYtTitle()} maxLength={100}
                         style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 4, padding: '9px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)', fontWeight: 400 }} />
                     </label>
-                    <label style={{ display: 'block', fontSize: 13, fontWeight: 700, marginTop: 8 }}>
-                      Who can watch{' '}
-                      <select value={streamTarget.ytPrivacy || 'unlisted'} onChange={(e) => updateStream({ ytPrivacy: e.target.value })}
-                        style={{ marginLeft: 6, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border, #d1d5db)' }}>
-                        {Object.entries(YT_PRIVACY).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-                      </select>
-                    </label>
+                    {connService === 'facebook' ? (
+                      <p style={{ ...styles.muted, fontSize: 12, margin: '6px 0 0' }}>
+                        Page live videos are public: anyone who can see the Page can watch.
+                      </p>
+                    ) : (
+                      <label style={{ display: 'block', fontSize: 13, fontWeight: 700, marginTop: 8 }}>
+                        Who can watch{' '}
+                        <select value={streamTarget.ytPrivacy || 'unlisted'} onChange={(e) => updateStream({ ytPrivacy: e.target.value })}
+                          style={{ marginLeft: 6, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border, #d1d5db)' }}>
+                          {Object.entries(YT_PRIVACY).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                        </select>
+                      </label>
+                    )}
                     <button type="button" style={{ ...styles.link, fontSize: 13, marginTop: 8 }} disabled={ytBusy} onClick={getBroadcast}>
-                      {ytBusy ? 'Creating the YouTube stream…' : 'Get the watch link now (to share before the game)'}
+                      {ytBusy ? `Creating the ${SERVICE_LABEL[connService]} stream…` : 'Get the watch link now (to share before the game)'}
                     </button>
                   </>
                 )}
                 {ytMsg && <p style={{ ...styles.muted, fontSize: 13, margin: '6px 0 0' }}>{ytMsg}</p>}
-                <button type="button" style={{ ...styles.link, fontSize: 12, marginTop: 6 }} onClick={() => updateStream({ useKey: true })}>
-                  Use my stream key instead
-                </button>
+                {connService === 'youtube' && (
+                  <button type="button" style={{ ...styles.link, fontSize: 12, marginTop: 6 }} onClick={() => updateStream({ useKey: true })}>
+                    Use my stream key instead
+                  </button>
+                )}
+              </div>
+            )}
+            {isFacebook && !ytMode && (
+              <div style={{ marginTop: 10 }}>
+                {fb?.connected && fb.pages?.length > 0 ? (
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 700 }}>
+                    Which Facebook Page?{' '}
+                    <select value="" onChange={(e) => e.target.value && pickFacebookPage(e.target.value)}
+                      style={{ marginLeft: 6, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border, #d1d5db)' }}>
+                      <option value="">Choose a Page</option>
+                      {fb.pages.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </label>
+                ) : fb && (
+                  <>
+                    <button type="button" className="primary-button" style={{ width: 'auto' }} onClick={() => startConnect('facebook')}>
+                      Connect Facebook
+                    </button>
+                    <p style={{ ...styles.muted, fontSize: 12, margin: '4px 0 0' }}>
+                      Sign in with Facebook once and choose the Page to stream to, like your team's or club's Page.
+                      Loggerhead then creates each live video, gives you the link to share and ends it when you're
+                      done. No Live Producer and no Go live click. Facebook only lets Pages with at least 100
+                      followers go live from apps.
+                    </p>
+                  </>
+                )}
+                {ytMsg && <p style={{ ...styles.muted, fontSize: 13, margin: '6px 0 0' }}>{ytMsg}</p>}
               </div>
             )}
             {streamTarget.platform === 'youtube' && !ytMode && (
@@ -713,7 +806,7 @@ export default function GameCameraPage() {
                   </button>
                 ) : yt && (
                   <>
-                    <button type="button" className="primary-button" style={{ width: 'auto' }} onClick={startConnect}>
+                    <button type="button" className="primary-button" style={{ width: 'auto' }} onClick={() => startConnect('youtube')}>
                       Connect YouTube (easiest)
                     </button>
                     <p style={{ ...styles.muted, fontSize: 12, margin: '4px 0 0' }}>
@@ -773,7 +866,7 @@ export default function GameCameraPage() {
                 placeholder="Server URL (rtmp:// or rtmps://)" autoCapitalize="off" autoCorrect="off" spellCheck={false}
                 style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)' }} />
             )}
-            {ytMode ? null : (streamTarget.platform === 'other' || phoneKeyOpen || streamTarget.key.trim()) ? (
+            {ytMode || isFacebook ? null : (streamTarget.platform === 'other' || phoneKeyOpen || streamTarget.key.trim()) ? (
               <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
                 <input value={streamTarget.key} onChange={(e) => updateStream({ key: e.target.value })}
                   type="text" name="stream-key" autoComplete="off"
@@ -847,8 +940,10 @@ export default function GameCameraPage() {
             </div>
           </div>
         )}
-        <button type="button" className="primary-button" onClick={() => openCamera(false)} disabled={cameraOpen || checking}>
-          {checking ? 'Checking the connection…' : streaming
+        <button type="button" className="primary-button" onClick={() => openCamera(false)} disabled={cameraOpen || checking || ytBusy}>
+          {checking ? 'Checking the connection…' : ytBusy
+            ? (connService === 'facebook' ? 'Creating the Facebook live video…' : 'Creating the YouTube stream…')
+            : streaming
             ? `🔴 Open camera to go live on ${STREAM_TARGETS[streamTarget.platform]?.label || 'stream'}`
             : link ? '🎥 Open camera' : '🎥 Film without a live score'}
         </button>
