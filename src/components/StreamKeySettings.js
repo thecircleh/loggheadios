@@ -218,6 +218,11 @@ const PLATFORMS = [
     label: 'YouTube',
     where: 'studio.youtube.com › Create › Go live › Schedule stream › Streaming software. Use the Default stream key and leave manual settings off (if you turn them on, pick RTMP and Variable bitrate). In the stream settings, turn Auto-start on (otherwise someone has to click Go live), Auto-stop off, and latency to Normal. Then copy the Stream key. It stays the same, but schedule a new stream before each match.',
   },
+  {
+    key: 'facebook',
+    label: 'Facebook (personal profile)',
+    where: 'facebook.com/live/producer › Go live › post on your profile › Streaming software. Turn on Use persistent stream key, then copy the Stream key. Game day: in the app choose Facebook › Go live on my personal profile. You need Live Producer open on another device (a computer, tablet or second phone): once the phone is sending, click Go live there, and End live video after the match.',
+  },
 ];
 
 // Profile card (Premium): save the YouTube stream key here, on a computer where they're
@@ -225,7 +230,7 @@ const PLATFORMS = [
 export default function StreamKeySettings() {
   const { token, hasPremium } = useAuth();
   const [saved, setSaved] = useState(null); // { youtube: { last4 } | null }
-  const [drafts, setDrafts] = useState({ youtube: '' });
+  const [drafts, setDrafts] = useState({ youtube: '', facebook: '' });
   const [showKey, setShowKey] = useState(false);
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState({});
@@ -235,7 +240,7 @@ export default function StreamKeySettings() {
     let cancelled = false;
     axios.get(`${API_URL}/api/camera/stream-keys`, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 })
       .then(({ data }) => { if (!cancelled) setSaved(data); })
-      .catch(() => { if (!cancelled) setSaved({ youtube: null }); });
+      .catch(() => { if (!cancelled) setSaved({ youtube: null, facebook: null }); });
     return () => { cancelled = true; };
   }, [hasPremium, token]);
 
@@ -261,12 +266,12 @@ export default function StreamKeySettings() {
     <div className="card" style={{ marginTop: 14 }}>
       <h3 style={{ margin: '0 0 4px' }}>🔴 Live streaming</h3>
       <p style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-muted, #6b7280)' }}>
-        Connect your YouTube channel or Facebook Page, or save a YouTube stream key. When you film a
+        Connect your YouTube channel or Facebook Page, or save a stream key. When you film a
         match in the Loggerhead app and go live, your phone uses them.
       </p>
       <YouTubeConnect token={token} />
       <FacebookConnect token={token} />
-      <p style={{ margin: '10px 0 0', fontSize: 13, fontWeight: 700 }}>Or use a YouTube stream key</p>
+      <p style={{ margin: '10px 0 0', fontSize: 13, fontWeight: 700 }}>Or use a stream key</p>
       {PLATFORMS.map((p) => {
         const current = saved?.[p.key];
         return (
@@ -319,7 +324,7 @@ export default function StreamKeySettings() {
       })}
       <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>
         Keys are stored encrypted and only your account can use them. Anyone with a stream key can
-        stream to your channel, so don't share it.
+        stream to your channel or profile, so don't share it.
       </p>
     </div>
   );

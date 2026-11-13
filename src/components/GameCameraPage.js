@@ -23,10 +23,11 @@ const isNative = () => !!window.Capacitor?.isNativePlatform?.();
 const SERVE = '🏐';
 
 // Where to stream. YouTube: Connect YouTube, or the stream key saved on the website (or pasted
-// here). Facebook: Connect Facebook only (a Facebook stream key needs a Go live click in Live Producer).
+// here). Facebook: Connect Facebook (Pages), or a stream key from Live Producer (fbKey: their
+// profile, or a Page that can't use Connect), which needs a Go live click there from another device.
 const STREAM_TARGETS = {
   youtube: { label: 'YouTube', url: 'rtmps://a.rtmps.youtube.com/live2' },
-  facebook: { label: 'Facebook', url: '' },
+  facebook: { label: 'Facebook', url: 'rtmps://live-api-s.facebook.com:443/rtmp' },
   other: { label: 'Other', url: '' },
 };
 const STREAM_KEY = 'lh_stream_target'; // { on, platform, key, url, quality } on this phone only
@@ -455,11 +456,12 @@ export default function GameCameraPage() {
   const streaming = streamTarget.on;
   streamPlatformRef.current = streamTarget.platform;
   const savedKey = accountKeys[streamTarget.platform]; // { last4 } when saved on the website
-  // Connect YouTube is used unless they chose to use a stream key instead. Facebook is always
-  // Connect Facebook, once a Page is chosen.
+  // Connect YouTube / Connect Facebook (once a Page is chosen) are used unless they chose a
+  // stream key instead.
   const ytConnected = streamTarget.platform === 'youtube' && !!yt?.connected;
   const isFacebook = streamTarget.platform === 'facebook';
-  const fbReady = isFacebook && !!fb?.connected && !!fb.pageId;
+  const fbKeyMode = isFacebook && !!streamTarget.fbKey; // Live Producer stream key (profile)
+  const fbReady = isFacebook && !fbKeyMode && !!fb?.connected && !!fb.pageId;
   const connService = fbReady ? 'facebook' : ytConnected && !streamTarget.useKey ? 'youtube' : null;
   const ytMode = !!connService; // Loggerhead makes the broadcast (YouTube or Facebook)
   const useYtConnect = streaming && ytMode;
@@ -518,7 +520,7 @@ export default function GameCameraPage() {
         return;
       }
     }
-    if (streaming && isFacebook && !useYtConnect) {
+    if (streaming && isFacebook && !fbKeyMode && !useYtConnect) {
       setMsg('Connect Facebook and choose your Page first (above).');
       return;
     }
@@ -769,9 +771,53 @@ export default function GameCameraPage() {
                     Use my stream key instead
                   </button>
                 )}
+                {connService === 'facebook' && !broadcast && (
+                  <button type="button" style={{ ...styles.link, fontSize: 12, marginTop: 6 }} onClick={() => updateStream({ fbKey: true })}>
+                    Go live on my personal profile instead (stream key)
+                  </button>
+                )}
               </div>
             )}
-            {isFacebook && !ytMode && (
+            {fbKeyMode && (
+              <div style={{ marginTop: 10 }}>
+                <p style={{ ...styles.muted, fontSize: 13, fontWeight: 700, margin: 0 }}>
+                  Personal profile, with a Facebook stream key
+                </p>
+                <p style={{ ...styles.muted, fontSize: 12, margin: '4px 0 0' }}>
+                  Facebook doesn't let apps start live videos on personal profiles, so you start it in Facebook
+                  Live Producer, on <strong>another device</strong> (a computer, tablet or second phone).
+                  Loggerhead has to stay open on this phone while it films.
+                </p>
+                {!savedKey && (
+                  <>
+                    <p style={{ ...styles.muted, fontSize: 13, fontWeight: 700, margin: '10px 0 0' }}>
+                      One-time setup, on your computer:
+                    </p>
+                    <ol style={{ ...styles.muted, fontSize: 12, paddingLeft: 18 }}>
+                      <li>Open <strong>facebook.com/live/producer</strong> › <strong>Go live</strong>, choose to post on
+                        your profile, and choose <strong>Streaming software</strong>.</li>
+                      <li>Turn on <strong>Use persistent stream key</strong>, so the key stays the same from game to game.
+                        Copy the <strong>Stream key</strong>.</li>
+                      <li>Open <strong>ui.loggerhead.app/profile</strong> › <strong>Live streaming</strong>, paste it under
+                        Facebook and tap <strong>Save</strong>. This phone picks it up.</li>
+                    </ol>
+                  </>
+                )}
+                <p style={{ ...styles.muted, fontSize: 13, fontWeight: 700, margin: '10px 0 0' }}>Game day:</p>
+                <ol style={{ ...styles.muted, fontSize: 12, paddingLeft: 18 }}>
+                  <li>On the other device, open <strong>facebook.com/live/producer</strong> › <strong>Go live</strong> ›{' '}
+                    <strong>Streaming software</strong> (your persistent key). Add a title and choose who can watch.</li>
+                  <li>On this phone, open the camera and tap the red button.</li>
+                  <li>When the preview shows up in Live Producer (it takes a few seconds), click <strong>Go live</strong> there.
+                    Nobody sees anything until you do.</li>
+                  <li>After the match, click <strong>End live video</strong> in Live Producer.</li>
+                </ol>
+                <button type="button" style={{ ...styles.link, fontSize: 12 }} onClick={() => updateStream({ fbKey: false })}>
+                  Use Connect Facebook instead (Pages, no Go live click)
+                </button>
+              </div>
+            )}
+            {isFacebook && !ytMode && !fbKeyMode && (
               <div style={{ marginTop: 10 }}>
                 {fb?.connected && fb.pages?.length > 0 ? (
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 700 }}>
@@ -796,6 +842,9 @@ export default function GameCameraPage() {
                   </>
                 )}
                 {ytMsg && <p style={{ ...styles.muted, fontSize: 13, margin: '6px 0 0' }}>{ytMsg}</p>}
+                <button type="button" style={{ ...styles.link, fontSize: 12, marginTop: 6 }} onClick={() => updateStream({ fbKey: true })}>
+                  Go live on my personal profile instead (stream key)
+                </button>
               </div>
             )}
             {streamTarget.platform === 'youtube' && !ytMode && (
@@ -818,7 +867,7 @@ export default function GameCameraPage() {
                 {ytMsg && <p style={{ ...styles.muted, fontSize: 13, margin: '6px 0 0' }}>{ytMsg}</p>}
               </div>
             )}
-            {!ytMode && streamTarget.platform !== 'other' && savedKey && (
+            {!ytMode && streamTarget.platform !== 'other' && (!isFacebook || fbKeyMode) && savedKey && (
               <>
                 <p style={{ ...styles.muted, fontSize: 13, color: '#166534', fontWeight: 700, margin: '10px 0 0' }}>
                   ✓ Using the {STREAM_TARGETS[streamTarget.platform].label} key saved on your account (ends in {savedKey.last4}).
@@ -862,11 +911,20 @@ export default function GameCameraPage() {
               </>
             )}
             {streamTarget.platform === 'other' && (
-              <input value={streamTarget.url} onChange={(e) => updateStream({ url: e.target.value })}
-                placeholder="Server URL (rtmp:// or rtmps://)" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-                style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)' }} />
+              <>
+                <p style={{ ...styles.muted, fontSize: 12, margin: '10px 0 0' }}>
+                  <strong>YouTube and Facebook at the same time?</strong> Use a restreaming service like{' '}
+                  <strong>restream.io</strong> (it has a free plan): connect your YouTube channel and Facebook profile or
+                  Page there, then paste its RTMP server URL and stream key below. Your phone sends one stream and
+                  Restream sends it to both, so it doesn't use any more of your upload. Restream handles the titles,
+                  links and ending the stream.
+                </p>
+                <input value={streamTarget.url} onChange={(e) => updateStream({ url: e.target.value })}
+                  placeholder="Server URL (rtmp:// or rtmps://)" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+                  style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border, #d1d5db)' }} />
+              </>
             )}
-            {ytMode || isFacebook ? null : (streamTarget.platform === 'other' || phoneKeyOpen || streamTarget.key.trim()) ? (
+            {ytMode || (isFacebook && !fbKeyMode) ? null : (streamTarget.platform === 'other' || phoneKeyOpen || streamTarget.key.trim()) ? (
               <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
                 <input value={streamTarget.key} onChange={(e) => updateStream({ key: e.target.value })}
                   type="text" name="stream-key" autoComplete="off"
@@ -953,6 +1011,8 @@ export default function GameCameraPage() {
           <li>{streaming
             ? (ytMode
               ? 'Tap the red button to go live and start recording; tap again to pause. Close the camera to end the stream.'
+              : fbKeyMode
+              ? 'Tap the red button to start sending and recording, then click Go live in Live Producer on your other device. Tap again to stop.'
               : 'Tap the red button to go live and start recording; tap again to end the stream.')
             : 'Tap the red button to start and stop.'} Each recording is kept on this phone until you save or share it.</li>
         </ul>
