@@ -23,8 +23,8 @@ const isNative = () => !!window.Capacitor?.isNativePlatform?.();
 const SERVE = '🏐';
 
 // Where to stream. YouTube: Connect YouTube, or the stream key saved on the website (or pasted
-// here). Facebook: Connect Facebook (Pages), or a stream key from Live Producer (fbKey: their
-// profile, or a Page that can't use Connect), which needs a Go live click there from another device.
+// here). Facebook: Connect Facebook (Pages), or a stream key from Live Producer (fbKey: profile,
+// Page or Group), which needs a Go live click there, or a scheduled live video that starts by itself.
 const STREAM_TARGETS = {
   youtube: { label: 'YouTube', url: 'rtmps://a.rtmps.youtube.com/live2' },
   facebook: { label: 'Facebook', url: 'rtmps://live-api-s.facebook.com:443/rtmp' },
@@ -773,7 +773,7 @@ export default function GameCameraPage() {
                 )}
                 {connService === 'facebook' && !broadcast && (
                   <button type="button" style={{ ...styles.link, fontSize: 12, marginTop: 6 }} onClick={() => updateStream({ fbKey: true })}>
-                    Go live on my personal profile instead (stream key)
+                    Use a Facebook stream key instead (profile, Page or Group)
                   </button>
                 )}
               </div>
@@ -781,36 +781,30 @@ export default function GameCameraPage() {
             {fbKeyMode && (
               <div style={{ marginTop: 10 }}>
                 <p style={{ ...styles.muted, fontSize: 13, fontWeight: 700, margin: 0 }}>
-                  Personal profile, with a Facebook stream key
+                  Facebook stream key (your profile, a Page or a Group)
                 </p>
                 <p style={{ ...styles.muted, fontSize: 12, margin: '4px 0 0' }}>
-                  Facebook doesn't let apps start live videos on personal profiles, so you start it in Facebook
-                  Live Producer, on <strong>another device</strong> (a computer, tablet or second phone).
-                  Loggerhead has to stay open on this phone while it films.
+                  You set up the live video in Facebook Live Producer on your computer. Stream keys are long, so
+                  don't type them on the phone.
                 </p>
-                {!savedKey && (
-                  <>
-                    <p style={{ ...styles.muted, fontSize: 13, fontWeight: 700, margin: '10px 0 0' }}>
-                      One-time setup, on your computer:
-                    </p>
-                    <ol style={{ ...styles.muted, fontSize: 12, paddingLeft: 18 }}>
-                      <li>Open <strong>facebook.com/live/producer</strong> › <strong>Go live</strong>, choose to post on
-                        your profile, and choose <strong>Streaming software</strong>.</li>
-                      <li>Turn on <strong>Use persistent stream key</strong>, so the key stays the same from game to game.
-                        Copy the <strong>Stream key</strong>.</li>
-                      <li>Open <strong>ui.loggerhead.app/profile</strong> › <strong>Live streaming</strong>, paste it under
-                        Facebook and tap <strong>Save</strong>. This phone picks it up.</li>
-                    </ol>
-                  </>
-                )}
-                <p style={{ ...styles.muted, fontSize: 13, fontWeight: 700, margin: '10px 0 0' }}>Game day:</p>
                 <ol style={{ ...styles.muted, fontSize: 12, paddingLeft: 18 }}>
-                  <li>On the other device, open <strong>facebook.com/live/producer</strong> › <strong>Go live</strong> ›{' '}
-                    <strong>Streaming software</strong> (your persistent key). Add a title and choose who can watch.</li>
-                  <li>On this phone, open the camera and tap the red button.</li>
-                  <li>When the preview shows up in Live Producer (it takes a few seconds), click <strong>Go live</strong> there.
-                    Nobody sees anything until you do.</li>
-                  <li>After the match, click <strong>End live video</strong> in Live Producer.</li>
+                  <li>On your computer, open <strong>facebook.com/live/producer</strong>.</li>
+                  <li>Choose where to post: your <strong>Profile</strong>, a <strong>Page</strong> or a <strong>Group</strong>.</li>
+                  <li>Set up the live video (title, who can watch) and choose <strong>Streaming software</strong>.</li>
+                  <li>Copy the <strong>Stream key</strong> and paste it at <strong>ui.loggerhead.app/profile</strong> ›{' '}
+                    <strong>Live streaming</strong> under Facebook, then <strong>Save</strong>. This phone picks it up.
+                    {savedKey ? ' If the key is the same as last time, skip this.' : ''}</li>
+                  <li>Choose when to go live:
+                    <ul style={{ paddingLeft: 16, margin: '2px 0 0' }}>
+                      <li><strong>Now:</strong> on this phone, open the camera and tap the red button. When the preview
+                        shows up in Live Producer (a few seconds), click <strong>Go live</strong> on the computer.
+                        Nobody sees anything until you do.</li>
+                      <li><strong>Schedule</strong> (up to 24 hours ahead, easiest): tap the red button before the
+                        scheduled time and Facebook starts the live video by itself at that time, like YouTube's
+                        Auto-start. Nobody needs the computer at the game.</li>
+                    </ul>
+                  </li>
+                  <li>After the match, close the camera and click <strong>End live video</strong> in Live Producer.</li>
                 </ol>
                 <button type="button" style={{ ...styles.link, fontSize: 12 }} onClick={() => updateStream({ fbKey: false })}>
                   Use Connect Facebook instead (Pages, no Go live click)
@@ -843,7 +837,7 @@ export default function GameCameraPage() {
                 )}
                 {ytMsg && <p style={{ ...styles.muted, fontSize: 13, margin: '6px 0 0' }}>{ytMsg}</p>}
                 <button type="button" style={{ ...styles.link, fontSize: 12, marginTop: 6 }} onClick={() => updateStream({ fbKey: true })}>
-                  Go live on my personal profile instead (stream key)
+                  Use a Facebook stream key instead (profile, Page or Group)
                 </button>
               </div>
             )}
@@ -1012,7 +1006,7 @@ export default function GameCameraPage() {
             ? (ytMode
               ? 'Tap the red button to go live and start recording; tap again to pause. Close the camera to end the stream.'
               : fbKeyMode
-              ? 'Tap the red button to start sending and recording, then click Go live in Live Producer on your other device. Tap again to stop.'
+              ? 'Tap the red button to start sending and recording, then click Go live in Live Producer (or let a scheduled live video start by itself). Tap again to stop.'
               : 'Tap the red button to go live and start recording; tap again to end the stream.')
             : 'Tap the red button to start and stop.'} Each recording is kept on this phone until you save or share it.</li>
         </ul>

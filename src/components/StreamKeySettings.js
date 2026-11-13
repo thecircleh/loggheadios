@@ -220,8 +220,8 @@ const PLATFORMS = [
   },
   {
     key: 'facebook',
-    label: 'Facebook (personal profile)',
-    where: 'facebook.com/live/producer › Go live › post on your profile › Streaming software. Turn on Use persistent stream key, then copy the Stream key. Game day: in the app choose Facebook › Go live on my personal profile. You need Live Producer open on another device (a computer, tablet or second phone): once the phone is sending, click Go live there, and End live video after the match.',
+    label: 'Facebook (profile, Page or Group)',
+    where: 'facebook.com/live/producer › choose where to post (Profile, Page or Group) › set up the live video › Streaming software › copy the Stream key and paste it here. Then choose when to go live. Now: in the app choose Facebook › Use a Facebook stream key, tap the red button, then click Go live in Live Producer here. Schedule (up to 24 hours ahead): Facebook starts it by itself at that time once the phone is sending, like YouTube Auto-start. Click End live video in Live Producer after the match.',
   },
 ];
 
