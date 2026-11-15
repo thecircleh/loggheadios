@@ -224,7 +224,7 @@ export default function ShellSlideGame({ isNative = false }) {
         </div>
         <button onClick={() => setShowHowTo(true)} style={{ background: '#0369A1', border: 'none', borderRadius: 7, padding: '4px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#fff', flexShrink: 0 }}>How to Play</button>
         <div style={{ fontSize: 18, fontWeight: 700, color: solved ? '#22C55E' : '#333', minWidth: 44, textAlign: 'right' }}>
-          {solved ? '✅' : fmtTime(elapsed)}
+          {solved ? `✅ ${fmtTime(elapsed)}` : fmtTime(elapsed)}
         </div>
       </div>
 

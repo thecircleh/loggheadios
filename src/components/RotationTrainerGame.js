@@ -260,7 +260,7 @@ export default function RotationTrainerGame({ isNative = false }) {
         </div>
         <button onClick={() => setShowHowTo(true)} style={{ background: '#EA580C', border: 'none', borderRadius: 7, padding: '4px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#fff', flexShrink: 0 }}>Rules</button>
         <div style={{ fontSize: 18, fontWeight: 700, color: done ? '#22C55E' : '#333', minWidth: 44, textAlign: 'right' }}>
-          {done ? '✅' : fmtTime(elapsed)}
+          {done ? `✅ ${fmtTime(elapsed)}` : fmtTime(elapsed)}
         </div>
       </div>
 
