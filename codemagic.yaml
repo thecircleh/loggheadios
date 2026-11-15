@@ -296,6 +296,8 @@ workflows:
     environment:
       android_signing:
         - loggerhead_keystore
+      groups:
+        - google_play   # GCLOUD_SERVICE_ACCOUNT_CREDENTIALS (Play upload key)
       vars:
         PACKAGE_NAME: "com.loggerheadstat.app"
         REACT_APP_API_URL: "https://api.loggerhead.app"
@@ -403,8 +405,10 @@ workflows:
       - android/app/build/outputs/mapping/release/mapping.txt
       - /tmp/android-build-logs/*.log
 
-    # publishing:           # Uncomment after first manual upload to Play Console
-    #   google_play:        # and service account is configured in Codemagic env vars
-    #     credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
-    #     track: internal
-    #     submit_as_draft: true
+    # Uploads the AAB to Play Console as a DRAFT production release.
+    # Nothing reaches users until "Send for review" is clicked in Play Console.
+    publishing:
+      google_play:
+        credentials: $GCLOUD_SERVICE_ACCOUNT_CREDENTIALS
+        track: production
+        submit_as_draft: true
