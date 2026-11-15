@@ -297,7 +297,7 @@ workflows:
       android_signing:
         - loggerhead_keystore
       groups:
-        - secrets   # GCLOUD_SERVICE_ACCOUNT_CREDENTIALS (Play upload key)
+        - SECRETS   # GCLOUD_SERVICE_ACCOUNT_CREDENTIALS (Play upload key)
       vars:
         PACKAGE_NAME: "com.loggerheadstat.app"
         REACT_APP_API_URL: "https://api.loggerhead.app"
