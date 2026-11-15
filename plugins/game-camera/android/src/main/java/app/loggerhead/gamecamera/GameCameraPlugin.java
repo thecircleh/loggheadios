@@ -18,6 +18,7 @@ import android.os.StatFs;
 import android.os.SystemClock;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.ScaleGestureDetector;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
@@ -27,7 +28,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
+import androidx.camera.core.Camera;
 import androidx.camera.core.CameraSelector;
+import androidx.camera.core.ZoomState;
 import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.video.FallbackStrategy;
@@ -83,6 +86,10 @@ public class GameCameraPlugin extends Plugin {
     private TextView infoView;
     private TextView recordButton;
     private TextView playView;
+    // Pinch-to-zoom on the camera screen (live and recording). The badge shows it; tap for 1×.
+    private static final float MAX_ZOOM = 8f; // past this, digital zoom is too soft to use
+    private TextView zoomBadge;
+    private float zoom = 1f;
     private final Runnable hidePlay = () -> {
         if (playView != null) playView.animate().alpha(0f).setDuration(300).withEndAction(() -> {
             if (playView != null) playView.setVisibility(View.GONE);
@@ -90,6 +97,7 @@ public class GameCameraPlugin extends Plugin {
     };
 
     private ProcessCameraProvider provider;
+    private Camera cameraX;
     private VideoCapture<Recorder> videoCapture;
     private Recording recording;
     private File recordingFile;
@@ -168,7 +176,7 @@ public class GameCameraPlugin extends Plugin {
                             .build();
                         videoCapture = VideoCapture.withOutput(recorder);
                         provider.unbindAll();
-                        provider.bindToLifecycle((LifecycleOwner) activity, CameraSelector.DEFAULT_BACK_CAMERA, preview, videoCapture);
+                        cameraX = provider.bindToLifecycle((LifecycleOwner) activity, CameraSelector.DEFAULT_BACK_CAMERA, preview, videoCapture);
                         startTicker();
                         call.resolve();
                     } catch (Exception e) {
@@ -338,6 +346,7 @@ public class GameCameraPlugin extends Plugin {
         if (recording != null) recording.stop(); // 'stopped' event follows
         if (provider != null) provider.unbindAll();
         provider = null;
+        cameraX = null;
         videoCapture = null;
         stopTicker();
         removeView();
@@ -528,6 +537,39 @@ public class GameCameraPlugin extends Plugin {
         });
     }
 
+    // ------------------------------------------------------------ zoom
+
+    /** {lowest, highest} zoom the open camera allows, or null if none is open. */
+    private float[] zoomLimits() {
+        float[] range = null;
+        if (live != null) {
+            range = live.zoomRange();
+        } else if (cameraX != null) {
+            ZoomState state = cameraX.getCameraInfo().getZoomState().getValue();
+            if (state != null) range = new float[] { state.getMinZoomRatio(), state.getMaxZoomRatio() };
+        }
+        if (range == null) return null;
+        return new float[] { range[0], Math.max(range[0], Math.min(range[1], MAX_ZOOM)) };
+    }
+
+    private void setZoom(float wanted) {
+        float[] limits = zoomLimits();
+        if (limits == null) return;
+        float level = Math.max(limits[0], Math.min(limits[1], wanted));
+        if (live != null) {
+            level = live.setZoom(level);
+        } else if (cameraX != null) {
+            cameraX.getCameraControl().setZoomRatio(level);
+        }
+        zoom = level;
+        if (zoomBadge != null) {
+            float shown = Math.round(level * 10f) / 10f;
+            zoomBadge.setText(String.format(Locale.US, "%.1f×", shown));
+            zoomBadge.setContentDescription(String.format(Locale.US, "Zoom %.1f times. Tap for 1×.", shown));
+            zoomBadge.setVisibility(shown == 1f ? View.GONE : View.VISIBLE);
+        }
+    }
+
     // ------------------------------------------------------------ view
 
     private int dp(float value) {
@@ -543,11 +585,25 @@ public class GameCameraPlugin extends Plugin {
         return v;
     }
 
+    @SuppressLint("ClickableViewAccessibility") // pinch only; taps go to the buttons
     private void buildView(Activity activity) {
         Context ctx = activity;
         root = new FrameLayout(ctx);
         root.setBackgroundColor(Color.BLACK);
         root.setClickable(true); // don't let taps reach the app underneath
+        // Pinch anywhere on the picture to zoom (the camera starts at 1× each time it opens).
+        zoom = 1f;
+        ScaleGestureDetector pinch = new ScaleGestureDetector(ctx, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            @Override
+            public boolean onScale(@NonNull ScaleGestureDetector detector) {
+                setZoom(zoom * detector.getScaleFactor());
+                return true;
+            }
+        });
+        root.setOnTouchListener((v, event) -> {
+            pinch.onTouchEvent(event);
+            return true;
+        });
 
         if (liveEndpoint != null) {
             liveView = new SurfaceView(ctx);
@@ -646,6 +702,23 @@ public class GameCameraPlugin extends Plugin {
         ui.addView(recordButton, recLp);
         updateRecordButton();
 
+        zoomBadge = label(ctx, 15, true);
+        zoomBadge.setTextColor(Color.rgb(250, 204, 21));
+        zoomBadge.setShadowLayer(0, 0, 0, Color.TRANSPARENT);
+        zoomBadge.setGravity(Gravity.CENTER);
+        zoomBadge.setMinWidth(dp(56));
+        zoomBadge.setPadding(dp(12), 0, dp(12), 0);
+        GradientDrawable zoomBg = new GradientDrawable();
+        zoomBg.setColor(Color.argb(150, 0, 0, 0));
+        zoomBg.setCornerRadius(dp(18));
+        zoomBadge.setBackground(zoomBg);
+        zoomBadge.setVisibility(View.GONE);
+        zoomBadge.setOnClickListener(v -> setZoom(1f));
+        FrameLayout.LayoutParams zoomLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(36), Gravity.BOTTOM | Gravity.END);
+        zoomLp.rightMargin = dp(14);
+        zoomLp.bottomMargin = dp(40); // level with the middle of the record button
+        ui.addView(zoomBadge, zoomLp);
+
         infoView = label(ctx, 12, false);
         FrameLayout.LayoutParams infoLp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.START);
         infoLp.leftMargin = dp(14);
@@ -688,6 +761,7 @@ public class GameCameraPlugin extends Plugin {
         main.removeCallbacks(hidePlay);
         playView = null;
         liveBadge = null;
+        zoomBadge = null;
         liveView = null;
         if (root != null && root.getParent() instanceof ViewGroup) ((ViewGroup) root.getParent()).removeView(root);
         root = null;

@@ -1000,7 +1000,7 @@ export default function GameCameraPage() {
             : link ? '🎥 Open camera' : '🎥 Film without a live score'}
         </button>
         <ul style={{ ...styles.muted, paddingLeft: 18, fontSize: 12 }}>
-          <li>Turn the phone sideways and keep the whole court in view.</li>
+          <li>Turn the phone sideways and keep the whole court in view. Pinch the screen to zoom in or out{streaming ? ' (viewers see the zoom)' : ''}; tap the zoom badge to go back to 1×.</li>
           <li>Keep Loggerhead open while filming. A long match uses a lot of battery and storage; a power bank helps.</li>
           <li>{streaming
             ? (ytMode

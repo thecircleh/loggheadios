@@ -37,6 +37,7 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
     private var cameraView: GameCameraView?
     private var startedAt: Date?
     private var closeAfterStop = false
+    private var camera: AVCaptureDevice?
 
     // Live streaming
     private var live: LiveEngine?
@@ -106,6 +107,7 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
             return "Couldn't start the camera on this phone."
         }
         session.addInput(input)
+        self.camera = camera
         if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
            let mic = AVCaptureDevice.default(for: .audio),
            let micInput = try? AVCaptureDeviceInput(device: mic),
@@ -139,6 +141,7 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
                 Task { @MainActor in await engine.toggle(orientation: orientation) }
             }
             view.onCloseTapped = { [weak self] in self?.confirmClose() }
+            view.zoomDevice = { [weak engine] in engine?.camera }
             view.onOrientationChange = { [weak self] orientation in
                 guard let engine = self?.live else { return }
                 Task { @MainActor in await engine.setOrientation(orientation) }
@@ -153,6 +156,7 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
             view.setLiveStatus("Tap the red button to go live", color: .white)
             do {
                 try await engine.prepare(orientation: view.videoOrientation)
+                view.resetZoom()
                 self.refreshLiveOverlay()
                 call.resolve()
             } catch {
@@ -247,12 +251,14 @@ public class GameCameraPlugin: CAPPlugin, CAPBridgedPlugin, AVCaptureFileOutputR
         view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.onRecordTapped = { [weak self] in self?.toggleRecording() }
         view.onCloseTapped = { [weak self] in self?.confirmClose() }
+        view.zoomDevice = { [weak self] in self?.camera }
         view.recordedTime = { [weak self] in
             guard let self = self, self.movieOutput.isRecording else { return nil }
             return CMTimeGetSeconds(self.movieOutput.recordedDuration)
         }
         host.addSubview(view)
         cameraView = view
+        view.resetZoom() // the camera may still be zoomed from last time
     }
 
     @objc func close(_ call: CAPPluginCall) {
@@ -505,6 +511,12 @@ final class GameCameraView: UIView {
     var onRecordTapped: (() -> Void)?
     var onCloseTapped: (() -> Void)?
     var recordedTime: (() -> Double?)?
+    /// The camera to zoom when the screen is pinched (live or recording).
+    var zoomDevice: (@MainActor () -> AVCaptureDevice?)?
+    /// Pinching past this is too soft to be worth it (it's digital zoom on the wide camera).
+    private static let maxZoom: CGFloat = 8
+    private var pinchStartZoom: CGFloat = 1
+    private let zoomButton = UIButton(type: .custom)
     /// Called when the phone is turned, so the live stream turns with it.
     var onOrientationChange: ((AVCaptureVideoOrientation) -> Void)?
     private var heldOrientation: AVCaptureVideoOrientation? // from the motion sensor
@@ -557,6 +569,7 @@ final class GameCameraView: UIView {
             }
         }
         buildUI()
+        addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:))))
         ticker = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick() }
         tick()
     }
@@ -686,7 +699,17 @@ final class GameCameraView: UIView {
             playLabel.isHidden = true
         }
 
-        for view in [board, playLabel, close, timerLabel, infoLabel, recordButton, liveLabel] as [UIView] {
+        // Shows the zoom while it isn't 1×; tap it to go back to 1×.
+        zoomButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .bold)
+        zoomButton.setTitleColor(UIColor(red: 0.98, green: 0.8, blue: 0.08, alpha: 1), for: .normal)
+        zoomButton.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+        zoomButton.layer.cornerRadius = 18
+        zoomButton.contentEdgeInsets = UIEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
+        zoomButton.accessibilityHint = "Back to 1×"
+        zoomButton.isHidden = true
+        zoomButton.addTarget(self, action: #selector(zoomTapped), for: .touchUpInside)
+
+        for view in [board, playLabel, close, timerLabel, infoLabel, recordButton, liveLabel, zoomButton] as [UIView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
@@ -717,11 +740,49 @@ final class GameCameraView: UIView {
             liveLabel.trailingAnchor.constraint(equalTo: guide.trailingAnchor, constant: -12),
             infoLabel.leadingAnchor.constraint(equalTo: guide.leadingAnchor, constant: 14),
             infoLabel.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -14),
+            zoomButton.trailingAnchor.constraint(equalTo: guide.trailingAnchor, constant: -14),
+            zoomButton.centerYAnchor.constraint(equalTo: recordButton.centerYAnchor),
+            zoomButton.heightAnchor.constraint(equalToConstant: 36),
+            zoomButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 56),
         ])
     }
 
     @objc private func closeTapped() { onCloseTapped?() }
     @objc private func recordTapped() { onRecordTapped?() }
+
+    // MARK: - Zoom
+
+    @objc private func pinched(_ gesture: UIPinchGestureRecognizer) {
+        guard let device = zoomDevice?() else { return }
+        if gesture.state == .began { pinchStartZoom = device.videoZoomFactor }
+        guard gesture.state == .began || gesture.state == .changed else { return }
+        setZoom(pinchStartZoom * gesture.scale, on: device)
+    }
+
+    @objc private func zoomTapped() { resetZoom() }
+
+    /// Back to 1× (each time the camera opens, and when the zoom badge is tapped).
+    func resetZoom() {
+        guard let device = zoomDevice?() else { return }
+        setZoom(1, on: device)
+    }
+
+    private func setZoom(_ wanted: CGFloat, on device: AVCaptureDevice) {
+        let low = device.minAvailableVideoZoomFactor
+        let high = max(low, min(device.maxAvailableVideoZoomFactor, GameCameraView.maxZoom))
+        let factor = min(max(wanted, low), high)
+        do {
+            try device.lockForConfiguration()
+            device.videoZoomFactor = factor
+            device.unlockForConfiguration()
+        } catch {
+            return
+        }
+        let shown = (factor * 10).rounded() / 10
+        zoomButton.setTitle(String(format: "%.1f×", shown), for: .normal)
+        zoomButton.accessibilityLabel = String(format: "Zoom %.1f times", shown)
+        zoomButton.isHidden = shown == 1
+    }
 
     func setRecording(_ recording: Bool) {
         UIView.animate(withDuration: 0.2) {
