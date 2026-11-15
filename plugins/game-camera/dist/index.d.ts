@@ -46,6 +46,8 @@ export interface GameCameraPlugin {
    * phone; the scoreboard and the Loggerhead tag are drawn into the video. `quality` sets the
    * stream's size and top bitrate (high 720p 2.5 Mbps, medium 720p 1.5 Mbps, low 480p 0.8 Mbps);
    * the bitrate then follows the connection. The camera shows the stream's health while live.
+   * Pinching the screen zooms the camera (up to 8×), live or not; the zoom is in the stream and
+   * the copy. A badge shows the zoom while it isn't 1×; tapping it goes back to 1×.
    */
   open(options?: { stream?: { url: string; key: string; quality?: 'high' | 'medium' | 'low' } }): Promise<void>;
   /** Battery, free space and heat, for the checks before filming. */

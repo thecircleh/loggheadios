@@ -54,6 +54,8 @@ final class LiveEngine {
     private var connected = false
     private var hot = false
     private var heatObserver: NSObjectProtocol?
+    /// The back camera, for pinch-to-zoom (zoom on the camera reaches the stream and the copy).
+    private(set) var camera: AVCaptureDevice?
 
     init(serverURL: String, streamKey: String, quality: String) {
         self.serverURL = serverURL
@@ -81,7 +83,9 @@ final class LiveEngine {
         await mixer.setVideoMixerSettings(mixerSettings)
         await mixer.setSessionPreset(.hd1920x1080)
         await mixer.setVideoOrientation(orientation)
-        try await mixer.attachVideo(AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back))
+        let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+        try await mixer.attachVideo(camera)
+        self.camera = camera
         if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized {
             try? await mixer.attachAudio(AVCaptureDevice.default(for: .audio))
         }
@@ -302,6 +306,7 @@ final class LiveEngine {
         await mixer.stopRunning()
         try? await mixer.attachAudio(nil)
         try? await mixer.attachVideo(nil)
+        camera = nil
     }
 }
 

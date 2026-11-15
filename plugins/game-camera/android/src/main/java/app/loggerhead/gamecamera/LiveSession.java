@@ -71,6 +71,7 @@ final class LiveSession implements ConnectChecker {
     private static final int SEND_CACHE = 600;
 
     private final RtmpStream stream;
+    private final Camera2Source camera;
     private final ImageFilterRender overlay = new ImageFilterRender();
     private final ImageFilterRender brand = new ImageFilterRender();
     private final Context context;
@@ -118,7 +119,8 @@ final class LiveSession implements ConnectChecker {
         this.quality = quality;
         this.events = events;
         this.videoBitrate = quality.bitrate;
-        stream = new RtmpStream(context, this, new Camera2Source(context),
+        camera = new Camera2Source(context);
+        stream = new RtmpStream(context, this, camera,
             withAudio ? new MicrophoneSource() : new SilentAudioSource());
         bitrateAdapter = new QueueAwareBitrateAdapter(quality.bitrate + AUDIO_BITRATE, MIN_VIDEO_BITRATE + AUDIO_BITRATE,
             bitrate -> applyBitrate(bitrate - AUDIO_BITRATE));
@@ -216,6 +218,29 @@ final class LiveSession implements ConnectChecker {
 
     boolean isRecording() {
         return recording;
+    }
+
+    // ------------------------------------------------------------ zoom
+
+    /** The camera's zoom range, as {lowest, highest}. Zoom on the camera reaches the stream and the copy. */
+    float[] zoomRange() {
+        try {
+            android.util.Range<Float> range = camera.getZoomRange();
+            return new float[] { range.getLower(), range.getUpper() };
+        } catch (Exception e) {
+            return new float[] { 1f, 1f };
+        }
+    }
+
+    /** Sets the zoom (1 = no zoom) and returns what the camera is at now. */
+    float setZoom(float level) {
+        try {
+            camera.setZoom(level);
+            float now = camera.getZoom();
+            return now > 0f ? now : level;
+        } catch (Exception e) {
+            return level;
+        }
     }
 
     /** Where the recording is now (for rally markers). */
