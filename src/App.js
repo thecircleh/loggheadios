@@ -75,6 +75,7 @@ import LineupSudokuGame from "./components/LineupSudokuGame";
 import ShellSlideGame from "./components/ShellSlideGame";
 import GemTrayGame from "./components/GemTrayGame";
 import RotationTrainerGame from "./components/RotationTrainerGame";
+import BallCartGame from "./components/BallCartGame";
 import { initPush } from "./utils/pushNotifications";
 import { startClarity, identifyClarityUser } from "./utils/clarity";
 import { noteAppOpened, noteHappyMoment } from "./utils/appReview";
@@ -96,7 +97,7 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl(); 
 // Shown next to the logo; keep in step with APP_VERSION in codemagic.yaml.
-const APP_VERSION = "4.5.0";
+const APP_VERSION = "4.6.0";
 const AUTO_SAVE_DELAY = 5000;
 const PERIODIC_SAVE_INTERVAL = 300000;
 
@@ -5500,6 +5501,10 @@ if (location.pathname === "/match-tracking") {
             <Route
               path="/puzzle/rotation-trainer"
               element={<PrivateRoute><SubscriberGame gameId="rotation"><RotationTrainerGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
+            />
+            <Route
+              path="/puzzle/ball-carts"
+              element={<PrivateRoute><SubscriberGame gameId="ballcarts"><BallCartGame isNative={isNativeApp} /></SubscriberGame></PrivateRoute>}
             />
 
             {/* Profile Page */}

@@ -12,6 +12,7 @@ const GAMES = [
   { id: 'shellslide', path: '/puzzle/shell-slide', storeKey: 'loggerhead_shellslide_progress', icon: '🌊', name: 'Shell Slide', blurb: 'Clear a path to the ocean', total: 1000, accent: '#0369A1' },
   { id: 'gemtray', path: '/puzzle/gem-tray', storeKey: 'loggerhead_gemtray_progress', icon: '💎', name: 'Gem Tray', blurb: 'Plan your picks · Three of a kind clear', total: 1000, accent: '#7C3AED' },
   { id: 'rotation', path: '/puzzle/rotation-trainer', storeKey: 'loggerhead_rotation_progress', icon: '🔄', name: 'Rotation Trainer', blurb: 'Learn the overlap rules · Volleyball IQ', total: 500, accent: '#EA580C' },
+  { id: 'ballcarts', path: '/puzzle/ball-carts', storeKey: 'loggerhead_ballcarts_progress', icon: '🛒', name: 'Ball Carts', blurb: 'Roll out the carts · Load matching balls', total: 1000, accent: '#BE123C' },
 ];
 
 // Games free every day on top of the daily one (e.g. ['flow']). Empty = daily game only.
