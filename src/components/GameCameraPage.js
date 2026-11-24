@@ -586,8 +586,8 @@ export default function GameCameraPage() {
     <div style={styles.page}>
       <h2 style={styles.h2}>🎥 Film a Match</h2>
       <p style={styles.lead}>
-        One phone logs stats, this one films. Connect to the logging phone to show the live score
-        while you film and to mark every rally in the video.
+        One phone logs stats (or just the score, with Log › Score Only Mode), this one films. Connect
+        to the logging phone to show the live score while you film and to mark every rally in the video.
       </p>
 
       {latest && (

@@ -83,6 +83,7 @@ import BrainBreakHub, { SubscriberGame } from "./components/BrainBreakHub";
 import ClipStitcherPage from "./components/ClipStitcherPage";
 import GameCameraPage from "./components/GameCameraPage";
 import CameraConnectSheet from "./components/CameraConnectSheet";
+import ScoreOnlyPage from "./components/ScoreOnlyPage";
 import { useCameraScoreFeed } from "./utils/cameraLink";
 
 
@@ -97,7 +98,7 @@ const getApiUrl = () => {
 
 const API_URL = getApiUrl(); 
 // Shown next to the logo; keep in step with APP_VERSION in codemagic.yaml.
-const APP_VERSION = "4.6.0";
+const APP_VERSION = "4.7.0";
 const AUTO_SAVE_DELAY = 5000;
 const PERIODIC_SAVE_INTERVAL = 300000;
 
@@ -5473,6 +5474,11 @@ if (location.pathname === "/match-tracking") {
               path="/camera"
               element={<PrivateRoute><GameCameraPage /></PrivateRoute>}
             />
+            {/* Score Only: just the score, to feed the live score to a filming phone */}
+            <Route
+              path="/score"
+              element={<PrivateRoute><ScoreOnlyPage /></PrivateRoute>}
+            />
             {/* Brain Break: all games for subscribers; one free game a day for everyone else */}
             <Route
               path="/puzzle"
@@ -5822,7 +5828,8 @@ if (location.pathname === "/match-tracking") {
           </Routes>
         <BottomTabBar isNative={isNativeApp} isMobile={isMobile} offlinePending={offlinePending} isOnline={isOnline} />
         {isNativeApp && <PushBanner />}
-        {isNativeApp && (
+        {/* Score Only shows its own camera sheet for its own match */}
+        {isNativeApp && location.pathname !== "/score" && (
           <CameraConnectSheet
             token={token}
             matchId={currentMatchId}

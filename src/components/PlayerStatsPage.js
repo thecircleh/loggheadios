@@ -224,7 +224,7 @@ const toneOptions = [
       try {
         const res = await axios.get(`${API_URL}/api/matches/team?teamName=${selectedTeam}`);
         // Filter out matches with mode: "Coach"
-        const filteredMatches = (res.data || []).filter(match => match.mode !== "Match");
+        const filteredMatches = (res.data || []).filter(match => match.mode !== "Match" && match.mode !== "Score");
         setMatches(filteredMatches);
       } catch (err) {
         console.error('Failed to fetch matches:', err);

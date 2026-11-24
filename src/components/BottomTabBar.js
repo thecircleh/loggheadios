@@ -34,7 +34,7 @@ const BottomTabBar = ({ isNative, offlinePending = 0, isOnline = true }) => {
       navigateTo(item.path);
     }
   };
-  const onLoggingScreen = ["/stat-book", "/match-tracking", "/classic"].includes(location.pathname);
+  const onLoggingScreen = ["/stat-book", "/match-tracking", "/classic", "/score"].includes(location.pathname);
 
   const tabs = [
     {
@@ -69,13 +69,14 @@ const BottomTabBar = ({ isNative, offlinePending = 0, isOnline = true }) => {
     {
       key: "log",
       label: "Log",
-      paths: ["/stat-book", "/match-tracking", "/classic", "/camera"],
+      paths: ["/stat-book", "/match-tracking", "/classic", "/score", "/camera"],
       hasMenu: true,
       onPress: () => toggleMenu("log"),
       menuItems: [
         { label: "Stat Book Mode", path: "/stat-book" },
         { label: "Match Tracking Mode", path: "/match-tracking" },
         { label: "Classic Mode", path: "/classic" },
+        { label: "Score Only Mode", path: "/score" },
         ...(onLoggingScreen ? [{ label: "🔗 Connect a Camera", event: "lh-camera-connect" }] : []),
         { label: "🎥 Film a Match", path: "/camera" },
       ],
