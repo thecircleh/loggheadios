@@ -3234,7 +3234,7 @@ const nextScheduled = scheduledMatches
           <span style={{ fontSize: 22 }}>&#9889;</span>
           <span>Match Tracking</span>
           <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.85 }}>
-            {isCurrentTeamBeach ? '🏖️ Beach: use Stat Book' : 'Score + rotations'}
+            {isCurrentTeamBeach ? '🏖️ Beach: use Stat Book, Classic or Score Only' : 'Score + rotations'}
           </span>
         </button>
 
