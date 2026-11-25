@@ -121,7 +121,6 @@ const BottomTabBar = ({ isNative, offlinePending = 0, isOnline = true }) => {
         { label: "Coaches' Corner Home", path: "/coaches-corner" },
         { label: "My Drills", path: "/coaches-corner/drills" },
         { label: "Practice Assist", path: "/coaches-corner/practice" },
-        { label: "Jobs", path: "/coaches-corner/jobs" },
       ],
       icon: (active) => (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
