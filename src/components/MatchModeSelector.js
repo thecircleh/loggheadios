@@ -446,7 +446,7 @@ export default function MatchModeSelector({
               </div>
             ) : beachModeBlocked && (
               <div style={{ fontSize: 13, color: '#b45309', marginTop: 4, fontWeight: 600, background: '#fff7ed', borderRadius: 8, padding: '8px 10px' }}>
-                🏖️ Beach teams can't use this mode — use <strong>Stat Book</strong> instead.
+                🏖️ Match Tracking is for indoor teams. For beach, use <strong>Stat Book</strong>, <strong>Classic</strong> or <strong>Score Only</strong>.
               </div>
             )}
 
